@@ -1,0 +1,20 @@
+{
+  "selectedJourney": "business-setup",
+  "view": "map",
+  "graphFocus": "",
+  "graphVertical": "business-setup",
+  "journeyPriorities": [
+    "business-setup",
+    "billing",
+    "compliance",
+    "placement",
+    "attendance",
+    "staff",
+    "onboarding"
+  ],
+  "graphView3d": {
+    "x": -223,
+    "y": -136,
+    "z": 1
+  }
+}
