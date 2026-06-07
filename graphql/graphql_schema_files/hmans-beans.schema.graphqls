@@ -1,0 +1,838 @@
+# Beans GraphQL Schema
+
+scalar Time
+
+type Query {
+  """
+  Get a single bean by ID. Accepts either the full ID (e.g., "beans-abc1") or the short ID without prefix (e.g., "abc1").
+  """
+  bean(id: ID!): Bean
+
+  """
+  List beans with optional filtering
+  """
+  beans(filter: BeanFilter): [Bean!]!
+
+  """
+  List active git worktrees created by beans
+  """
+  worktrees: [Worktree!]!
+
+  """
+  Get the current agent session for a worktree (null if none)
+  """
+  agentSession(beanId: ID!): AgentSession
+
+  """
+  Get file changes for a directory. If path is null, uses the project root.
+  """
+  fileChanges(path: String): [FileChange!]!
+
+  """
+  Get all file changes compared to the upstream branch (committed + staged + unstaged + untracked).
+  If path is null, uses the project root.
+  """
+  allFileChanges(path: String): [FileChange!]!
+
+  """
+  Get the unified diff for a specific file. Returns the diff as a string.
+  The filePath is relative to the repo/worktree root.
+  If staged is true, shows the staged diff; otherwise shows the working tree diff.
+  """
+  fileDiff(filePath: String!, staged: Boolean!, path: String): String!
+
+  """
+  Get the unified diff for a specific file compared to the upstream branch merge-base.
+  Shows the complete change from merge-base to working tree.
+  """
+  allFileDiff(filePath: String!, path: String): String!
+
+  """
+  Get branch status for a worktree: how far behind the base branch and whether
+  a rebase would conflict. If path is null, uses the project root.
+  """
+  branchStatus(path: String): BranchStatus!
+
+  """
+  Whether any beans have unsaved runtime changes
+  """
+  hasDirtyBeans: Boolean!
+
+  """
+  Get available agent actions for a bean.
+  When skipForge is true, forge-dependent actions (PR buttons) are omitted
+  for a faster response — useful for the initial render before polling kicks in.
+  """
+  agentActions(beanId: ID!, skipForge: Boolean): [AgentAction!]!
+
+  """
+  Human-readable project name from configuration.
+  Returns empty string if not configured.
+  """
+  projectName: String!
+
+  """
+  The current branch of the main repository.
+  """
+  mainBranch: String!
+
+  """
+  Whether agent functionality is enabled in the project configuration.
+  When false, the UI should hide agent chats, status panes, and worktree features.
+  """
+  agentEnabled: Boolean!
+
+  """
+  The configured base ref for worktree branches (from worktree.base_ref config).
+  Used as the rebase target. Defaults to "main".
+  """
+  worktreeBaseRef: String!
+
+  """
+  Shell command to run the project (from worktree.run config).
+  When non-empty, the UI shows a "Run" button in workspace toolbars.
+  """
+  worktreeRunCommand: String!
+
+  """
+  Get the allocated port for a workspace. Returns 0 if not allocated.
+  """
+  workspacePort(workspaceId: ID!): Int!
+
+  """
+  Check whether a run session is alive for a workspace.
+  """
+  isRunning(workspaceId: ID!): Boolean!
+
+  """
+  The configured integration mode for worktrees (from worktree.integrate config).
+  "local" = squash-merge locally (hides PR buttons).
+  "pr" = push and create PRs (hides Integrate button).
+  Defaults to "local".
+  """
+  worktreeIntegrateMode: String!
+
+  """
+  List files tracked by git in a workspace directory.
+  Performs case-insensitive substring matching — space-separated terms must all
+  match somewhere in the file path. Used for @-mention autocomplete.
+  """
+  listFiles(workspaceId: ID, prefix: String!, limit: Int): [FileEntry!]!
+}
+
+type Subscription {
+  """
+  Subscribe to bean change events (created, updated, deleted).
+
+  When includeInitial is true, all existing beans are emitted as a single
+  INITIAL_SNAPSHOT event containing the full list, followed by real-time
+  changes. This eliminates race conditions between loading and subscribing.
+  """
+  beanChanged(includeInitial: Boolean = false): BeanChangeEvent!
+
+  """
+  Subscribe to worktree changes. Emits the full list of active worktrees
+  whenever a worktree is created or removed.
+  """
+  worktreesChanged: [Worktree!]!
+
+  """
+  Subscribe to agent session updates for a worktree.
+  Emits the full session state whenever it changes (new messages, status changes).
+  """
+  agentSessionChanged(beanId: ID!): AgentSession!
+
+  """
+  Subscribe to active agent status changes across all sessions.
+  Emits the list of currently running agents whenever any session status changes.
+  """
+  activeAgentStatuses: [ActiveAgentStatus!]!
+
+  """
+  Subscribe to workspace git status changes.
+  Emits the status of all workspaces (main repo + worktrees) periodically.
+  The main workspace uses ID "__central__".
+  """
+  workspaceStatuses: [WorkspaceStatus!]!
+}
+
+"""
+Lightweight status for tracking which beans have running agents
+"""
+type ActiveAgentStatus {
+  "Bean ID with an active agent"
+  beanId: ID!
+  "Current agent status"
+  status: AgentSessionStatus!
+}
+
+"""
+Git status for a workspace (main repo or worktree)
+"""
+type WorkspaceStatus {
+  "Workspace identifier (__central__ for main repo, worktree ID for worktrees)"
+  id: ID!
+  "Whether the workspace has uncommitted changes or untracked files"
+  hasChanges: Boolean!
+  "Whether the workspace has commits not yet merged into the base branch"
+  hasUnmergedCommits: Boolean!
+}
+
+"""
+Represents a change to a bean
+"""
+type BeanChangeEvent {
+  "Type of change that occurred"
+  type: ChangeType!
+  "The bean that changed (null for INITIAL_SNAPSHOT and DELETED events)"
+  bean: Bean
+  "All beans as a batch (only present for INITIAL_SNAPSHOT events)"
+  beans: [Bean!]
+  "ID of the bean that changed (empty for INITIAL_SNAPSHOT events)"
+  beanId: ID!
+}
+
+"""
+Type of change that occurred to a bean
+"""
+enum ChangeType {
+  "All existing beans sent as a single batch when subscription starts (emitted when includeInitial=true)"
+  INITIAL_SNAPSHOT
+  CREATED
+  UPDATED
+  DELETED
+}
+
+type Mutation {
+  """
+  Create a new bean
+  """
+  createBean(input: CreateBeanInput!): Bean!
+
+  """
+  Update an existing bean
+  """
+  updateBean(id: ID!, input: UpdateBeanInput!): Bean!
+
+  """
+  Delete a bean by ID (automatically removes incoming links)
+  """
+  deleteBean(id: ID!): Boolean!
+
+  """
+  Set or clear the parent of a bean (validates type hierarchy)
+  """
+  setParent(id: ID!, parentId: String, ifMatch: String): Bean!
+
+  """
+  Add a bean to the blocking list
+  """
+  addBlocking(id: ID!, targetId: ID!, ifMatch: String): Bean!
+
+  """
+  Remove a bean from the blocking list
+  """
+  removeBlocking(id: ID!, targetId: ID!, ifMatch: String): Bean!
+
+  """
+  Add a bean to the blocked-by list (this bean is blocked by targetId)
+  """
+  addBlockedBy(id: ID!, targetId: ID!, ifMatch: String): Bean!
+
+  """
+  Remove a bean from the blocked-by list
+  """
+  removeBlockedBy(id: ID!, targetId: ID!, ifMatch: String): Bean!
+
+  """
+  Write input data to an existing terminal session's PTY.
+  Creates the session if it doesn't exist yet.
+  """
+  writeTerminalInput(sessionId: String!, data: String!): Boolean!
+
+  """
+  Start the configured run command in a dedicated terminal session for a workspace.
+  Returns the allocated port number for the workspace.
+  If a run session is already active, it is stopped first.
+  """
+  startRun(workspaceId: ID!): Int!
+
+  """
+  Stop the run session for a workspace.
+  """
+  stopRun(workspaceId: ID!): Boolean!
+
+  """
+  Create a new worktree. Returns the created worktree with a generated ID.
+  """
+  createWorktree(name: String!): Worktree!
+
+  """
+  Remove a worktree by its ID (works for both bean-attached and standalone worktrees).
+  """
+  removeWorktree(id: ID!): Boolean!
+
+  """
+  Send a message to the agent in a worktree. Starts a session if none exists.
+  Optionally attach images (base64-encoded).
+  """
+  sendAgentMessage(beanId: ID!, message: String!, images: [ImageInput!], attachments: [FileAttachmentInput!]): Boolean!
+
+  """
+  Stop the running agent in a worktree.
+  """
+  stopAgent(beanId: ID!): Boolean!
+
+  """
+  Set plan mode for an agent session. Plan mode makes the agent read-only
+  (can explore/analyze but not edit). Kills any running process since the
+  permission mode is a startup flag.
+  """
+  setAgentPlanMode(beanId: ID!, planMode: Boolean!): Boolean!
+
+  """
+  Set act mode for an agent session. Act mode makes the agent fully autonomous
+  (no permission prompts). Kills any running process since the flag requires respawning.
+  """
+  setAgentActMode(beanId: ID!, actMode: Boolean!): Boolean!
+
+  """
+  Set the thinking effort level for an agent session. Kills any running process
+  since --effort is a startup flag. Use "low", "medium", "high", or "max".
+  Empty string clears the override (uses CLI default).
+  """
+  setAgentEffort(beanId: ID!, effort: String!): Boolean!
+
+  """
+  Set a pending interaction on an agent session (creates session if needed).
+  Used to simulate blocking tool calls for testing the approval UI.
+  """
+  setAgentPendingInteraction(beanId: ID!, type: InteractionType!, planContent: String): Boolean!
+
+  """
+  Clear the agent session for a bean. Stops any running process, removes the
+  session from memory, and deletes persisted conversation history.
+  """
+  clearAgentSession(beanId: ID!): Boolean!
+
+  """
+  Archive a bean by moving it to the archive directory.
+  Only beans with archive-eligible statuses (completed, scrapped) can be archived.
+  """
+  archiveBean(id: ID!): Boolean!
+
+  """
+  Save all dirty beans to disk. Returns the number of beans saved.
+  """
+  saveDirtyBeans: Int!
+
+  """
+  Save a specific bean to disk (must be dirty). Returns true if saved.
+  """
+  saveBean(id: ID!): Boolean!
+
+  """
+  Execute a predefined agent action (e.g., "commit", "review") by injecting
+  the corresponding prompt into the agent conversation.
+  """
+  executeAgentAction(beanId: ID!, actionId: ID!): Boolean!
+
+  """
+  Discard a file change (restore tracked file or remove untracked file).
+  If staged is true, the file is unstaged first.
+  The filePath is relative to the repo/worktree root.
+  If path is null, operates on the project root.
+  """
+  discardFileChange(filePath: String!, staged: Boolean!, path: String): Boolean!
+
+  """
+  Open a workspace directory in VS Code. For the main workspace, opens the
+  project root. For worktrees, opens the worktree directory.
+  """
+  openInEditor(workspaceId: ID!): Boolean!
+}
+
+"""
+Input for creating a new bean
+"""
+input CreateBeanInput {
+  "Bean title (required)"
+  title: String!
+  "Bean type (defaults to 'task')"
+  type: String
+  "Status (defaults to 'todo')"
+  status: String
+  "Priority level (defaults to 'normal')"
+  priority: String
+  "Tags for categorization"
+  tags: [String!]
+  "Markdown body content"
+  body: String
+  "Parent bean ID (validated against type hierarchy)"
+  parent: String
+  "Bean IDs this bean is blocking"
+  blocking: [String!]
+  "Bean IDs that are blocking this bean"
+  blockedBy: [String!]
+  "Custom ID prefix (overrides config prefix for this bean)"
+  prefix: String
+}
+
+"""
+Input for updating an existing bean
+"""
+input UpdateBeanInput {
+  "New title"
+  title: String
+  "New status"
+  status: String
+  "New type"
+  type: String
+  "New priority"
+  priority: String
+  "Replace all tags (nil preserves existing, mutually exclusive with addTags/removeTags)"
+  tags: [String!]
+  "Add tags to existing list"
+  addTags: [String!]
+  "Remove tags from existing list"
+  removeTags: [String!]
+  "New body content (full replacement, mutually exclusive with bodyMod)"
+  body: String
+  "Structured body modifications (mutually exclusive with body)"
+  bodyMod: BodyModification
+  
+  "Set parent bean ID (null/empty to clear, validates type hierarchy)"
+  parent: String
+  "Add beans to blocking list (validates cycles and existence)"
+  addBlocking: [String!]
+  "Remove beans from blocking list"
+  removeBlocking: [String!]
+  "Add beans to blocked-by list (validates cycles and existence)"
+  addBlockedBy: [String!]
+  "Remove beans from blocked-by list"
+  removeBlockedBy: [String!]
+  
+  "Fractional index for manual ordering (used by board drag-and-drop)"
+  order: String
+  "ETag for optimistic concurrency control (optional)"
+  ifMatch: String
+}
+
+"""
+Structured body modifications applied atomically.
+Operations are applied in order: all replacements sequentially, then append.
+If any operation fails, the entire mutation fails (transactional).
+"""
+input BodyModification {
+  """
+  Text replacements applied sequentially in array order.
+  Each old text must match exactly once at the time it's applied.
+  """
+  replace: [ReplaceOperation!]
+  """
+  Text to append after all replacements.
+  Appended with blank line separator.
+  """
+  append: String
+}
+
+"""
+A single text replacement operation.
+"""
+input ReplaceOperation {
+  "Text to find (must occur exactly once, cannot be empty)"
+  old: String!
+  "Replacement text (can be empty to delete the matched text)"
+  new: String!
+}
+
+"""
+A bean represents an issue/task in the beans tracker
+"""
+type Bean {
+  "Unique identifier (NanoID)"
+  id: ID!
+  "Human-readable slug from filename"
+  slug: String
+  "Relative path from .beans/ directory"
+  path: String!
+  "Bean title"
+  title: String!
+  "Current status (draft, todo, in-progress, completed, scrapped)"
+  status: String!
+  "Bean type (milestone, epic, bug, feature, task)"
+  type: String!
+  "Priority level (critical, high, normal, low, deferred)"
+  priority: String!
+  "Tags for categorization"
+  tags: [String!]!
+  "Creation timestamp"
+  createdAt: Time!
+  "Last update timestamp"
+  updatedAt: Time!
+  "Markdown body content"
+  body: String!
+  "Fractional index for manual ordering within status groups"
+  order: String!
+  "Content hash for optimistic concurrency control"
+  etag: String!
+  "Whether this bean has unsaved runtime changes (not yet persisted to disk)"
+  isDirty: Boolean!
+  "ID of the worktree this bean is linked to (null if not linked to any worktree)"
+  worktreeId: String
+
+  # Direct link fields
+  "Parent bean ID (optional, type-restricted)"
+  parentId: String
+  "IDs of beans this bean is blocking"
+  blockingIds: [String!]!
+  "IDs of beans that are blocking this bean (direct field)"
+  blockedByIds: [String!]!
+
+  # Computed relationship fields
+  "Beans that block this one (incoming blocking links)"
+  blockedBy(filter: BeanFilter): [Bean!]!
+  "Beans this one is blocking (resolved from blockingIds)"
+  blocking(filter: BeanFilter): [Bean!]!
+  "Parent bean (resolved from parentId)"
+  parent: Bean
+  "Child beans (beans with this as parent)"
+  children(filter: BeanFilter): [Bean!]!
+
+  # Implicit status fields
+  "Terminal status (scrapped or completed) inherited from the nearest terminal ancestor, if any"
+  implicitStatus: String
+  "ID of the ancestor bean that provides the implicit status"
+  implicitStatusFrom: String
+}
+
+"""
+Filter options for querying beans
+"""
+input BeanFilter {
+  """
+  Full-text search across slug, title, and body using Bleve query syntax.
+
+  Examples:
+  - "login" - exact term match
+  - "login~" - fuzzy match (1 edit distance)
+  - "login~2" - fuzzy match (2 edit distance)
+  - "log*" - wildcard prefix
+  - "\"user login\"" - exact phrase
+  - "user AND login" - both terms required
+  - "user OR login" - either term
+  - "slug:auth" - search only slug field
+  - "title:login" - search only title field
+  - "body:auth" - search only body field
+  """
+  search: String
+  "Include only beans with these statuses (OR logic)"
+  status: [String!]
+  "Exclude beans with these statuses"
+  excludeStatus: [String!]
+  "Include only beans with these types (OR logic)"
+  type: [String!]
+  "Exclude beans with these types"
+  excludeType: [String!]
+  "Include only beans with these priorities (OR logic)"
+  priority: [String!]
+  "Exclude beans with these priorities"
+  excludePriority: [String!]
+  "Include only beans with any of these tags (OR logic)"
+  tags: [String!]
+  "Exclude beans with any of these tags"
+  excludeTags: [String!]
+  "Include only beans with a parent"
+  hasParent: Boolean
+  "Include only beans with this specific parent ID"
+  parentId: String
+  "Include only beans that are blocking other beans"
+  hasBlocking: Boolean
+  "Include only beans that are blocking this specific bean ID"
+  blockingId: String
+  "Include beans that are blocked — explicitly (direct blockers) or implicitly (ancestor is blocked)"
+  isBlocked: Boolean
+  "Filter beans that are explicitly blocked (have direct active blockers)"
+  isExplicitlyBlocked: Boolean
+  "Filter beans that are implicitly blocked (an ancestor in the parent chain is blocked)"
+  isImplicitlyBlocked: Boolean
+  "Include only beans that have explicit blocked-by entries"
+  hasBlockedBy: Boolean
+  "Include only beans blocked by this specific bean ID (via blocked_by field)"
+  blockedById: String
+  "Exclude beans that have a parent"
+  noParent: Boolean
+  "Exclude beans that are blocking other beans"
+  noBlocking: Boolean
+  "Exclude beans that have explicit blocked-by entries"
+  noBlockedBy: Boolean
+  "Exclude beans that inherit a terminal status (scrapped or completed) from an ancestor"
+  excludeImplicitTerminal: Boolean
+}
+
+"""
+A git worktree, either associated with a bean or standalone
+"""
+type Worktree {
+  "Unique worktree identifier"
+  id: ID!
+  "Human-readable name"
+  name: String
+  "Auto-generated summary of what this workspace is doing"
+  description: String
+  "Git branch name"
+  branch: String!
+  "Filesystem path to the worktree"
+  path: String!
+  "Beans detected from changes in this worktree vs the base branch"
+  beans: [Bean!]!
+  "Whether the worktree has uncommitted changes or untracked files"
+  hasChanges: Boolean!
+  "Whether the worktree has commits not yet merged into the base branch"
+  hasUnmergedCommits: Boolean!
+  "Number of commits on the base branch that are not in this worktree branch"
+  commitsBehind: Int!
+  "Whether rebasing onto the base branch would produce merge conflicts"
+  hasConflicts: Boolean!
+  "Post-creation setup status (null if no setup configured)"
+  setupStatus: WorktreeSetupStatus
+  "Error message if setup failed"
+  setupError: String
+  "Open pull/merge request for this worktree's branch (null if none)"
+  pullRequest: PullRequest
+}
+
+"""
+A pull/merge request on a git forge (GitHub, GitLab, etc.)
+"""
+type PullRequest {
+  "PR number on the forge"
+  number: Int!
+  "PR title"
+  title: String!
+  "Current state: open, closed, merged"
+  state: String!
+  "Web URL to view the PR"
+  url: String!
+  "Whether this PR is a draft"
+  isDraft: Boolean!
+  "Aggregate CI check status: pass, fail, pending"
+  checkStatus: String!
+  "Whether review requirements are met"
+  reviewApproved: Boolean!
+  "Whether the forge reports the PR can be merged"
+  mergeable: Boolean!
+}
+
+"""
+Status of a worktree's post-creation setup command
+"""
+enum WorktreeSetupStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+"""
+Branch status relative to the base branch
+"""
+type BranchStatus {
+  "Number of commits on the base branch not reachable from this branch"
+  commitsBehind: Int!
+  "Whether rebasing onto the base branch would produce merge conflicts"
+  hasConflicts: Boolean!
+}
+
+"""
+A changed file in a git working tree
+"""
+type FileChange {
+  "File path relative to the repo/worktree root"
+  path: String!
+  "Change status: modified, added, deleted, untracked, renamed"
+  status: String!
+  "Number of added lines"
+  additions: Int!
+  "Number of deleted lines"
+  deletions: Int!
+  "Whether this change is staged"
+  staged: Boolean!
+}
+
+"""
+An agent chat session within a worktree
+"""
+type AgentSession {
+  "Bean ID (worktree identifier)"
+  beanId: ID!
+  "Agent type (e.g., 'claude')"
+  agentType: String!
+  "Current session status"
+  status: AgentSessionStatus!
+  "Chat messages in chronological order"
+  messages: [AgentMessage!]!
+  "Last error message, if any"
+  error: String
+  "Thinking effort level (e.g. 'low', 'medium', 'high', 'max'), null when using CLI default"
+  effort: String
+  "Whether the agent is in plan mode (read-only)"
+  planMode: Boolean!
+  "Whether the agent is in act mode (fully autonomous, no permission prompts)"
+  actMode: Boolean!
+  "Transient system status (e.g. 'compacting'), null when idle"
+  systemStatus: String
+  "Pending blocking interaction awaiting user response"
+  pendingInteraction: PendingInteraction
+  "Working directory / worktree path for this session"
+  workDir: String
+  "Currently running subagent activities (one per concurrent Agent tool call)"
+  subagentActivities: [SubagentActivity!]!
+  "Suggested quick reply messages generated after a turn completes"
+  quickReplies: [String!]!
+}
+
+"""
+Tracks real-time activity of a running subagent (Agent tool invocation)
+"""
+type SubagentActivity {
+  "Unique task identifier for this subagent"
+  taskId: String!
+  "Sequential index (1-based) for display"
+  index: Int!
+  "What the subagent is currently doing"
+  description: String!
+  "Tool currently being used by the subagent (empty string when idle)"
+  currentTool: String!
+}
+
+"""
+A blocking interaction the agent is waiting for user approval on
+"""
+type PendingInteraction {
+  "Type of interaction"
+  type: InteractionType!
+  "Plan file content (for EXIT_PLAN only)"
+  planContent: String
+  "Structured questions with selectable options (for ASK_USER only)"
+  questions: [AskUserQuestion!]
+}
+
+"""
+A structured question with selectable options from the AskUserQuestion tool
+"""
+type AskUserQuestion {
+  "Short label displayed as a chip/tag"
+  header: String!
+  "The full question text"
+  question: String!
+  "Whether multiple options can be selected"
+  multiSelect: Boolean!
+  "Available choices"
+  options: [AskUserOption!]!
+}
+
+"""
+A selectable option within an AskUserQuestion
+"""
+type AskUserOption {
+  "Display text for this option"
+  label: String!
+  "Explanation of what this option means"
+  description: String!
+}
+
+"""
+Type of blocking interaction
+"""
+enum InteractionType {
+  EXIT_PLAN
+  ENTER_PLAN
+  ASK_USER
+}
+
+"""
+Status of an agent session
+"""
+enum AgentSessionStatus {
+  IDLE
+  RUNNING
+  ERROR
+}
+
+"""
+A single message in an agent conversation
+"""
+type AgentMessage {
+  "Message role"
+  role: AgentMessageRole!
+  "Text content"
+  content: String!
+  "Attached images (empty for assistant/tool messages)"
+  images: [AgentMessageImage!]!
+  "File/directory paths attached via @-mention (only present on user messages)"
+  attachments: [String!]!
+  "Unified diff output (only present on tool messages for Write/Edit tools)"
+  diff: String
+}
+
+"""
+An image attached to an agent message
+"""
+type AgentMessageImage {
+  "URL to fetch the image"
+  url: String!
+  "MIME type (e.g. image/png)"
+  mediaType: String!
+}
+
+"""
+Input for uploading an image attachment
+"""
+input ImageInput {
+  "Base64-encoded image data"
+  data: String!
+  "MIME type (image/jpeg, image/png, image/gif, image/webp)"
+  mediaType: String!
+}
+
+"""
+A file entry in the project, used for @-mention autocomplete.
+"""
+type FileEntry {
+  "Relative path from the workspace root"
+  path: String!
+}
+
+"""
+Input for attaching a file or directory as context to an agent message.
+"""
+input FileAttachmentInput {
+  "Relative file or directory path"
+  path: String!
+}
+
+"""
+Role of an agent message sender
+"""
+enum AgentMessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  INFO
+}
+
+"""
+An action that can be performed by the agent
+"""
+type AgentAction {
+  "Unique identifier for the action"
+  id: ID!
+  "Human-readable label"
+  label: String!
+  "Description of what the action does"
+  description: String
+  "Whether the action is currently disabled"
+  disabled: Boolean!
+  "Reason why the action is disabled (shown as tooltip)"
+  disabledReason: String
+}
