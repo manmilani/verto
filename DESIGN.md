@@ -416,26 +416,26 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 ### 4.2 High-level architecture
 
 ```
-+------------------------------------------------------------------+
-|              Verto for VS Code / Cursor (extension)              |
-|                                                                  |
-|  +---------------------------+      +-------------------------+  |
-|  |  Extension Host (Node)    |      |   Webview (React UI)    |  |
-|  |                           |      |                         |  |
-|  |  - Adapter registry       | <==> |  - Delivery map lens    |  |
-|  |  - Active adapter (GH/...) | post |  - NCN graph lens       |  |
-|  |  - Ticket body parser     | msg  |  - Priorities + order   |  |
-  |    (display-only)         |      |                         |  |
-|  |  - Workspace/global state |      |  - (dumb view of bundle)|  |
-|  |  - Auth (e.g. GH provider)|      +-------------------------+  |
-|  +-------------+-------------+                                   |
-|                |                                                 |
-+----------------|-------------------------------------------------+
++--------------------------------------------------------------------+
+|              Verto for VS Code / Cursor (extension)                |
+|                                                                    |
+|  +----------------------------+      +--------------------------+  |
+|  |  Extension Host (Node)     |      |   Webview (React UI)     |  |
+|  |                            |      |                          |  |
+|  |  - Adapter registry        | <==> |  - Delivery map lens     |  |
+|  |  - Active adapter (GH/...) | post |  - NCN graph lens        |  |
+|  |  - Ticket body parser      | msg  |  - Priorities + order    |  |
+|  |    (display-only)          |      |                          |  |
+|  |  - Workspace/global state  |      |  - (dumb view of bundle) |  |
+|  |  - Auth (e.g. GH provider) |      +--------------------------+  |
+|  +-------------+--------------+                                    |
+|                |                                                   |
++----------------|---------------------------------------------------+
                  |
         +--------+---------+----------------+
         |                  |                |
    GitHub Issues      Jira (later)    File-system (later,
-   (first adapter)                     e.g. Backlog.md)
+   (first adapter)                     e.g. Beans or Backlog.md)
                                                 |
                        (shared, reused by all shells)
                 +---------------------------------------+
@@ -540,7 +540,7 @@ The agreed mapping that resolves the canvas's conflation:
   - Body documentation ⇒ issue title + body (optional task-list parse for
     Delivery Map display only).
   - Vertical priority ⇒ a custom field on epics (or a ProjectV2 field/ordering).
-- **Later adapters:** Jira; local file-system trackers such as **Backlog.md**.
+- **Later adapters:** Jira; local file-system trackers such as **Beans or Backlog.md**.
   All implement the same interface and are selected/configured at workspace setup.
 - **Selection & configuration:** the adapter is chosen and configured when the
   extension is first set up in a workspace (a setup wizard and/or a
@@ -595,14 +595,14 @@ only as:
 
 - an **export/cache** snapshot produced by an adapter;
 - a **validation artefact** in CI (schema + dangling-dependency checks); or
-- the **on-disk format** for file-based adapters (e.g. Backlog.md).
+- the **on-disk format** for file-based adapters (e.g. Beans or Backlog.md).
 
 The canonical schema governs what adapters produce; it is not a separate
 user-editable project file in the ticket-first workflow.
 
 ### 4.10 Future extensibility
 
-- Additional **adapters** (Jira, Backlog.md, others) behind the same interface.
+- Additional **adapters** (Jira, Beans or Backlog.md, others) behind the same interface.
 - **Write-back** from the UI to the tracker (set status, add/remove blocking
   links, create child tickets when decomposing scope).
 - Additional **lenses** (e.g. timeline, risk heatmap, sprint/board views) over
@@ -665,7 +665,7 @@ All open questions, ambiguities, and not-yet-decided items live here.
   caching strategy; GraphQL node-ID resolution flow; how "epic" is recognised.
 - **Adapter capability differences.** How the core/UI degrade gracefully when an
   adapter lacks a feature (e.g. no custom fields, no native blocking links).
-- **Backlog.md / file-system shape.** File format, on-disk schema, and how
+- **Beans or Backlog.md / file-system shape.** File format, on-disk schema, and how
   dependencies/priorities are expressed in files.
 
 ### 5.4 Extension & UI

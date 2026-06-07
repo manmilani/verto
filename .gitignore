@@ -1,0 +1,6 @@
+# hmans/beans files
+.beans/*
+.beans.yml
+
+# Backlog.md files
+backlog/*
