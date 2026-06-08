@@ -4,3 +4,7 @@
 
 # Backlog.md files
 backlog/*
+
+# Workspace files
+.vscode/*
+.claude/*

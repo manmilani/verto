@@ -58,7 +58,7 @@ SaaS) — as a delivery map**, with two toggleable "lenses" over the *same* data
   a network of **work-items (nodes)**. Each node has `id`, `label`, `desc`,
   `status`, `verts` (which journeys it serves) and `deps` (the nodes that must be
   done before it). An arrow `A → B` means "A is a **necessary condition** for B".
-  On top of the graph the view computes readiness, transitive **downstream
+  On top of the graph the view computes readiness, transitive **upward
   leverage**, per-vertical closure completion, a user-settable **custom journey
   priority** list, and a priority-weighted **Implementation order** table.
 
@@ -304,7 +304,11 @@ algorithms are node-agnostic):
   deliver a node (that node plus everything it depends on).
 - **Readiness** — a node is *ready* when it is not yet done and **all** of its
   direct prerequisites are done. Ready nodes are where work can actually start.
-- **Downstream leverage** — how many nodes ultimately depend on a given node.
+- **Leverage score** — the count of nodes that transitively depend on (sit above)
+  a given node. In TOC terms this is the node's *constraint score*: a node with a
+  high leverage score is acting as a constraint on the overall delivery flow —
+  its incompleteness is blocking the most upward value. Completing high-leverage
+  nodes first is Verto's operationalisation of TOC's "exploit the constraint" policy.
   High-leverage nodes are the ones whose completion unblocks the most.
 - **Delivery completeness** — for any focused node, how much of its delivery
   subgraph (closure) is already done, i.e. how close that node is to deliverable.
@@ -319,7 +323,7 @@ Concretely, the abstract policy is:
 - Identify what currently constrains the delivery of the prioritised value
   (the missing prerequisites in a prioritised node's closure).
 - Prefer work that **relieves those constraints** and unblocks the most
-  downstream value (leverage), subject to dependency order.
+  upward value (leverage score), subject to dependency order.
 - Avoid investing in items that do not move a prioritised node closer to
   deliverable.
 
@@ -328,24 +332,37 @@ behaviour; the precise algorithm lives in the system-design section.
 
 ### 3.5 Prioritisation model
 
-Priority is expressed as the manager's intent on **which nodes matter most** —
-in practice, almost always the **vertical/epic nodes** (market demand, customer
-value). The mechanism is node-generic: prioritising **any** node N lifts *every*
-node in N's delivery subgraph. That high-level intent **propagates through the
-graph**:
+Every node carries a numeric `priority` field (see [`packages/core/src/types.ts`](./packages/core/src/types.ts)). Priority is a direct, explicit property of **every node** — not a separate per-vertical ranking list. A single graph-wide algorithm derives a comparable score per node that drives implementation order.
 
-- **Priority inheritance / lifting.** Prioritising a node lifts *every* node in
-  its delivery subgraph (closure). A node inherits the best (highest) priority of
-  any prioritised node whose closure contains it.
-- **From intent to an executable order.** Combining (a) inherited priority, (b)
-  dependency order (prerequisites before dependents), and (c) downstream leverage
-  as a tie-breaker yields a single, concrete **implementation order** — a
-  priority-weighted topological sort of the not-yet-done work in the prioritised
-  nodes' closures. Following it top-to-bottom delivers the prioritised nodes as
-  fast as the dependencies allow.
-- **Default behaviour without explicit priorities.** With no priorities set, the
-  system can still recommend by pure leverage: the ready items that unblock the
-  most.
+**Priority values — a load-bearing constraint**
+
+Priority is an integer in the range **1–9** (inclusive), where **1 = most important** and **9 = least important**. **Zero is explicitly excluded.** The global priority ranking algorithm uses base-10 positional encoding where each value occupies exactly one decimal digit; values outside 1–9 must be clamped at the `@verto/core` boundary (floor to 1, cap to 9). Adapters map tracker-native priority levels (typically 3–5 named levels such as *critical / high / medium / low / deferred*) to values within this range. **Default: 5.**
+
+**Global priority ranking algorithm**
+
+For each node N, a canonical *global priority ranking value* is derived by traversing upward through the dependency graph (following dependents — nodes that require N to be done) and collecting *result values* along every path:
+
+1. **Traversal** — from N, follow all upward paths through dependents to the top of the graph. Traversal never terminates early.
+
+2. **Result generation** — two triggers produce a result value at depth d along any path:
+   - A **DeliverableVertical** node is encountered → generate a result for the chain from N up to and including that node.
+   - The **top of the path** is reached (node with no further dependents) → generate a result for the full chain. If the top is itself a DeliverableVertical, both triggers coincide — one result, not two.
+
+3. **Formula** — for a chain N = n₀, n₁, …, nₖ (where nₖ triggered the result):
+
+   `raw score = P(n₀)×10⁰ + P(n₁)×10¹ + … + P(nₖ)×10ᵏ`
+
+   P(n) is the `priority` value of node n. Higher-depth nodes carry more significant digit positions; nₖ (the topmost node in the chain) is always the most significant digit.
+
+4. **Normalisation** — all raw scores across the entire graph are right-padded with zeros to the same digit count: `D = max(actual_max_depth_in_graph, MIN_DEPTH_FLOOR)`. A score of depth k is normalised by multiplying by `10^(D−k)`. This makes every topmost node's priority the primary sort key regardless of chain length, and ensures scores are comparable across chains of different depths.
+
+5. **Canonical value** — the canonical global priority ranking value of N is the **minimum** of all its normalised results across all chains and all paths. The minimum captures the best (most important) chain N participates in.
+
+**Lower canonical value = higher global priority (do first).**
+
+**`MIN_DEPTH_FLOOR` option (disabled by default)**
+
+A configurable constant `MIN_DEPTH_FLOOR` sets a minimum digit count for normalisation, using `D = max(actual_max_depth, MIN_DEPTH_FLOOR)`. This decouples per-node priority computation from a full graph scan, enabling live priority estimates when adding or reordering nodes without a full graph reload. Default: `undefined` (use actual graph max). Enable when incremental estimation is needed.
 
 ### 3.6 Ticket body documentation vs graph nodes
 
@@ -457,20 +474,18 @@ Host- and vendor-agnostic. Responsibilities:
   invalid vertical designations, etc.
 - **Pure algorithms**, initially ported from the deprecated original canvas so they
   depend only on the canonical model: `closureFor` (any node), `isReady`,
-  downstream-leverage, delivery completeness, priority lifting, and the
-  priority-weighted topological **implementation order**. Graph layout (DAG
-  positioning) is either vendored from the deprecated original `computeDAGLayout`
-  logic or reimplemented on a standard lib.
+  leverage score, delivery completeness, **global priority ranking** (chain-traversal
+  algorithm — see §3.5), and the priority-weighted topological **implementation order**.
+  Graph layout (DAG positioning) is either vendored from the deprecated original
+  `computeDAGLayout` logic or reimplemented on a standard lib.
 - **No I/O, no host APIs, no UI.** Everything network/disk/host lives behind the
   adapter interface and the extension host.
 
 ### 4.4 Canonical domain model (design in progress)
 
-> The **canonical schema will be fully specified by the system designer**; it is
-> **not yet complete**. Richer fields are planned beyond what is listed here.
-> The table below is an **indicative starting vocabulary** carried over from the
-> deprecated original canvas. It is **not** the final schema. End users of the
-> extension do not define the schema.
+> The canonical schema is **substantially defined** in [`packages/core/src/types.ts`](./packages/core/src/types.ts) — that file is the authoritative field-level definition. Remaining open items are marked with `TODO` comments there. The table below is retained for cross-referencing legacy canvas concepts; end users of the extension do not define the schema.
+
+**Canonical schema spec** — see [`packages/core/src/types.ts`](./packages/core/src/types.ts). That file is the authoritative field-level definition and will become `@verto/core/src/types.ts`. The indicative mapping table below remains for cross-referencing the legacy canvas.
 
 | Concept | Legacy canvas (deprecated original) | Meaning (target system) | Likely ticket home (per adapter) |
 |---|---|---|---|
@@ -621,25 +636,13 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.1 Domain model & ticket schema (design in progress)
 
-- **Final canonical schema.** Exact field names, types, and the full set of
-  fields beyond the indicative vocabulary in §4.4 (more fields and functionality
-  are planned — to be enumerated and designed by the system designer).
-- **Status vocabulary.** Keep the canvas's four values (`done`/`partial`/
-  `designed`/`missing`) or redefine? How is each mapped/derived per adapter, and
-  is "partial" a single state or a percentage?
-- **Vertical priority representation.** One global ordered list vs. a per-epic
-  numeric/select field vs. ProjectV2 ordering — and how that is stored *in
-  tickets* across adapters with differing capabilities.
-- **Link metadata.** Parent/child and BlockedBy/Blocking are unified for graph
-  math (**decided** — see §3.1). How is the *reason* for a link recorded as
-  metadata (e.g. decomposition vs cross-cutting prerequisite)?
-- **Multi-parent scenarios.** A ticket blocking multiple epics, or shared
-  dependencies across vertical slices — edge cases in closure and priority
-  inheritance.
-- **Black boxes.** First-class entity, a flavour of work-item/epic, or a derived
-  view? How represented in tickets.
-- **Additional fields.** Owners, estimates, iterations/sprints, risk, value/size,
-  tags — which are in scope, and do any feed priority or ordering?
+- ~~**Final canonical schema.**~~ **Substantially closed** — defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). Remaining open items (estimate, iterationId, persona/outcome narrative, black-box representation) marked with `TODO` there.
+- ~~**Status vocabulary.**~~ **Closed** — 10-state workflow vocabulary defined in `types.ts` `Status` type. "Partial" is a derived completion percentage (closed children / total closure), not a discrete state.
+- ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
+- ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
+- **Link metadata.** Parent/child and BlockedBy/Blocking are unified for graph math (**decided** — see §3.1). How is the *reason* for a link recorded as metadata (e.g. decomposition vs cross-cutting prerequisite)? (`VertoEdge.reason` field exists; exact vocabulary still open.)
+- **Black boxes.** First-class entity, a flavour of work-item/epic, or a derived view? How represented in tickets.
+- **Additional fields.** Estimates, iterations/sprints — deferred; decide if/when they feed ordering.
 
 ### 5.2 Delivery Map presentation & decomposition
 
