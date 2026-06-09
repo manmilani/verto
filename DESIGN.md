@@ -27,7 +27,7 @@
 1. [Background — the existing Rustybu canvas](#1-background--the-existing-rustybu-canvas)
 2. [Verto — System Intention / Goal](#2-verto--system-intention--goal)
 3. [High-Level Abstract Solution Design](#3-high-level-abstract-solution-design)
-4. [Solution System Design](#4-solution-system-design)
+4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.7](#467-first-adapter-github-issues)
 5. [Knowledge Gaps](#5-knowledge-gaps)
 
 ---
@@ -149,7 +149,7 @@ parent/child and BlockedBy/Blocking are unified dependency links; vertical/epic/
 journey are equivalent semantic labels on certain nodes; and body task lists are
 documentation only (Delivery Map shows body + children — see §3.6–§3.7).
 
-**GitHub adapter reference:** [graphql/github-issues.md](./graphql/github-issues.md)
+**GitHub adapter reference:** [graphql/github_issues_graphql.agent_prompt.md](./graphql/github_issues_graphql.agent_prompt.md)
 
 ---
 
@@ -286,9 +286,11 @@ the NCN graph shows the full network with no special casing.
   parent/child and BlockedBy/Blocking. An edge `A → B` means *A must be
   sufficiently done before B can be fully built/delivered*. The full set of
   in-edges to a node is the complete set of its prerequisites.
-- **Status** = a small, ordered vocabulary of progress (the canvas used
-  `done` / `partial` / `designed` / `missing`; the production vocabulary is to be
-  finalised — see Knowledge Gaps).
+- **Status** — a source-specific progress label, passed through as a display field
+  (`node.ticketFields.status`). Not a canonical `@verto/core` concept. The canonical
+  "is done" signal is `VertoNode.state_reason` (`completed` or `not_planned`). See
+  the `Status` type in [`packages/core/src/types.ts`](./packages/core/src/types.ts)
+  for the recommended Verto status vocabulary adapters may map to.
 
 Modelling shared enablers as a *single* node that many delivery subgraphs depend
 on is what makes **leverage** visible: a missing foundational node may block many
@@ -302,8 +304,9 @@ algorithms are node-agnostic):
 
 - **Closure** — the complete transitive set of prerequisites required to
   deliver a node (that node plus everything it depends on).
-- **Readiness** — a node is *ready* when it is not yet done and **all** of its
-  direct prerequisites are done. Ready nodes are where work can actually start.
+- **Readiness** — a node is *ready* when it is open (`state_reason` is null or
+  `'reopened'`) and **all** of its direct prerequisites are done (`state_reason` is
+  `'completed'` or `'not_planned'`). Ready nodes are where work can actually start.
 - **Leverage score** — the count of nodes that transitively depend on (sit above)
   a given node. In TOC terms this is the node's *constraint score*: a node with a
   high leverage score is acting as a constraint on the overall delivery flow —
@@ -345,8 +348,8 @@ For each node N, a canonical *global priority ranking value* is derived by trave
 1. **Traversal** — from N, follow all upward paths through dependents to the top of the graph. Traversal never terminates early.
 
 2. **Result generation** — two triggers produce a result value at depth d along any path:
-   - A **DeliverableVertical** node is encountered → generate a result for the chain from N up to and including that node.
-   - The **top of the path** is reached (node with no further dependents) → generate a result for the full chain. If the top is itself a DeliverableVertical, both triggers coincide — one result, not two.
+   - A **DeliverySlice** node is encountered → generate a result for the chain from N up to and including that node.
+   - The **top of the path** is reached (node with no further dependents) → generate a result for the full chain. If the top is itself a DeliverySlice, both triggers coincide — one result, not two.
 
 3. **Formula** — for a chain N = n₀, n₁, …, nₖ (where nₖ triggered the result):
 
@@ -441,10 +444,11 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 |  |                            |      |                          |  |
 |  |  - Adapter registry        | <==> |  - Delivery map lens     |  |
 |  |  - Active adapter (GH/...) | post |  - NCN graph lens        |  |
-|  |  - Ticket body parser      | msg  |  - Priorities + order    |  |
-|  |    (display-only)          |      |                          |  |
-|  |  - Workspace/global state  |      |  - (dumb view of bundle) |  |
-|  |  - Auth (e.g. GH provider) |      +--------------------------+  |
+|  |  - verto.config.json merge | msg  |  - Priorities + order    |  |
+|  |  - Ticket body parser      |      |                          |  |
+|  |    (display-only)          |      |  - (dumb view of bundle) |  |
+|  |  - Workspace/global state  |      +--------------------------+  |
+|  |  - Auth (e.g. GH provider) |                                    |
 |  +-------------+--------------+                                    |
 |                |                                                   |
 +----------------|---------------------------------------------------+
@@ -460,7 +464,7 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
                 |   - Canonical domain types/schema     |
                 |   - Validation (dangling deps, etc.)  |
                 |   - closure / readiness / leverage    |
-                |   - priority lifting + exec ordering  |
+                |   - priority ranking + impl order     |
                 |   - DAG layout                        |
                 +---------------------------------------+
 ```
@@ -470,8 +474,8 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 Host- and vendor-agnostic. Responsibilities:
 
 - **Canonical domain model** (the schema below) and its TypeScript types.
-- **Validation:** dangling dependency references, cycles, illegal status values,
-  invalid vertical designations, etc.
+- **Validation:** dangling dependency references, cycles, invalid vertical
+  designations, missing required canonical fields, etc.
 - **Pure algorithms**, initially ported from the deprecated original canvas so they
   depend only on the canonical model: `closureFor` (any node), `isReady`,
   leverage score, delivery completeness, **global priority ranking** (chain-traversal
@@ -483,16 +487,19 @@ Host- and vendor-agnostic. Responsibilities:
 
 ### 4.4 Canonical domain model (design in progress)
 
-> The canonical schema is **substantially defined** in [`packages/core/src/types.ts`](./packages/core/src/types.ts) — that file is the authoritative field-level definition. Remaining open items are marked with `TODO` comments there. The table below is retained for cross-referencing legacy canvas concepts; end users of the extension do not define the schema.
+> The canonical schema is defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts) — that file is the authoritative field-level definition and will become `@verto/core/src/types.ts`.
+>
+> **Minimal canonical design.** `VertoNode` exposes only the 7 fields that `@verto/core` algorithms and the UI strictly require (`id`, `title`, `state_reason`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`). All other ticket fields are passed through to `node.ticketFields` via `fieldMappings` — see §4.6.4. Fields are promoted to canonical only when an algorithm or core UI feature genuinely needs them.
 
-**Canonical schema spec** — see [`packages/core/src/types.ts`](./packages/core/src/types.ts). That file is the authoritative field-level definition and will become `@verto/core/src/types.ts`. The indicative mapping table below remains for cross-referencing the legacy canvas.
+The indicative mapping table below is retained for cross-referencing legacy canvas concepts.
 
 | Concept | Legacy canvas (deprecated original) | Meaning (target system) | Likely ticket home (per adapter) |
 |---|---|---|---|
 | Graph node | `node.id` | Any tracked ticket — uniform structure (~95% identical across all nodes) | Issue / sub-issue |
 | Node identity | `node.id` | Stable identifier | Issue key / stable slug |
 | Title / description | `label`, `desc` | Human name + detail (body may include task lists) | Issue title + body |
-| Delivery status | `status` (4-valued) | Progress state | Label or single-select custom field |
+| Delivery status | `status` (4-valued) | Workflow progress label — `ticketFields.status` (ticket passthrough; not used in graph math) | Per adapter — e.g. GitHub **ProjectV2 Status** field (see §4.6.7) |
+| Done signal | *(not in deprecated original)* | Canonical "is done" signal for graph math — `state_reason` (`completed` \| `not_planned`); open = null / `reopened` | Native GitHub issue `state_reason`; synthesised for other adapters |
 | Necessary-condition edge | `deps[]` | Prerequisite nodes (unified) | "blocked by" / "blocks" link **or** parent/child link |
 | Parent/child link | *(not in deprecated original)* | Same as NCN edge: child blocks parent | Sub-issue / parent issue relationship |
 | Vertical designation | journey `id` / name | Semantic role: deployable, value-adding slice (same as epic / journey) | Epic issue type, label, or field |
@@ -517,9 +524,8 @@ Host- and vendor-agnostic. Responsibilities:
   identically.
 - **Body task lists** in any ticket are documentation for humans; only child
   tickets and other dependency links affect the graph.
-- **Priority** is a property of vertical-designated nodes (ideally a ticket
-  field), from which per-node inherited priority and the global implementation
-  order are derived.
+- **Priority** is a required field on **all nodes** (default 5), from which the
+  global priority ranking and implementation order are derived — see §3.5.
 
 ### 4.5 Tickets in the tracker
 
@@ -540,39 +546,342 @@ The agreed mapping that resolves the canvas's conflation:
 
 ### 4.6 Multi-adapter support
 
+Verto loads delivery state from external trackers through **pluggable adapters**.
+Each adapter translates a vendor's native issue layout into the canonical
+`VertoGraph` consumed by `@verto/core`. Adapters are **not** a second source of
+truth — tickets in the tracker remain authoritative (see §4.9).
+
 - **Adapter interface (conceptual):** `loadProject(config) → DeliveryMapBundle`
-  (+ optional raw metadata), with optional `saveSession?` / `writeBack?`
-  capabilities added incrementally. Each adapter implements a **field-mapping
-  profile** translating vendor fields ↔ the canonical model — not a one-off hack.
-- **First adapter: GitHub Issues.** Grounded in the GitHub GraphQL capabilities
-  documented in [graphql/github-issues.md](./graphql/github-issues.md):
-  - NCN edge `A → B` (A is prerequisite for B) ⇒ `addBlockedBy(issueId: B,
-    blockingIssueId: A)` (B is blocked by A); read via `blockedBy` / `blocking`.
-  - Parent/child ⇒ sub-issue relationship (`addSubIssue`, `parent` / `subIssues`);
-    treated identically to blocking links for graph math (child blocks parent).
-  - Status ⇒ labels (`status:done`, …) or a repo **single-select custom field**.
-  - Vertical designation ⇒ epic issue type, label, or field.
-  - Body documentation ⇒ issue title + body (optional task-list parse for
-    Delivery Map display only).
-  - Vertical priority ⇒ a custom field on epics (or a ProjectV2 field/ordering).
-- **Later adapters:** Jira; local file-system trackers such as **Beans or Backlog.md**.
-  All implement the same interface and are selected/configured at workspace setup.
-- **Selection & configuration:** the adapter is chosen and configured when the
-  extension is first set up in a workspace (a setup wizard and/or a
-  `verto.config.*` file under `.vscode`/workspace).
+  (+ optional **raw metadata** from the source), with optional `saveSession?` /
+  `writeBack?` capabilities added incrementally.
+- **Later adapters:** Jira; local file-system trackers such as **Beans** or
+  **Backlog.md**. All implement the same interface and are selected/configured at
+  workspace setup (see §4.6.3–§4.6.6).
+
+The subsections below document the **adapter architecture** agreed for
+implementation.
+
+#### 4.6.1 Canonical vs tracker-native models
+
+Two distinct type layers — do not conflate them:
+
+| Layer | Location | Role |
+|---|---|---|
+| **Canonical** | [`packages/core/src/types.ts`](./packages/core/src/types.ts) (`VertoNode`, `VertoEdge`, `VertoGraph`, …) | What `@verto/core` algorithms consume. Vendor-agnostic. **Authoritative Verto schema.** |
+| **Tracker-native** | Per-adapter `system_types.ts` (e.g. `packages/adapters/github/system_types.ts`) | Typed shapes matching **that tracker's** issue layout after a read (e.g. GitHub `Issue`, ProjectV2 field values, issue type, labels, sub-issues, blocked-by). |
+
+**Persistence:** tracker-native types describe an **in-memory (or short-lived cache)
+representation during `loadProject`** — not a parallel backlog database. The only
+exception is file-based adapters (Beans, Backlog.md), where the on-disk format is
+itself the source store (see §4.9).
+
+**Raw metadata:** adapters may attach tracker-native payload (or a slim subset) alongside
+mapped nodes for write-back, debugging, and "open in tracker" links without
+re-fetching.
+
+#### 4.6.2 Adapter package layout
+
+Each adapter lives under `packages/adapters/<vendor>/` with a consistent internal
+split between **fixed vendor semantics**, **config-driven project fields**, **I/O**,
+**mapping**, and **orchestration**:
+
+```
+.vscode/
+  verto.config.json          # workspace-specific adapter + mapping config (see §4.6.3)
+
+packages/adapters/github/
+  defaults.verto.config.json # shipped defaults for this adapter (see §4.6.3)
+  system_types.ts            # vendor-native shapes (Issue, ProjectV2 field values, …)
+  project_fields.ts          # config-driven field registry (see §4.6.4)
+  client.ts                  # GraphQL / REST I/O — queries & mutations
+  mapper.ts                  # two-way mapping: tracker-native ↔ VertoNode / VertoEdge
+  adapter.ts                 # VertoAdapter: loadProject(), writeBack(), …
+```
+
+Other adapters follow the same skeleton. File-system adapters may have a thinner
+`project_fields.ts` (or none) when all fields are native to the format.
+
+**GraphQL references** (agent prompts / schema extracts) live under
+[`graphql/`](./graphql/) — e.g.
+[`graphql/github_issues_graphql.agent_prompt.md`](./graphql/github_issues_graphql.agent_prompt.md),
+[`graphql/hmans_beans_graphql.agent_prompt.md`](./graphql/hmans_beans_graphql.agent_prompt.md).
+These inform `client.ts`; they are not the adapter's TypeScript types.
+
+#### 4.6.3 Configuration: defaults and workspace
+
+Configuration is split into **adapter defaults** (versioned with the adapter) and
+**workspace overrides** (versioned with the project):
+
+| File | Location | Purpose |
+|---|---|---|
+| `defaults.verto.config.json` | `packages/adapters/<vendor>/` | Sensible conventions: adapter id, conventional field names, default **fieldMappings** (including value maps), Verto status vocabulary hooks, priority mapping tables, etc. |
+| `verto.config.json` | `.vscode/` | Workspace-specific wiring: adapter selection, repo/project identifiers, project-specific **fieldMappings**, conventions (e.g. which issue type marks a vertical). **No secrets** — auth tokens live in editor/env settings, not in this file. |
+
+**Effective config** is produced by merging defaults with workspace config; **workspace
+wins on conflict**:
+
+```
+effectiveConfig = deepMerge(adapterDefaults, workspaceConfig)
+```
+
+**Merge granularity for `fieldMappings` (decided): field-level.** If the workspace
+config defines a mapping entry for a Verto property (e.g. `status`), that entry
+**replaces the entire corresponding entry from defaults** — including its `from`
+binding and full `values` object. A partial workspace value map (e.g. only 5 of 10
+Status options) does **not** deep-merge with the defaults' `values`; it is the
+complete mapping for that field. Top-level config keys outside `fieldMappings` follow
+the same field-level replace semantics where applicable.
+
+**Future option:** value-level merge within a single `fieldMappings` entry (workspace
+`values` merged into defaults `values` by key) may be added later if needed; not
+supported initially.
+
+This override rule applies uniformly to:
+
+- **System fields** (built-in tracker / ProjectV2 fields such as Status, Title,
+  Assignees, Issue Type) — default semantics in `system_types.ts` and
+  `defaults.verto.config.json`; workspace `fieldMappings` override when present.
+- **Project-custom fields** (e.g. GitHub ProjectV2 custom columns such as
+  `resolution`, AI SDLC metadata) — default bindings in
+  `defaults.verto.config.json`; workspace overrides when the project differs.
+
+**Before the VS Code extension exists:** scripts and adapter development use
+`defaults.verto.config.json` directly, optionally merged with a hand-written or
+audit-generated `.vscode/verto.config.json`.
+
+**When the extension exists:** first-run setup asks for adapter type and project
+identity, runs the **audit/bootstrap** step (§4.6.6), copies merged defaults into
+`.vscode/verto.config.json`, and presents the draft for user editing — never
+starting from a blank config.
+
+A shared **`VertoConfig` TypeScript type** (and ideally JSON Schema) will govern
+both config files so the extension, audit script, and mapper validate the same
+structure.
+
+#### 4.6.4 Field mapping and the `FieldAccessor` contract
+
+All mapping configuration lives in a declarative **`fieldMappings`** object inside
+`verto.config.json` (and defaults). Each entry binds a **Verto canonical property**
+to a **ticket field** and defines how **values** are translated — not just names.
+
+**`fieldMappings` must support:**
+
+- **Field binding** — which ticket field feeds which `VertoNode` property (e.g.
+  issue `state_reason` → `state_reason`, ProjectV2 `Priority` → `priority`).
+- **Value mapping** — enum↔enum, string↔number, defaults, and explicit fallbacks
+  (e.g. map a tracker priority label to Verto `1–9`; map a Status option name to a
+  `Status` union member).
+
+Example shape (illustrative — exact schema to be defined in `VertoConfig`; file is JSONC so `//` comments are valid):
+
+```jsonc
+{
+  "adapter": "github",
+  "github": {
+    "owner": "manmilani",
+    "projectNumber": 1,
+    "repository": { "owner": "…", "name": "…" },
+    "fieldMappings": {
+      // --- Canonical VertoNode fields (routed to node root) ---
+      "state_reason": {
+        "from": { "kind": "issue", "field": "state_reason" }
+        // GitHub native values match StateReason directly — no values map needed
+      },
+      "priority": {
+        "from": { "kind": "projectV2", "field": "Priority" },
+        "values": { "Critical": 1, "High": 3, "Medium": 5, "Low": 7, "Deferred": 9 }
+      },
+      // --- Ticket fields (routed to node.ticketFields) ---
+      "status": {
+        "from": { "kind": "projectV2", "field": "Status" },
+        "type": "select"
+        // Options discovered by audit: "Draft", "In Progress", "Done", …
+      },
+      "storyPoints": {
+        "from": { "kind": "projectV2", "field": "Story Points" },
+        "type": "number"
+      }
+      // "sprint": { "from": { "kind": "projectV2", "field": "Sprint" }, "type": "iteration" }
+    },
+    "verticalIssueType": "Epic"
+  }
+}
+```
+
+**Mapper routing.** The mapper determines the destination for each `fieldMappings` entry by checking `CANONICAL_VERTO_NODE_KEYS` (exported from `types.ts`):
+
+- Key **in** `CANONICAL_VERTO_NODE_KEYS` → `node[key]` (canonical root, typed)
+- Key **not in** `CANONICAL_VERTO_NODE_KEYS` → `node.ticketFields[key]` (passthrough bag, `unknown`)
+
+No config annotation is needed — routing is automatic and transparent. To promote a field from `ticketFields` to canonical: add it to `VertoNode` and `CANONICAL_VERTO_NODE_KEYS`; the same `fieldMappings` entry then routes to the root without any config change.
+
+**System-only canonical fields.** Not all `CANONICAL_VERTO_NODE_KEYS` members appear
+in `fieldMappings`. `id`, `title`, `prereqIds`, and `childIds` are **always** populated
+by the system accessor (from tracker identity and dependency structure) and are **never**
+`fieldMappings` entries. `state_reason` and `priority` are the canonical fields that
+require user-configured source bindings and therefore do appear in `fieldMappings`.
+
+**`type` hint for ticket fields.** Non-canonical `fieldMappings` entries may carry an optional `"type"` hint (`"text"`, `"number"`, `"date"`, `"select"`, `"iteration"`). The mapper uses it to coerce raw source values to the correct JavaScript type. The hint is omitted for canonical fields (their types are in `types.ts`). The audit step populates it automatically from the source's field schema (§4.6.6).
+
+**Names only in user-facing config.** All field bindings, option names, issue type
+names, and repo/project identifiers in config files use **human-readable names**.
+**Node IDs** (GitHub field IDs, single-select option IDs, etc.) are **never**
+authored by users. ID resolution is a **runtime behaviour** for performance: the
+adapter may cache resolved IDs in memory (or optionally persist a cache inside
+workspace config), but must **always fall back to name-based lookup** if a cached
+ID is missing or stale.
+
+**`FieldAccessor` — adapter-internal mapping contract.** System fields and
+project-custom fields both implement a shared accessor interface so `mapper.ts` can
+compose them uniformly:
+
+```ts
+// Conceptual — exact signatures live in the adapter package
+// FieldWritePayload: to be defined when write-back is designed (§4.6.5).
+interface FieldAccessor {
+  readonly kind: 'system' | 'project';
+  getDefinitions(): FieldDefinition[];
+  readFromIssue(raw: unknown): Record<string, unknown>;
+  toVertoNodeFields(values: Record<string, unknown>): Partial<VertoNode>;
+  fromVertoNode(node: VertoNode): FieldWritePayload[];  // write-back — payload TBD
+}
+```
+
+- **System accessors** — backed by typed `system_types` and fixed mapping rules for
+  fields the adapter always handles (e.g. `id`, `title`, dependency links, issue type).
+  Always populate the canonical fields that have no user-configurable source (e.g.
+  `prereqIds` and `childIds` derived from blocking/sub-issue relationships).
+- **Project accessors** — backed by `project_fields.ts`, a **config-driven field
+  registry** that reads `fieldMappings` from effective config and exposes the same
+  `FieldAccessor` interface for all remaining fields — both canonical ones that need
+  user-configured source bindings (e.g. `state_reason`, `priority`) and non-canonical
+  ticket fields that land in `node.ticketFields`.
+
+**`kind` disambiguation.** `FieldAccessor.kind` (`'system' | 'project'`) describes
+which accessor *manages* a field. `from.kind` in `fieldMappings` config (e.g.
+`'issue' | 'projectV2'`) describes *where in the tracker* a field lives. The two
+`kind` values are in separate namespaces and do not conflict.
+
+**`FieldAccessor` does not limit GraphQL.** It standardises how tracker data is
+**projected onto `VertoNode`** for the read/write mapping path. `client.ts` retains
+full GraphQL (or REST) capability — arbitrary queries, mutations, pagination,
+batching, and future API features — for operations that do not map 1:1 to a single
+Verto field.
+
+**Status — system shape, project values.** The built-in ProjectV2 **Status** field
+is a **system** field in shape (single-select on the project), but its **allowed
+option set** is project-specific (e.g. the Verto 10-state workflow). Default Status
+semantics and value maps live in `system_types.ts` and `defaults.verto.config.json`;
+workspace `fieldMappings` override when the project's Status options differ. The
+audit step (§4.6.6) detects the current Status options and drafts the mapping
+section.
+
+#### 4.6.5 Adapter internals: client, mapper, adapter
+
+| Module | Responsibility |
+|---|---|
+| **`client.ts`** | All I/O with the data source: auth, pagination, rate limits, GraphQL/REST calls. Returns tracker-native shapes (`system_types`). Unrestricted by `FieldAccessor`. |
+| **`mapper.ts`** | Two-way translation between tracker-native data and `VertoNode` / `VertoEdge`, composing system and project `FieldAccessor`s and applying `fieldMappings` (field + value). Applies **required-field fallback policy** (below). May delegate to accessors; split into sub-modules later if it grows. |
+| **`adapter.ts`** | Orchestrates: load effective config → `client` read → map to `VertoGraph` → run `@verto/core` → `DeliveryMapBundle`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
+
+**Required-field fallback policy (read path).** Some `VertoNode` properties are
+required but may have no mapped ticket field. The mapper must behave consistently:
+
+| Category | Verto properties (examples) | Behaviour when unmapped / invalid |
+|---|---|---|
+| **System-mapped — always present** | `id`, `title`, `prereqIds`, `childIds` | Populated by system accessor from the tracker's structure (issue identity, sub-issue/blocking links). If genuinely absent, tracker data is corrupt — error. |
+| **No sensible default — fail** | `state_reason`, `isDeliverySlice` | **Error; do not produce a graph.** Missing `state_reason` means readiness and ordering cannot be computed. Missing `isDeliverySlice` detection means the priority algorithm has no delivery-slice anchors. |
+| **Valid neutral default — continue** | `priority` | **Use default `5`**, continue loading. Audit flags the missing mapping as a gap; blocking the whole project for a missing priority column is unnecessarily heavy when `5` is the defined neutral value (see `types.ts`). Emit a non-fatal notice (log / UI warning). |
+
+Other required fields will be classified into one of these categories as adapters
+are implemented. **`FieldWritePayload`** (used by `FieldAccessor.fromVertoNode`) is
+**to be defined when write-back is designed** — not required for read-only MVP.
+
+**Read path:**
+
+```
+Tracker → client.ts → tracker-native types → mapper.ts (+ FieldAccessors) → VertoGraph → @verto/core → DeliveryMapBundle
+```
+
+**Write path (future):**
+
+```
+UI / core change → mapper.ts (reverse) → client.ts mutations → Tracker
+```
+
+#### 4.6.6 Project audit and config bootstrap
+
+To avoid manual enumeration of project-specific fields, adapters support an
+**audit/bootstrap** step that queries the live project (e.g. GitHub ProjectV2
+fields, options, issue types) and produces a **draft** `.vscode/verto.config.json`:
+
+1. List all relevant ticket fields, types, and enum/option values (system + custom).
+2. Pre-fill `fieldMappings` by merging **adapter defaults** with what was discovered
+   (known Verto properties such as `state_reason`, `priority`, `status`, AI SDLC metadata fields).
+3. Flag **gaps** — Verto concepts with no matching ticket field (e.g. `priority` if
+   not on the board).
+4. Emit a draft config using **names only**; ID caches are populated at runtime on
+   first load.
+
+**Interim tooling:** [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs)
+prototypes aligning a GitHub ProjectV2 field *schema* with the VertoNode-derived
+column set (Status options + custom fields). The extension's setup wizard will
+reuse this discovery logic when seeding `verto.config.json`.
+
+#### 4.6.7 First adapter: GitHub Issues
+
+Grounded in GitHub GraphQL capabilities documented under
+[`graphql/`](./graphql/).
+
+| Verto concept | GitHub home (decided) |
+|---|---|
+| **NCN edge** `A → B` (A prerequisite for B) | `addBlockedBy(issueId: B, blockingIssueId: A)`; read via `blockedBy` / `blocking` |
+| **Parent/child** (child blocks parent) | Sub-issue relationship (`addSubIssue`, `parent` / `subIssues`); same graph semantics as blocking |
+| **State reason** (`state_reason`) | Native GitHub issue field `state_reason` (`completed` / `not_planned` / `reopened`) — mapped via `fieldMappings`; values match `StateReason` directly so no `values` map needed for GitHub. Drives `isReady` and `implementationOrder`. |
+| **Status** (`ticketFields.status`) | ProjectV2 built-in `Status` field — non-canonical passthrough; `"type": "select"`; option set may follow the recommended `Status` vocabulary (see `types.ts`) |
+| **Issue type** (`VertoNode.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
+| **Vertical designation** | Issue type (e.g. Epic) and/or label — configured in `verto.config.json` |
+| **Body documentation** | Issue title + body; optional task-list parse for Delivery Map display only |
+| **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
+| **Labels, assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |
+| **Source URL** (`ticketFields.ticketUrl`) | Native issue `url` field — link back to the source ticket |
+| **Priority** (`priority`) | Mapped via `fieldMappings` with `values` map when a source priority field exists. **If unmapped:** mapper uses **`5`** (neutral default) and continues; audit flags the gap. See required-field fallback policy (§4.6.5). |
+
+**GitHub issue types (reference):** every org ships with **Task**, **Bug**, and
+**Feature**; org owners may create up to **25** types total (rename/disable/delete
+defaults allowed). Types are org-scoped and shared across repos.
+
+**Excluded from project field sync** (graph / adapter identity, not board columns):
+`id`, `prereqIds`, `childIds`, `isDeliverySlice` (derived from issue type).
+**`priority`** is optional on the board — when absent, mapper defaults to `5` (§4.6.5).
+**`ticketUrl`** is populated from the native issue `url`; no board column needed.
+
+**Recommended in `defaults.verto.config.json`.** Fields that are now non-canonical
+ticket passthroughs — particularly `labels`, `assignee`, `body`, `type`,
+`created_at`, `updated_at`, and AI SDLC metadata — should be pre-configured in the
+adapter defaults file so teams get them out of the box without manual enumeration.
+Noisy or rarely-needed entries (e.g. AI SDLC fields) may be commented out by default
+but should be present and auditable. The extension's audit step (§4.6.6) populates
+these from the live project schema.
 
 ### 4.7 State: tickets vs. workspace
 
-- **In tickets (shared, versioned with the backlog):** status, dependency links
+- **In tickets (shared, versioned with the backlog):** workflow status
+  (`ticketFields.status`) and done signal (`state_reason`), dependency links
   (parent/child and BlockedBy/Blocking), body content (including any task lists),
   vertical narrative, and — as much as possible — **vertical priority**. Rule of
   thumb: *if a teammate should see it without opening your IDE, it's in the
   ticket.*
-- **In workspace/global state (local wiring & preferences):** which adapter,
-  repo/project identifiers, field-ID mapping overrides, refresh interval,
-  conventions (e.g. which label marks an epic as a vertical), and transient view
-  state (selected vertical, current lens, graph pan/zoom). Rule of thumb: *if it's
-  "how this repo is wired to the extension," it's workspace config.*
+- **In workspace config** ([`.vscode/verto.config.json`](./.vscode/verto.config.json)):
+  adapter selection; repo/project identifiers; **`fieldMappings`** (field bindings
+  and value maps for system and project-custom fields); conventions (e.g.
+  `verticalIssueType`); optional runtime ID caches. Rule of thumb: *if it's "how
+  this workspace is wired to its tracker," it's workspace config.*
+- **In workspace/global editor state (transient UI):** refresh interval, selected
+  vertical, current lens, graph pan/zoom — not committed to `verto.config.json`
+  unless we later decide otherwise.
+- **Secrets** (GitHub PAT, etc.): editor or environment settings — **never** in
+  `verto.config.json`.
 
 ### 4.8 Verto for VS Code (extension shell)
 
@@ -600,7 +909,7 @@ The agreed mapping that resolves the canvas's conflation:
 
 ### 4.9 Data source of truth vs declarative formats
 
-**Tickets (via adapters) are the source of truth.** All delivery state — status,
+**Tickets (via adapters) are the source of truth.** All delivery state — workflow status, done signal (`state_reason`),
 dependencies (including parent/child), vertical priority, narrative — lives in
 the issue tracker (or file-based ticket store) and is loaded through adapters.
 
@@ -612,8 +921,13 @@ only as:
 - a **validation artefact** in CI (schema + dangling-dependency checks); or
 - the **on-disk format** for file-based adapters (e.g. Beans or Backlog.md).
 
-The canonical schema governs what adapters produce; it is not a separate
-user-editable project file in the ticket-first workflow.
+**`verto.config.json` is wiring, not backlog data.** It holds adapter selection and
+**fieldMappings** (how tracker fields map to `VertoNode`) — not issue titles,
+status values, or dependency graphs. Those live in tickets and are loaded on each
+`loadProject()`.
+
+The canonical schema governs what adapters **produce** for `@verto/core`; it is
+not a separate user-editable project file in the ticket-first workflow.
 
 ### 4.10 Future extensibility
 
@@ -636,7 +950,7 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.1 Domain model & ticket schema (design in progress)
 
-- ~~**Final canonical schema.**~~ **Substantially closed** — defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). Remaining open items (estimate, iterationId, persona/outcome narrative, black-box representation) marked with `TODO` there.
+- ~~**Final canonical schema.**~~ **Closed** — minimal canonical set (`id`, `title`, `state_reason`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`) defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). All other fields are ticket passthroughs via `fieldMappings` → `node.ticketFields`. Fields are promoted to canonical only when an algorithm or core UI feature requires them.
 - ~~**Status vocabulary.**~~ **Closed** — 10-state workflow vocabulary defined in `types.ts` `Status` type. "Partial" is a derived completion percentage (closed children / total closure), not a discrete state.
 - ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
 - ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
@@ -646,8 +960,9 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.2 Delivery Map presentation & decomposition
 
-- **Vertical designation.** How does the system identify which nodes are
-  verticals for the Delivery Map lens? (epic issue type, label, custom field, …)
+- **Vertical designation (UI behaviour).** Config convention is **native issue type**
+  (e.g. Epic) via `verticalIssueType` in `verto.config.json` (§4.6.7); remaining:
+  fallback when type unset, label-based designation, and Delivery Map filtering UX.
 - **Delivery Map layout.** Exact presentation of body documentation vs child
   tickets side by side — ordering, grouping, status display, empty states (epic
   with body but no children yet).
@@ -656,20 +971,46 @@ All open questions, ambiguities, and not-yet-decided items live here.
 - **Decomposition workflow.** How child tickets are created when breaking down a
   parent (manual command, template, UI action, auto-link back to parent).
 - **The ~5% node differences.** What fields or behaviours differ between nodes
-  if ~95% are structurally identical? (e.g. vertical designation, priority field,
+  if ~95% are structurally identical? (e.g. vertical designation,
   narrative template sections.)
 
 ### 5.3 Adapters & data
 
+- ~~**Adapter package architecture.**~~ **Closed** — canonical vs tracker-native
+  types, package layout (`system_types`, `project_fields` registry, `client`, `mapper`,
+  `adapter`), `FieldAccessor` contract, `CANONICAL_VERTO_NODE_KEYS` routing
+  (canonical → node root; non-canonical → `node.ticketFields`), and read/write
+  pipeline — see §4.6.1–§4.6.5.
+- ~~**Configuration model.**~~ **Closed** — `defaults.verto.config.json` per adapter,
+  `.vscode/verto.config.json` workspace overrides, `fieldMappings` (field + value),
+  **field-level** merge granularity for `fieldMappings` (workspace entry replaces
+  whole default entry; value-level merge deferred), names-only user-facing config,
+  runtime ID cache with name fallback, workspace-wins merge — see §4.6.3–§4.6.4.
+- ~~**GitHub field conventions (Verto workspace).**~~ **Closed for initial project** —
+  `state_reason` via native GitHub issue field (no board column needed); `status` on
+  ProjectV2 built-in `Status`; `priority` + AI SDLC fields on ProjectV2 custom
+  columns; issue type via native org-level Issue Type; vertical via issue type (e.g.
+  Epic) — see §4.6.7. Prototyped field-schema sync:
+  [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
+- ~~**Config bootstrap / audit.**~~ **Closed (design)** — audit step drafts
+  `verto.config.json` from live project shape; extension setup copies defaults and
+  presents draft for edit — see §4.6.6.
+- ~~**Required-field fallback (read path).**~~ **Closed** — fail without graph for
+  fields with no sensible default (e.g. `state_reason`, `isDeliverySlice`); use neutral
+  default and continue for others (e.g. `priority` → `5`) with audit/warning — see §4.6.5.
+- **`VertoConfig` schema.** Exact JSON/TypeScript shape for `fieldMappings` entries
+  (including value-map syntax, `from.kind` variants, validation rules).
 - **Read-only MVP vs. write-back day one.** Likely read-only first, but confirm.
 - **Write-back conflict policy.** Concurrency/merge rules when the UI and the
   tracker disagree.
-- **GitHub specifics.** Exact label/field/issue-type conventions; rate-limit and
-  caching strategy; GraphQL node-ID resolution flow; how "epic" is recognised.
+- **GitHub operational details.** Rate-limit and caching strategy; pagination
+  patterns for large projects; optional persistence of resolved ID cache in workspace
+  config vs in-memory only.
 - **Adapter capability differences.** How the core/UI degrade gracefully when an
   adapter lacks a feature (e.g. no custom fields, no native blocking links).
 - **Beans or Backlog.md / file-system shape.** File format, on-disk schema, and how
-  dependencies/priorities are expressed in files.
+  dependencies/priorities are expressed in files; equivalent of `project_fields.ts`
+  for config-driven fields if needed.
 
 ### 5.4 Extension & UI
 
@@ -683,7 +1024,10 @@ All open questions, ambiguities, and not-yet-decided items live here.
   counts.
 - **Where the panel lives.** Editor tab vs. sidebar vs. custom editor; and how
   (if at all) it integrates with agent/chat workflows.
-- **Setup UX.** Wizard vs. config file vs. both for first-run adapter selection.
+- ~~**Setup UX (adapter config).**~~ **Closed (design)** — wizard asks adapter +
+  project identity, runs audit, seeds `.vscode/verto.config.json` from
+  `defaults.verto.config.json` + discovered project shape, user edits before save —
+  see §4.6.3, §4.6.6. Remaining: exact wizard screens and validation UX.
 
 ### 5.5 Product & process
 

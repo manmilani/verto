@@ -3,26 +3,21 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Progress state of a node.
- * NOTE: Just for context and clarity, not for exact mapping or usage going forward. The deprecated canvas's states mapping:
- *            - "done" or "Implemented":  'Closed'
- *            - "In progress":            'Implementing' | 'To_Verify' | 'Verifying'
- *            - "Spec'd - not built":     'To_Plan' | 'Planning' | 'To_Implement'
- *            - "Black box":              'Draft' | 'To_Specify' | 'Specifying'
+ * State reason of a node — the canonical "is done" signal for all graph math.
+ * Matches GitHub's native `state_reason` field values.
  *
- *            - "partial": Represented by percentage of child+self issues that are in 'Closed' state. E.g. an open issue node with 3 child issues, of which 2 are 'Closed' and 1 is not 'Closed', would be considered 2/(1+3) = 50% done (and thus 'partial' in the old canvas).
+ *   null / undefined  →  open / not done
+ *   'reopened'        →  open / not done (was closed, has been reopened)
+ *   'completed'       →  done (successfully completed)
+ *   'not_planned'     →  done (will not be built / cancelled)
+ *
+ * isDone(N)  =  N.state_reason === 'completed' || N.state_reason === 'not_planned'
+ * isOpen(N)  =  !N.state_reason || N.state_reason === 'reopened'
+ *
+ * Adapters without a native state_reason field synthesise this from ticket status:
+ *   e.g. Beans: status 'completed' → 'completed', status 'scrapped' → 'not_planned'
  */
-export type Status =  'Draft'         |
-                      'To_Specify'    | 'Specifying'   |   // [Includes Mandatory Review]  Specification of what needs to be done (requirements), with acceptance criteria, definition of done, etc.
-                      'To_Plan'       | 'Planning'     |   // [Includes Mandatory Review]  Planning the work. Produces an Implementation Plan documentation section in issue body, and possible breakdown into sub-issues.
-                      'To_Implement'  | 'Implementing' |   // [Includes Mandatory Review]  Implementation of the work, when not blocked by any dependencies/prerequisites. Implementation may be done on a feature branch, but must be merged back to Main branch with --fast-forward-only before verification.
-                      'To_Verify'     | 'Verifying'    |   // [May Include Merge Review]   Integration into Main branch, and then Verifying the work (QA, Unit/System/Integration Testing). Verification may ONLY be done on Main branch after merge. Non-fast-forward merges MUST be reviewed.
-                      'Closed';
-
-/**
- * Resolution of a node. Only meaningful when status is 'Closed' — captures why it's closed.
- */
-export type Resolution = 'Done/Resolved' | 'Duplicate' | 'Won\'t Do' | 'Obsolete';
+export type StateReason = 'completed' | 'not_planned' | 'reopened';
 
 /**
  * Priority of a node. Integer in the range 1–9 (inclusive). Lower = more important.
@@ -40,9 +35,38 @@ export type Resolution = 'Done/Resolved' | 'Duplicate' | 'Won\'t Do' | 'Obsolete
  */
 export type Priority = number;
 
+/**
+ * Recommended status vocabulary for Verto-native status field mappings.
+ *
+ * Status is NOT a canonical VertoNode field — it is a ticket passthrough field
+ * routed to node.ticketFields.status via fieldMappings. Adapters may map tracker-native
+ * status values to this vocabulary for richer cross-adapter display; it is not
+ * enforced by @verto/core. The canonical "is done" signal is `state_reason`.
+ *
+ * If promoted to canonical in future, add to VertoNode root and CANONICAL_VERTO_NODE_KEYS.
+ */
+export type Status =  'Draft'         |
+                      'To_Specify'    | 'Specifying'   |
+                      'To_Plan'       | 'Planning'     |
+                      'To_Implement'  | 'Implementing' |
+                      'To_Verify'     | 'Verifying'    |
+                      'Closed';
+
 // ---------------------------------------------------------------------------
 // Core node
 // ---------------------------------------------------------------------------
+
+/**
+ * The canonical set of VertoNode root property names.
+ * Used by the adapter mapper to route fieldMappings entries:
+ *   key in CANONICAL_VERTO_NODE_KEYS      →  node[key]               (canonical root)
+ *   key not in CANONICAL_VERTO_NODE_KEYS  →  node.ticketFields[key]  (ticket passthrough)
+ * Update this set whenever a new canonical field is added to VertoNode.
+ */
+export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
+  'id', 'title', 'state_reason', 'isDeliverySlice',
+  'priority', 'prereqIds', 'childIds',
+]);
 
 export interface VertoNode {
   /** Stable adapter-scoped identifier (e.g. GitHub issue node ID, Beans NanoID). */
@@ -51,91 +75,78 @@ export interface VertoNode {
   /** Human-readable short title. */
   title: string;
 
-  /** Current progress state. */
-  status: Status;
-
-  /** Resolution of the node. Only meaningful when status is 'Closed'. */
-  resolution?: Resolution;
-
   /**
-   * Long-form description. May contain markdown task lists (`- [ ]`).
-   * Display only — completely ignored by all NCN/TOC algorithms.
+   * State reason — the canonical "is done" signal for all graph math.
+   *
+   *   null / undefined  →  open / not done
+   *   'reopened'        →  open / not done
+   *   'completed'       →  done
+   *   'not_planned'     →  done
+   *
+   * isDone(N)  =  N.state_reason === 'completed' || N.state_reason === 'not_planned'
+   * isReady(N) =  isOpen(N) && all prereqs satisfy isDone
+   *
+   * Adapters synthesise this from ticket status where no native field exists
+   * (e.g. Beans: 'completed' → 'completed', 'scrapped' → 'not_planned').
    */
-  body?: string;
+  state_reason?: StateReason;
 
   /**
-   * True when this node is designated as a deliverable vertical slice
-   * (deployable, standalone-value slice — same concept as epic / journey).
+   * True when this node is designated as a delivery slice
+   * (deployable, standalone-value slice — same concept as epic / journey / vertical).
    * Semantic designation only; does not change graph structure or algorithm behaviour.
-   * NOTE: how the adapter detects this (epic issue type, label, custom field, …) is specified
-   * in the adapter contract, not here. This is just a boolean flag for core algorithms to know about.
+   * How the adapter detects this is configured via verticalIssueType in verto.config.json.
    */
-  isDeliverableVertical: boolean;
-
-  /** Issue type, if available from the adapter (e.g. Epic, Story, Task, Bug, etc) — for potential future use in algorithms and/or display (e.g. different shapes or colors for different issue types). */
-  type?: string;
+  isDeliverySlice: boolean;
 
   /**
-   * Priority of this node (1–9; see `Priority` type). Required on all nodes; default 5.
+   * Priority of this node (1–9; see Priority type). Required on all nodes; default 5.
    * Feeds the global priority ranking algorithm — see DESIGN.md §3.5.
    */
   priority: Priority;
 
   /**
-   * Unified list of IDs of all prerequisite nodes (dependencies) of this node, for core algorithms to easily access all necessary-condition relationships.
-   * including all dependency relationships (parent/child (child blocks parent) and BlockedBy/Blocking edges).
+   * Unified list of all prerequisite node IDs (necessary conditions).
+   * Includes both parent-child and blocking relationships.
+   * Used by: closureFor, isReady, leverageScore, globalPriorityRanking, implementationOrder.
    */
-  prereqIds: string[]; // required field for core algorithms — captures all necessary-condition relationships, including both parent-child and blocking relationships.
+  prereqIds: string[];
 
-  /** IDs of child nodes, for whom this node is a parent. */
-  childIds: string[];  // captures only parent-child necessary-condition relationships, for convenience of calculating vertical completion percentage and for potential UI distinction.
+  /**
+   * IDs of child nodes for whom this node is a parent.
+   * Subset of prereqIds (parent-child edges only); used for delivery completeness
+   * percentage and Delivery Map display.
+   */
+  childIds: string[];
 
-  // // -- Vertical-only narrative (populated when isVertical = true) -------------
-  // /**
-  //  * Who this vertical is for (persona / user role).
-  //  * TODO: decide whether this is a structured field or parsed from body template.
-  //  */
-  // persona?: string;
-  // /**
-  //  * What completing this vertical achieves (outcome narrative).
-  //  * TODO: decide whether this is a structured field or parsed from body template.
-  //  */
-  // outcome?: string;
-
-  // -- NOTE: The following additional fields are for display and filtering only (for now), not used by core algorithms --------------
-  assignee?: string;          // assignee
-  // estimate?: number;          // effort (if feeds ordering — decide first)
-  labels: string[];          // labels or tags, if available from the adapter
-  created_at?: string;        // ISO 8601 timestamp, if available from the adapter
-  updated_at?: string;        // ISO 8601 timestamp, if available from the adapter
-  // iterationId?: string;     // sprint / iteration / milestone
-  externalUrl?: string;       // link back to the source ticket
-
-  /** AI-assisted SDLC metadata — traceability and model performance tracking. */
-  ai_sdlc?: VertoNodeAISDLCMetadata;
-}
-
-// ---------------------------------------------------------------------------
-// AI SDLC metadata
-// ---------------------------------------------------------------------------
-
-/**
- * AI-assisted software development lifecycle metadata for a node.
- * Captures traceability (who/what contributed at each phase) and token usage
- * for potential future analysis of AI-assisted specification, planning,
- * implementation, and verification quality.
- */
-export interface VertoNodeAISDLCMetadata {
-  specified_by?: string[];      // Author(s) or AI chat session IDs that contributed to specification (writing/reviewing the issue body, acceptance criteria, etc).
-  planned_by?: string[];        // Author(s) or AI chat session IDs that contributed to planning (writing/reviewing the implementation plan, breaking down into sub-issues, etc).
-  implemented_by?: string[];    // Author(s) or AI chat session IDs that contributed to implementation (commits, PRs, code reviews, etc).
-  verified_by?: string[];       // Author(s) or AI chat session IDs that contributed to verification (QA, testing, etc).
-
-  ai_tokens_estimate?: number;  // Estimated AI agent tokens to specify, plan, implement, and verify this node. Set when planning is done; must be present before transitioning to 'To_Implement'; never updated after that.
-  ai_tokens_used?: number;      // Actual AI agent tokens used across the full lifecycle. Updated throughout; finalised when node is Closed.
-
-  ai_model_worker?: string[];   // Recommended AI models for doing the work (planning & implementation), based on node attributes and historical performance on similar nodes.
-  ai_model_reviewer?: string[]; // Recommended AI models for reviewing the work (code review, testing & validation), based on node attributes and historical performance on similar nodes.
+  /**
+   * Ticket fields that do not map to a canonical VertoNode property.
+   * Populated by the mapper from fieldMappings entries whose key is not in
+   * CANONICAL_VERTO_NODE_KEYS. Values are type-coerced by the mapper using the
+   * field's declared `type` hint in config. Not used by @verto/core algorithms.
+   *
+   * Previously-canonical fields now configured here via fieldMappings:
+   *   status?: string         — ticket progress state (raw tracker values; see Status
+   *                             type for recommended Verto vocabulary)
+   *   body?: string           — long-form description / markdown
+   *   type?: string           — issue type (Epic, Story, Task, Bug, etc.)
+   *   assignee?: string       — assigned user
+   *   labels?: string[]       — labels or tags
+   *   created_at?: string     — ISO 8601 creation timestamp
+   *   updated_at?: string     — ISO 8601 last-updated timestamp
+   *   ticketUrl?: string      — link back to the ticket in the tracker
+   *
+   * AI SDLC traceability and model tracking (recommended fieldMappings key names):
+   *   specified_by?: string[]      — session IDs / authors who contributed to specification
+   *   planned_by?: string[]        — session IDs / authors who contributed to planning
+   *   implemented_by?: string[]    — session IDs / authors who contributed to implementation
+   *   verified_by?: string[]       — session IDs / authors who contributed to verification
+   *   ai_tokens_estimate?: number  — estimated AI tokens for the full lifecycle
+   *   ai_tokens_used?: number      — actual AI tokens used across the full lifecycle
+   *   ai_model_worker?: string[]   — recommended models for doing the work
+   *   ai_model_reviewer?: string[] — recommended models for reviewing the work
+   */
+  ticketFields?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,10 +162,10 @@ export interface VertoEdge {
   to:   string;  // dependent node id
 
   /**
-   * Why is the nature of the relationship this edge represents — metadata only;
-   * Core algorithms treat all edges as the same kind of necessary-condition relationship, but
-   * 'child' nodes are also used in calculating the completion percentage of parent nodes, and
-   * may be visually distinguished in the UI (e.g. with a different color edge or a different shape node).
+   * Nature of the relationship — metadata only.
+   * Core algorithms treat all edges as the same necessary-condition relationship.
+   * 'parent-child' edges are also used for delivery completeness % and may be
+   * visually distinguished in the UI.
    */
   reason: 'parent-child' | 'blocking' | string;
 }
@@ -175,13 +186,12 @@ export interface VertoGraph {
  */
 export interface DeliveryMapBundle {
   graph: VertoGraph;
-  // derived / pre-computed — to be specified
   implementationOrder?: string[];  // ordered node ids
   readyIds?: string[];
   /**
-   * Per-node leverage score: maps node id → count of nodes that transitively depend on it (sit above it).
-   * In TOC terms this is the node's constraint score — higher = bigger blocker on overall delivery flow.
-   * Used for tie-breaking in implementation order and for visual emphasis in the NCN graph lens.
+   * Per-node leverage score: maps node id → count of nodes that transitively depend on it.
+   * In TOC terms this is the node's constraint score — higher = bigger blocker on delivery flow.
+   * Used for tie-breaking in implementation order and visual emphasis in the NCN graph lens.
    * See DESIGN.md §3.3.
    */
   leverageScore?: Record<string, number>;
