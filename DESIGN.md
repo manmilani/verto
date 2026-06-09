@@ -288,9 +288,7 @@ the NCN graph shows the full network with no special casing.
   in-edges to a node is the complete set of its prerequisites.
 - **Status** — a source-specific progress label, passed through as a display field
   (`node.ticketFields.status`). Not a canonical `@verto/core` concept. The canonical
-  "is done" signal is `VertoNode.state_reason` (`completed` or `not_planned`). See
-  the `Status` type in [`packages/core/src/types.ts`](./packages/core/src/types.ts)
-  for the recommended Verto status vocabulary adapters may map to.
+  done signal is `VertoNode.isDone: boolean` — see §4.4.
 
 Modelling shared enablers as a *single* node that many delivery subgraphs depend
 on is what makes **leverage** visible: a missing foundational node may block many
@@ -304,9 +302,9 @@ algorithms are node-agnostic):
 
 - **Closure** — the complete transitive set of prerequisites required to
   deliver a node (that node plus everything it depends on).
-- **Readiness** — a node is *ready* when it is open (`state_reason` is null or
-  `'reopened'`) and **all** of its direct prerequisites are done (`state_reason` is
-  `'completed'` or `'not_planned'`). Ready nodes are where work can actually start.
+- **Readiness** — a node is *ready* when it is not done (`isDone === false`) and
+  **all** of its direct prerequisites are done (`isDone === true`). Ready nodes are
+  where work can actually start.
 - **Leverage score** — the count of nodes that transitively depend on (sit above)
   a given node. In TOC terms this is the node's *constraint score*: a node with a
   high leverage score is acting as a constraint on the overall delivery flow —
@@ -489,7 +487,7 @@ Host- and vendor-agnostic. Responsibilities:
 
 > The canonical schema is defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts) — that file is the authoritative field-level definition and will become `@verto/core/src/types.ts`.
 >
-> **Minimal canonical design.** `VertoNode` exposes only the 7 fields that `@verto/core` algorithms and the UI strictly require (`id`, `title`, `state_reason`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`). All other ticket fields are passed through to `node.ticketFields` via `fieldMappings` — see §4.6.4. Fields are promoted to canonical only when an algorithm or core UI feature genuinely needs them.
+> **Minimal canonical design.** `VertoNode` exposes only the 8 fields that `@verto/core` algorithms and the UI strictly require (`id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`, `ticketUrl`). All other ticket fields are passed through to `node.ticketFields` via `fieldMappings` — see §4.6.4. Fields are promoted to canonical only when an algorithm or core UI feature genuinely needs them.
 
 The indicative mapping table below is retained for cross-referencing legacy canvas concepts.
 
@@ -499,7 +497,7 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 | Node identity | `node.id` | Stable identifier | Issue key / stable slug |
 | Title / description | `label`, `desc` | Human name + detail (body may include task lists) | Issue title + body |
 | Delivery status | `status` (4-valued) | Workflow progress label — `ticketFields.status` (ticket passthrough; not used in graph math) | Per adapter — e.g. GitHub **ProjectV2 Status** field (see §4.6.7) |
-| Done signal | *(not in deprecated original)* | Canonical "is done" signal for graph math — `state_reason` (`completed` \| `not_planned`); open = null / `reopened` | Native GitHub issue `state_reason`; synthesised for other adapters |
+| Done signal | *(not in deprecated original)* | Canonical "is done" signal for graph math — `isDone: boolean`; `isReady = !isDone && all prereqs isDone` | GitHub: native `closed` boolean (system accessor); other adapters: derived in system_types or overridable via fieldMappings |
 | Necessary-condition edge | `deps[]` | Prerequisite nodes (unified) | "blocked by" / "blocks" link **or** parent/child link |
 | Parent/child link | *(not in deprecated original)* | Same as NCN edge: child blocks parent | Sub-issue / parent issue relationship |
 | Vertical designation | journey `id` / name | Semantic role: deployable, value-adding slice (same as epic / journey) | Epic issue type, label, or field |
@@ -614,8 +612,8 @@ Configuration is split into **adapter defaults** (versioned with the adapter) an
 
 | File | Location | Purpose |
 |---|---|---|
-| `defaults.verto.config.json` | `packages/adapters/<vendor>/` | Sensible conventions: adapter id, conventional field names, default **fieldMappings** (including value maps), Verto status vocabulary hooks, priority mapping tables, etc. |
-| `verto.config.json` | `.vscode/` | Workspace-specific wiring: adapter selection, repo/project identifiers, project-specific **fieldMappings**, conventions (e.g. which issue type marks a vertical). **No secrets** — auth tokens live in editor/env settings, not in this file. |
+| `defaults.verto.config.json` | `packages/adapters/<vendor>/` | Sensible conventions: adapter id, conventional field names, default **fieldMappings** (including value maps, type hints), priority mapping tables, recommended ticket passthrough entries, etc. |
+| `verto.config.json` | `.vscode/` | Workspace-specific wiring: adapter selection, repo/project identifiers, project-specific **fieldMappings** (including optional overrides for system-mapped fields). **No secrets** — auth tokens live in editor/env settings, not in this file. |
 
 **Effective config** is produced by merging defaults with workspace config; **workspace
 wins on conflict**:
@@ -667,10 +665,9 @@ to a **ticket field** and defines how **values** are translated — not just nam
 **`fieldMappings` must support:**
 
 - **Field binding** — which ticket field feeds which `VertoNode` property (e.g.
-  issue `state_reason` → `state_reason`, ProjectV2 `Priority` → `priority`).
+  ProjectV2 `Priority` → `priority`, issue `type` → `isDeliverySlice`).
 - **Value mapping** — enum↔enum, string↔number, defaults, and explicit fallbacks
-  (e.g. map a tracker priority label to Verto `1–9`; map a Status option name to a
-  `Status` union member).
+  (e.g. map a tracker priority label to Verto `1–9`; map issue `type` values to `true`/`false` for `isDeliverySlice`).
 
 Example shape (illustrative — exact schema to be defined in `VertoConfig`; file is JSONC so `//` comments are valid):
 
@@ -683,10 +680,14 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
     "repository": { "owner": "…", "name": "…" },
     "fieldMappings": {
       // --- Canonical VertoNode fields (routed to node root) ---
-      "state_reason": {
-        "from": { "kind": "issue", "field": "state_reason" }
-        // GitHub native values match StateReason directly — no values map needed
-      },
+      //
+      // isDone: system-mapped from native GitHub `closed` boolean — no entry needed by default.
+      // Override example (derive from a status field instead):
+      // "isDone": { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true, "Closed": true } }
+      //
+      // isDeliverySlice: system-mapped — true for top-level tickets (parent is null).
+      // Override to use issue type instead:
+      // "isDeliverySlice": { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }
       "priority": {
         "from": { "kind": "projectV2", "field": "Priority" },
         "values": { "Critical": 1, "High": 3, "Medium": 5, "Low": 7, "Deferred": 9 }
@@ -702,8 +703,7 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
         "type": "number"
       }
       // "sprint": { "from": { "kind": "projectV2", "field": "Sprint" }, "type": "iteration" }
-    },
-    "verticalIssueType": "Epic"
+    }
   }
 }
 ```
@@ -718,8 +718,10 @@ No config annotation is needed — routing is automatic and transparent. To prom
 **System-only canonical fields.** Not all `CANONICAL_VERTO_NODE_KEYS` members appear
 in `fieldMappings`. `id`, `title`, `prereqIds`, and `childIds` are **always** populated
 by the system accessor (from tracker identity and dependency structure) and are **never**
-`fieldMappings` entries. `state_reason` and `priority` are the canonical fields that
-require user-configured source bindings and therefore do appear in `fieldMappings`.
+`fieldMappings` entries. `isDone` and `isDeliverySlice` are populated by the system
+accessor by default but may be overridden via an optional `fieldMappings` entry.
+`priority` requires a user-configured source binding and therefore always appears in
+`fieldMappings`.
 
 **`type` hint for ticket fields.** Non-canonical `fieldMappings` entries may carry an optional `"type"` hint (`"text"`, `"number"`, `"date"`, `"select"`, `"iteration"`). The mapper uses it to coerce raw source values to the correct JavaScript type. The hint is omitted for canonical fields (their types are in `types.ts`). The audit step populates it automatically from the source's field schema (§4.6.6).
 
@@ -749,13 +751,16 @@ interface FieldAccessor {
 
 - **System accessors** — backed by typed `system_types` and fixed mapping rules for
   fields the adapter always handles (e.g. `id`, `title`, dependency links, issue type).
-  Always populate the canonical fields that have no user-configurable source (e.g.
-  `prereqIds` and `childIds` derived from blocking/sub-issue relationships).
+  Populate all system-mapped canonical fields: `prereqIds` and `childIds` from
+  blocking/sub-issue relationships; `isDone` from the tracker's native done/closed
+  field; `isDeliverySlice` from parent presence. A `fieldMappings` entry for `isDone`
+  or `isDeliverySlice` overrides the system-accessor default for that field.
 - **Project accessors** — backed by `project_fields.ts`, a **config-driven field
   registry** that reads `fieldMappings` from effective config and exposes the same
   `FieldAccessor` interface for all remaining fields — both canonical ones that need
-  user-configured source bindings (e.g. `state_reason`, `priority`) and non-canonical
-  ticket fields that land in `node.ticketFields`.
+  canonical fields that require or optionally override system-accessor defaults
+  (e.g. `priority` — always required; `isDone`, `isDeliverySlice` — optional
+  overrides) and non-canonical ticket fields that land in `node.ticketFields`.
 
 **`kind` disambiguation.** `FieldAccessor.kind` (`'system' | 'project'`) describes
 which accessor *manages* a field. `from.kind` in `fieldMappings` config (e.g.
@@ -770,11 +775,10 @@ Verto field.
 
 **Status — system shape, project values.** The built-in ProjectV2 **Status** field
 is a **system** field in shape (single-select on the project), but its **allowed
-option set** is project-specific (e.g. the Verto 10-state workflow). Default Status
-semantics and value maps live in `system_types.ts` and `defaults.verto.config.json`;
-workspace `fieldMappings` override when the project's Status options differ. The
-audit step (§4.6.6) detects the current Status options and drafts the mapping
-section.
+option set** is project-specific. Default value maps live in `system_types.ts` and
+`defaults.verto.config.json`; workspace `fieldMappings` override when the project's
+Status options differ. The audit step (§4.6.6) detects the current Status options
+and drafts the mapping section.
 
 #### 4.6.5 Adapter internals: client, mapper, adapter
 
@@ -789,8 +793,7 @@ required but may have no mapped ticket field. The mapper must behave consistentl
 
 | Category | Verto properties (examples) | Behaviour when unmapped / invalid |
 |---|---|---|
-| **System-mapped — always present** | `id`, `title`, `prereqIds`, `childIds` | Populated by system accessor from the tracker's structure (issue identity, sub-issue/blocking links). If genuinely absent, tracker data is corrupt — error. |
-| **No sensible default — fail** | `state_reason`, `isDeliverySlice` | **Error; do not produce a graph.** Missing `state_reason` means readiness and ordering cannot be computed. Missing `isDeliverySlice` detection means the priority algorithm has no delivery-slice anchors. |
+| **No fallback — fail** | `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` | **Error; do not produce a graph.** Populated by the system accessor from tracker structure (no `fieldMappings` entry needed). `isDone` and `isDeliverySlice` may be overridden via an optional `fieldMappings` entry; the system default applies when no override is present. If any of these are absent, the adapter or tracker data is corrupt. |
 | **Valid neutral default — continue** | `priority` | **Use default `5`**, continue loading. Audit flags the missing mapping as a gap; blocking the whole project for a missing priority column is unnecessarily heavy when `5` is the defined neutral value (see `types.ts`). Emit a non-fatal notice (log / UI warning). |
 
 Other required fields will be classified into one of these categories as adapters
@@ -817,7 +820,7 @@ fields, options, issue types) and produces a **draft** `.vscode/verto.config.jso
 
 1. List all relevant ticket fields, types, and enum/option values (system + custom).
 2. Pre-fill `fieldMappings` by merging **adapter defaults** with what was discovered
-   (known Verto properties such as `state_reason`, `priority`, `status`, AI SDLC metadata fields).
+   (known recommended mappings such as `priority`, `status`, `stateReason` (GitHub passthrough), AI SDLC metadata fields).
 3. Flag **gaps** — Verto concepts with no matching ticket field (e.g. `priority` if
    not on the board).
 4. Emit a draft config using **names only**; ID caches are populated at runtime on
@@ -837,14 +840,15 @@ Grounded in GitHub GraphQL capabilities documented under
 |---|---|
 | **NCN edge** `A → B` (A prerequisite for B) | `addBlockedBy(issueId: B, blockingIssueId: A)`; read via `blockedBy` / `blocking` |
 | **Parent/child** (child blocks parent) | Sub-issue relationship (`addSubIssue`, `parent` / `subIssues`); same graph semantics as blocking |
-| **State reason** (`state_reason`) | Native GitHub issue field `state_reason` (`completed` / `not_planned` / `reopened`) — mapped via `fieldMappings`; values match `StateReason` directly so no `values` map needed for GitHub. Drives `isReady` and `implementationOrder`. |
-| **Status** (`ticketFields.status`) | ProjectV2 built-in `Status` field — non-canonical passthrough; `"type": "select"`; option set may follow the recommended `Status` vocabulary (see `types.ts`) |
-| **Issue type** (`VertoNode.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
-| **Vertical designation** | Issue type (e.g. Epic) and/or label — configured in `verto.config.json` |
+| **Done** (`isDone`) | Native GitHub issue `closed: boolean` — populated by system accessor; no `fieldMappings` entry needed by default. Drives `isReady` and `implementationOrder`. Overridable via `fieldMappings` if needed. |
+| **Vertical designation** (`isDeliverySlice`) | System accessor default: `true` for top-level tickets (`parent` is null). Override via standard `fieldMappings` entry — e.g. `{ "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }` |
+| **Status** (`ticketFields.status`) | ProjectV2 built-in `Status` field — non-canonical passthrough; `"type": "select"` |
+| **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.json` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
+| **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
 | **Body documentation** | Issue title + body; optional task-list parse for Delivery Map display only |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
 | **Labels, assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |
-| **Source URL** (`ticketFields.ticketUrl`) | Native issue `url` field — link back to the source ticket |
+| **Source URL** (`ticketUrl`) | Native issue `url` field — canonical root field; system-mapped (no `fieldMappings` entry needed) |
 | **Priority** (`priority`) | Mapped via `fieldMappings` with `values` map when a source priority field exists. **If unmapped:** mapper uses **`5`** (neutral default) and continues; audit flags the gap. See required-field fallback policy (§4.6.5). |
 
 **GitHub issue types (reference):** every org ships with **Task**, **Bug**, and
@@ -852,7 +856,9 @@ Grounded in GitHub GraphQL capabilities documented under
 defaults allowed). Types are org-scoped and shared across repos.
 
 **Excluded from project field sync** (graph / adapter identity, not board columns):
-`id`, `prereqIds`, `childIds`, `isDeliverySlice` (derived from issue type).
+`id`, `prereqIds`, `childIds`; `isDone` (from native `closed` boolean — no board
+column); `isDeliverySlice` (from parent presence by default — no board column unless
+overriding via fieldMappings to use issue type).
 **`priority`** is optional on the board — when absent, mapper defaults to `5` (§4.6.5).
 **`ticketUrl`** is populated from the native issue `url`; no board column needed.
 
@@ -867,16 +873,16 @@ these from the live project schema.
 ### 4.7 State: tickets vs. workspace
 
 - **In tickets (shared, versioned with the backlog):** workflow status
-  (`ticketFields.status`) and done signal (`state_reason`), dependency links
+  (`ticketFields.status`) and done signal (`isDone`), dependency links
   (parent/child and BlockedBy/Blocking), body content (including any task lists),
   vertical narrative, and — as much as possible — **vertical priority**. Rule of
   thumb: *if a teammate should see it without opening your IDE, it's in the
   ticket.*
 - **In workspace config** ([`.vscode/verto.config.json`](./.vscode/verto.config.json)):
   adapter selection; repo/project identifiers; **`fieldMappings`** (field bindings
-  and value maps for system and project-custom fields); conventions (e.g.
-  `verticalIssueType`); optional runtime ID caches. Rule of thumb: *if it's "how
-  this workspace is wired to its tracker," it's workspace config.*
+  and value maps for all fields, including optional overrides for system-mapped fields
+  such as `isDeliverySlice` and `isDone`); optional runtime ID caches. Rule of thumb:
+  *if it's "how this workspace is wired to its tracker," it's workspace config.*
 - **In workspace/global editor state (transient UI):** refresh interval, selected
   vertical, current lens, graph pan/zoom — not committed to `verto.config.json`
   unless we later decide otherwise.
@@ -909,7 +915,7 @@ these from the live project schema.
 
 ### 4.9 Data source of truth vs declarative formats
 
-**Tickets (via adapters) are the source of truth.** All delivery state — workflow status, done signal (`state_reason`),
+**Tickets (via adapters) are the source of truth.** All delivery state — workflow status, done signal (`isDone`),
 dependencies (including parent/child), vertical priority, narrative — lives in
 the issue tracker (or file-based ticket store) and is loaded through adapters.
 
@@ -950,8 +956,8 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.1 Domain model & ticket schema (design in progress)
 
-- ~~**Final canonical schema.**~~ **Closed** — minimal canonical set (`id`, `title`, `state_reason`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`) defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). All other fields are ticket passthroughs via `fieldMappings` → `node.ticketFields`. Fields are promoted to canonical only when an algorithm or core UI feature requires them.
-- ~~**Status vocabulary.**~~ **Closed** — 10-state workflow vocabulary defined in `types.ts` `Status` type. "Partial" is a derived completion percentage (closed children / total closure), not a discrete state.
+- ~~**Final canonical schema.**~~ **Closed** — minimal canonical set (`id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`, `ticketUrl`) defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). All other fields are ticket passthroughs via `fieldMappings` → `node.ticketFields`. Fields are promoted to canonical only when an algorithm or core UI feature requires them.
+- ~~**Status vocabulary.**~~ **Closed** — no canonical status field; workflow status is a ticket passthrough (`ticketFields.status`); done signal is `isDone: boolean` (canonical, system-mapped). No enforced vocabulary. "Partial" is a derived completion percentage (closed children / total closure), not a discrete state.
 - ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
 - ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
 - **Link metadata.** Parent/child and BlockedBy/Blocking are unified for graph math (**decided** — see §3.1). How is the *reason* for a link recorded as metadata (e.g. decomposition vs cross-cutting prerequisite)? (`VertoEdge.reason` field exists; exact vocabulary still open.)
@@ -960,9 +966,10 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.2 Delivery Map presentation & decomposition
 
-- **Vertical designation (UI behaviour).** Config convention is **native issue type**
-  (e.g. Epic) via `verticalIssueType` in `verto.config.json` (§4.6.7); remaining:
-  fallback when type unset, label-based designation, and Delivery Map filtering UX.
+- **Vertical designation (UI behaviour).** Default behaviour: `isDeliverySlice = true`
+  for top-level tickets (`parent` is null — system accessor); override via standard
+  `isDeliverySlice` fieldMappings entry (§4.6.4, §4.6.7). Remaining open: Delivery Map
+  filtering UX and behaviour when no delivery slices are present.
 - **Delivery Map layout.** Exact presentation of body documentation vs child
   tickets side by side — ordering, grouping, status display, empty states (epic
   with body but no children yet).
@@ -987,17 +994,19 @@ All open questions, ambiguities, and not-yet-decided items live here.
   whole default entry; value-level merge deferred), names-only user-facing config,
   runtime ID cache with name fallback, workspace-wins merge — see §4.6.3–§4.6.4.
 - ~~**GitHub field conventions (Verto workspace).**~~ **Closed for initial project** —
-  `state_reason` via native GitHub issue field (no board column needed); `status` on
-  ProjectV2 built-in `Status`; `priority` + AI SDLC fields on ProjectV2 custom
-  columns; issue type via native org-level Issue Type; vertical via issue type (e.g.
-  Epic) — see §4.6.7. Prototyped field-schema sync:
+  `isDone` from native `closed` boolean (system accessor, no board column);
+  `isDeliverySlice` from `parent === null` by default (overridable via fieldMappings);
+  `status` on ProjectV2 built-in `Status`; `priority` + AI SDLC fields on ProjectV2
+  custom columns; `stateReason` as recommended passthrough in defaults; issue type
+  via native org-level Issue Type — see §4.6.7. Prototyped field-schema sync:
   [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
 - ~~**Config bootstrap / audit.**~~ **Closed (design)** — audit step drafts
   `verto.config.json` from live project shape; extension setup copies defaults and
   presents draft for edit — see §4.6.6.
-- ~~**Required-field fallback (read path).**~~ **Closed** — fail without graph for
-  fields with no sensible default (e.g. `state_reason`, `isDeliverySlice`); use neutral
-  default and continue for others (e.g. `priority` → `5`) with audit/warning — see §4.6.5.
+- ~~**Required-field fallback (read path).**~~ **Closed** — `id`, `title`, `isDone`,
+  `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` are system-mapped (always
+  present from tracker structure; `isDone` and `isDeliverySlice` overridable via
+  fieldMappings); `priority` defaults to `5` with audit warning — see §4.6.5.
 - **`VertoConfig` schema.** Exact JSON/TypeScript shape for `fieldMappings` entries
   (including value-map syntax, `from.kind` variants, validation rules).
 - **Read-only MVP vs. write-back day one.** Likely read-only first, but confirm.

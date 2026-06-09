@@ -3,23 +3,6 @@
 // ---------------------------------------------------------------------------
 
 /**
- * State reason of a node — the canonical "is done" signal for all graph math.
- * Matches GitHub's native `state_reason` field values.
- *
- *   null / undefined  →  open / not done
- *   'reopened'        →  open / not done (was closed, has been reopened)
- *   'completed'       →  done (successfully completed)
- *   'not_planned'     →  done (will not be built / cancelled)
- *
- * isDone(N)  =  N.state_reason === 'completed' || N.state_reason === 'not_planned'
- * isOpen(N)  =  !N.state_reason || N.state_reason === 'reopened'
- *
- * Adapters without a native state_reason field synthesise this from ticket status:
- *   e.g. Beans: status 'completed' → 'completed', status 'scrapped' → 'not_planned'
- */
-export type StateReason = 'completed' | 'not_planned' | 'reopened';
-
-/**
  * Priority of a node. Integer in the range 1–9 (inclusive). Lower = more important.
  *
  * **Load-bearing constraint — do not widen this range.**
@@ -35,23 +18,6 @@ export type StateReason = 'completed' | 'not_planned' | 'reopened';
  */
 export type Priority = number;
 
-/**
- * Recommended status vocabulary for Verto-native status field mappings.
- *
- * Status is NOT a canonical VertoNode field — it is a ticket passthrough field
- * routed to node.ticketFields.status via fieldMappings. Adapters may map tracker-native
- * status values to this vocabulary for richer cross-adapter display; it is not
- * enforced by @verto/core. The canonical "is done" signal is `state_reason`.
- *
- * If promoted to canonical in future, add to VertoNode root and CANONICAL_VERTO_NODE_KEYS.
- */
-export type Status =  'Draft'         |
-                      'To_Specify'    | 'Specifying'   |
-                      'To_Plan'       | 'Planning'     |
-                      'To_Implement'  | 'Implementing' |
-                      'To_Verify'     | 'Verifying'    |
-                      'Closed';
-
 // ---------------------------------------------------------------------------
 // Core node
 // ---------------------------------------------------------------------------
@@ -64,8 +30,8 @@ export type Status =  'Draft'         |
  * Update this set whenever a new canonical field is added to VertoNode.
  */
 export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
-  'id', 'title', 'state_reason', 'isDeliverySlice',
-  'priority', 'prereqIds', 'childIds',
+  'id', 'title', 'isDone', 'isDeliverySlice',
+  'priority', 'prereqIds', 'childIds', 'ticketUrl',
 ]);
 
 export interface VertoNode {
@@ -76,26 +42,31 @@ export interface VertoNode {
   title: string;
 
   /**
-   * State reason — the canonical "is done" signal for all graph math.
+   * True when this node is done (closed / completed / cancelled).
+   * The canonical "is done" signal for all graph math.
    *
-   *   null / undefined  →  open / not done
-   *   'reopened'        →  open / not done
-   *   'completed'       →  done
-   *   'not_planned'     →  done
+   * isDone(N)  =  N.isDone === true
+   * isReady(N) =  !N.isDone && all prereqs satisfy isDone
    *
-   * isDone(N)  =  N.state_reason === 'completed' || N.state_reason === 'not_planned'
-   * isReady(N) =  isOpen(N) && all prereqs satisfy isDone
-   *
-   * Adapters synthesise this from ticket status where no native field exists
-   * (e.g. Beans: 'completed' → 'completed', 'scrapped' → 'not_planned').
+   * Populated by the system accessor from the tracker's native done/closed field:
+   *   GitHub: native `closed: boolean` issue field (always present).
+   * Can be overridden via a standard fieldMappings entry when a tracker lacks a
+   * native boolean closed field (e.g. derive from status values):
+   *   { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true } }
    */
-  state_reason?: StateReason;
+  isDone: boolean;
 
   /**
    * True when this node is designated as a delivery slice
    * (deployable, standalone-value slice — same concept as epic / journey / vertical).
    * Semantic designation only; does not change graph structure or algorithm behaviour.
-   * How the adapter detects this is configured via verticalIssueType in verto.config.json.
+   *
+   * Default behaviour (system accessor): true when the ticket has no parent
+   * (parent is null or empty) — i.e. top-level tickets are delivery slices by default.
+   *
+   * Override via a standard fieldMappings entry to use issue type instead:
+   *   { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }
+   * When a fieldMappings entry is present, it fully replaces the system-accessor default.
    */
   isDeliverySlice: boolean;
 
@@ -126,15 +97,14 @@ export interface VertoNode {
    * field's declared `type` hint in config. Not used by @verto/core algorithms.
    *
    * Previously-canonical fields now configured here via fieldMappings:
-   *   status?: string         — ticket progress state (raw tracker values; see Status
-   *                             type for recommended Verto vocabulary)
+   *   status?: string         — ticket progress state (raw tracker values)
    *   body?: string           — long-form description / markdown
    *   type?: string           — issue type (Epic, Story, Task, Bug, etc.)
    *   assignee?: string       — assigned user
    *   labels?: string[]       — labels or tags
    *   created_at?: string     — ISO 8601 creation timestamp
    *   updated_at?: string     — ISO 8601 last-updated timestamp
-   *   ticketUrl?: string      — link back to the ticket in the tracker
+   *   stateReason?: string    — GitHub native stateReason (completed / not_planned / duplicate / reopened / null )
    *
    * AI SDLC traceability and model tracking (recommended fieldMappings key names):
    *   specified_by?: string[]      — session IDs / authors who contributed to specification
@@ -147,6 +117,11 @@ export interface VertoNode {
    *   ai_model_reviewer?: string[] — recommended models for reviewing the work
    */
   ticketFields?: Record<string, unknown>;
+
+  /**
+   * URL of the ticket in the tracker.
+   */
+  ticketUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
