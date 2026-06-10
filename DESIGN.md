@@ -29,6 +29,7 @@
 3. [High-Level Abstract Solution Design](#3-high-level-abstract-solution-design)
 4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.7](#467-first-adapter-github-issues)
 5. [Knowledge Gaps](#5-knowledge-gaps)
+6. [Implementation Plan](#6-implementation-plan)
 
 ---
 
@@ -1051,3 +1052,23 @@ All open questions, ambiguities, and not-yet-decided items live here.
 - **Multi-project / multi-repo** scope and timing.
 - **Definition of "delivered" for a vertical** and any metrics for the success
   criteria in §2.4.
+
+---
+
+## 6. Implementation Plan
+
+The build plan is maintained in a separate document to keep this file focused on
+intent and design decisions. Full phase detail, deliverables, and open decisions:
+**[IMPLEMENTATION.md](./IMPLEMENTATION.md)**. This section is an index only.
+
+Summary of phases:
+
+| # | Phase |
+|---|---|
+| 0 | Repository & tooling scaffold |
+| 1 | `@verto/core` algorithms |
+| 2 | GitHub adapter — read-only |
+| 3 | VS Code extension — read-only panel |
+| 4 | Full UI fidelity |
+| 5 | Write-back |
+| 6 | Beans (file-system) adapter |

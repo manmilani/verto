@@ -14,10 +14,11 @@ All paths below are relative to this folder (the **Verto project root**).
 | Path | Purpose |
 |------|---------|
 | [DESIGN.md](./DESIGN.md) | Living design document — source of truth for thinking and decisions |
+| [IMPLEMENTATION.md](./IMPLEMENTATION.md) | Implementation plan — phases, deliverables, and open decisions |
 | [graphql/github_issues_graphql.agent_prompt.md](./graphql/github_issues_graphql.agent_prompt.md) | GitHub GraphQL reference for the GitHub adapter |
 | [graphql/hmans_beans_graphql.agent_prompt.md](./graphql/hmans_beans_graphql.agent_prompt.md) | hmans/beans GraphQL reference for the beans adapter |
 | [deprecated_original_canvas/](./deprecated_original_canvas/) | Deprecated Rustybu canvas + chat archive — **initial migration aid only**; see [deprecated_original_canvas/README.md](./deprecated_original_canvas/README.md) |
 
-**Status:** Design phase. Canonical schema and adapters are not yet implemented.
+**Status:** Design + implementation planning complete. Phase 0 not yet started.
 
 **First shell:** Verto for VS Code (and Cursor). Core library: `@verto/core`.
