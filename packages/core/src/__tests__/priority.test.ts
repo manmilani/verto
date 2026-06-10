@@ -128,6 +128,36 @@ describe('globalPriorityRanking', () => {
     expect(r['A']).toBe(21)
   })
 
+  it('isolated non-DS node is scored using the global D from other chains', () => {
+    // Chain A(p=3) → C(p=5,DS); isolated X(p=7). D=1 from the A→C chain.
+    // X: no dependents, not DS → top trigger at k=0; raw=7, norm=7×10^1=70
+    // C: DS+top, k=0, raw=5, norm=5×10=50
+    // A: chain [A,C], DS at k=1, raw=3+50=53, norm=53
+    // X(70) > A(53) > C(50): isolated X has lower global priority than delivery-path nodes
+    const g = graph(
+      [node('A', { priority: 3 }), node('C', { priority: 5, isDeliverySlice: true }), node('X', { priority: 7 })],
+      [edge('A', 'C')],
+    )
+    const r = globalPriorityRanking(g)
+    expect(r['X']).toBe(70)  // P(X)×10^D = 7×10
+    expect(r['C']).toBe(50)
+    expect(r['A']).toBe(53)
+    expect(r['X']).toBeGreaterThan(r['A'])
+    expect(r['X']).toBeGreaterThan(r['C'])
+  })
+
+  it('out-of-range priority values are floor-clamped before scoring', () => {
+    // p=0 → floor clamp → 1; p=10 → cap clamp → 9
+    // Both are isolated DS nodes with D=0: norm = clamp(p)×10^0 = clamp(p)
+    const g = graph([
+      node('A', { priority: 0, isDeliverySlice: true }),  // clamped to 1
+      node('B', { priority: 10, isDeliverySlice: true }), // clamped to 9
+    ])
+    const r = globalPriorityRanking(g)
+    expect(r['A']).toBe(1) // clamp(0)=1
+    expect(r['B']).toBe(9) // clamp(10)=9
+  })
+
   it('all-delivery-slices graph: each DS scores from its own chain', () => {
     // A(p=1,DS) prereq for B(p=2,DS). D=1.
     // B: chain=[B], DS+top, k=0; raw=2; norm=2×10^1=20.

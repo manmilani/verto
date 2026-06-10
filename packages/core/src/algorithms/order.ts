@@ -10,13 +10,18 @@ import { leverageScores } from './leverage.js'
  *   3. Lexicographic node id (deterministic final tie-break)
  *
  * Done nodes are excluded. If the graph contains a cycle the remaining nodes
- * (stuck at non-zero in-degree) are appended in ranking order at the end.
+ * (stuck at non-zero in-degree) are appended in the same ranking+leverage+id
+ * order at the end.
+ *
+ * @param precomputedLeverage  Optionally supply leverage scores already
+ *   computed by buildDeliveryMapBundle to avoid a redundant BFS traversal.
  */
 export function implementationOrder(
   graph: VertoGraph,
   rankings: Record<string, number>,
+  precomputedLeverage?: Record<string, number>,
 ): string[] {
-  const leverage = leverageScores(graph)
+  const leverage = precomputedLeverage ?? leverageScores(graph)
 
   // Only consider not-done nodes
   const active = graph.nodes.filter(n => !n.isDone)
@@ -39,16 +44,18 @@ export function implementationOrder(
     inDeg.set(node.id, node.prereqIds.filter(id => activeSet.has(id)).length)
   }
 
+  const compareNodes = (a: string, b: string): number => {
+    const ra = rankings[a] ?? Infinity
+    const rb = rankings[b] ?? Infinity
+    if (ra !== rb) return ra - rb
+    const la = leverage[a] ?? 0
+    const lb = leverage[b] ?? 0
+    if (la !== lb) return lb - la // higher leverage first
+    return a < b ? -1 : 1
+  }
+
   const pick = (candidates: string[]): string =>
-    candidates.reduce((best, id) => {
-      const rBest = rankings[best] ?? Infinity
-      const rId = rankings[id] ?? Infinity
-      if (rId !== rBest) return rId < rBest ? id : best
-      const lBest = leverage[best] ?? 0
-      const lId = leverage[id] ?? 0
-      if (lId !== lBest) return lId > lBest ? id : best
-      return id < best ? id : best
-    })
+    candidates.reduce((best, id) => (compareNodes(id, best) < 0 ? id : best))
 
   const available = active.filter(n => inDeg.get(n.id) === 0).map(n => n.id)
   const order: string[] = []
@@ -67,14 +74,10 @@ export function implementationOrder(
     }
   }
 
-  // Any remaining nodes are in a cycle — append in ranking order
+  // Any remaining nodes are in a cycle — append in ranking+leverage+id order
   const stuck = active
     .filter(n => !done.has(n.id))
-    .sort((a, b) => {
-      const ra = rankings[a.id] ?? Infinity
-      const rb = rankings[b.id] ?? Infinity
-      return ra !== rb ? ra - rb : a.id < b.id ? -1 : 1
-    })
+    .sort((a, b) => compareNodes(a.id, b.id))
     .map(n => n.id)
 
   return [...order, ...stuck]

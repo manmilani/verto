@@ -1,3 +1,3 @@
-// Phase 3 will add the VS Code extension implementation.
-// This file is a placeholder — the extension package exists in the workspace from Phase 0.
-export {}
+// Re-exports from the extension entry point.
+// package.json "main" points to dist/extension.js (source: src/extension.ts).
+export * from './extension.js'

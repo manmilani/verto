@@ -60,4 +60,17 @@ describe('buildDeliveryMapBundle', () => {
     const bundle = buildDeliveryMapBundle(g)
     expect(bundle.graph).toBe(g)
   })
+
+  it('invalid graph (cycle) returns a best-effort bundle without throwing', () => {
+    // buildDeliveryMapBundle does not validate — that is the caller's responsibility.
+    // Algorithms apply cycle guards internally and return partial results.
+    const A = node('A', { prereqIds: ['B'] })
+    const B = node('B', { prereqIds: ['A'] })
+    const g: import('../types.js').VertoGraph = { nodes: [A, B], edges: [] }
+    expect(() => buildDeliveryMapBundle(g)).not.toThrow()
+    const bundle = buildDeliveryMapBundle(g)
+    expect(bundle.graph).toBe(g)
+    expect(bundle.implementationOrder).toHaveLength(2) // both cyclic nodes appended
+    expect(bundle.readyIds).toHaveLength(0) // neither is ready (each blocked by the other)
+  })
 })

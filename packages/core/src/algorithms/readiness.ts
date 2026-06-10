@@ -12,5 +12,8 @@ export function isReady(graph: VertoGraph, node: VertoNode): boolean {
 
 /** All nodes in the graph that are currently ready to start. */
 export function readyNodes(graph: VertoGraph): VertoNode[] {
-  return graph.nodes.filter(n => isReady(graph, n))
+  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
+  return graph.nodes.filter(n =>
+    !n.isDone && n.prereqIds.every(id => nodeById.get(id)?.isDone === true),
+  )
 }

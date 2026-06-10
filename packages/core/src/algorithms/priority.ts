@@ -66,7 +66,12 @@ export function globalPriorityRanking(
   for (const node of graph.nodes) dActual = Math.max(dActual, maxDepthFrom(node.id))
   const D = opts?.minDepthFloor !== undefined ? Math.max(dActual, opts.minDepthFloor) : dActual
 
-  const clamp = (p: number) => Math.min(9, Math.max(1, Math.round(p)))
+  // "floor to 1, cap to 9": truncate non-integers downward, then enforce range.
+  // Math.round is intentionally avoided — 2.6 should floor to 2, not round to 3.
+  // Note: positional encoding via Math.pow(10, i) overflows Number.MAX_SAFE_INTEGER
+  // when D > ~15. Real backlogs are unlikely to reach this; minDepthFloor makes it
+  // configurable, so large values should be avoided in incremental-estimation mode.
+  const clamp = (p: number) => Math.min(9, Math.max(1, Math.floor(p)))
 
   const rankings: Record<string, number> = {}
 

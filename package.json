@@ -2,7 +2,7 @@
   "name": "verto-monorepo",
   "private": true,
   "scripts": {
-    "build": "pnpm -r --filter='./packages/**' build",
+    "build": "pnpm -r build",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck"
   },

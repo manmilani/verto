@@ -1,8 +1,13 @@
 # Dependencies
 node_modules/
+**/node_modules/
+
+# pnpm lockfile (committed)
+# pnpm-lock.yaml — keep this committed
 
 # Build output
 dist/
+**/dist/
 *.tsbuildinfo
 
 # hmans/beans files

@@ -13,6 +13,12 @@ import { deliveryCompleteness } from './algorithms/completeness.js'
  *
  * The returned bundle is the authoritative, host-computed payload forwarded to
  * the webview via postMessage. The webview does NOT recompute any fields.
+ *
+ * **Contract:** this function expects a structurally valid graph (no cycles,
+ * no dangling refs). Call validateGraph() before this function and handle any
+ * errors. If called on an invalid graph, algorithms apply best-effort cycle
+ * guards and will return a partial result rather than throwing, but the output
+ * may be misleading.
  */
 export function buildDeliveryMapBundle(
   graph: VertoGraph,
@@ -20,7 +26,7 @@ export function buildDeliveryMapBundle(
 ): DeliveryMapBundle {
   const leverage = leverageScores(graph)
   const rankings = globalPriorityRanking(graph, opts)
-  const order = implementationOrder(graph, rankings)
+  const order = implementationOrder(graph, rankings, leverage) // pass pre-computed leverage
   const ready = readyNodes(graph).map(n => n.id)
 
   const completeness: Record<string, number> = {}
