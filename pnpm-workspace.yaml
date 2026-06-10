@@ -1,0 +1,5 @@
+packages:
+  - 'packages/core'
+  - 'packages/config'
+  - 'packages/adapters/*'
+  - 'packages/extension'

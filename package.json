@@ -1,0 +1,17 @@
+{
+  "name": "verto-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r --filter='./packages/**' build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@verto/adapter-github",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/adapter.js",
+      "types": "./dist/adapter.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@verto/core": "workspace:*",
+    "@verto/config": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

@@ -158,6 +158,9 @@ export interface VertoGraph {
 /**
  * The computed, view-ready bundle passed from the extension host to the webview.
  * Produced by running @verto/core algorithms over a VertoGraph.
+ *
+ * All computed fields are populated by buildDeliveryMapBundle() in @verto/core.
+ * The webview is a dumb view and does NOT recompute any of these fields.
  */
 export interface DeliveryMapBundle {
   graph: VertoGraph;
@@ -170,4 +173,17 @@ export interface DeliveryMapBundle {
    * See DESIGN.md §3.3.
    */
   leverageScore?: Record<string, number>;
+  /**
+   * Per-node global priority ranking value (lower = higher priority / do first).
+   * Derived by the chain-traversal algorithm — see DESIGN.md §3.5.
+   * Computed server-side by buildDeliveryMapBundle(); not recomputed in the webview.
+   */
+  globalPriorityRanking?: Record<string, number>;
+  /**
+   * Per-node delivery completeness: maps node id → ratio of isDone nodes in its
+   * transitive prerequisite closure (0 = nothing done, 1 = fully delivered).
+   * Computed server-side by buildDeliveryMapBundle(); not recomputed in the webview.
+   * See DESIGN.md §3.3.
+   */
+  deliveryCompleteness?: Record<string, number>;
 }

@@ -1,0 +1,38 @@
+{
+  "name": "verto",
+  "displayName": "Verto",
+  "description": "Plan and deliver vertical slices from your issue graph using NCN and TOC thinking.",
+  "version": "0.0.1",
+  "publisher": "verto",
+  "private": true,
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "verto.openPanel",
+        "title": "Verto: Open Panel"
+      },
+      {
+        "command": "verto.refresh",
+        "title": "Verto: Refresh"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "echo 'Extension bundling added in Phase 3'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@verto/core": "workspace:*",
+    "@verto/config": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.8.3"
+  }
+}
