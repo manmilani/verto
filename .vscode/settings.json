@@ -1,5 +1,42 @@
 {
-  "terminal.integrated.env.linux": {"PATH": "${workspaceFolder}/.env"},
-  "terminal.integrated.env.windows": {"PATH": "${workspaceFolder}/.env"},
-  "terminal.integrated.env.osx": {"PATH": "${workspaceFolder}/.env"}
+    // --- LINUX / MACOS (Bash or Zsh) ---
+    "terminal.integrated.profiles.linux": {
+        "bash": {
+            "path": "bash",
+            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+        }
+    },
+    "terminal.integrated.profiles.osx": {
+        "zsh": {
+            "path": "zsh",
+            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+        }
+    },
+    // --- WINDOWS COMMAND PROMPT (cmd) ---
+    "terminal.integrated.profiles.windows": {
+        "Command Prompt": {
+            "path": "C:\\Windows\\System32\\cmd.exe",
+            "args": [
+                "/k",
+                "for /f %i in (${workspaceFolder}\\.env) do @set %i"
+            ]
+        },
+        // --- WINDOWS POWERSHELL ---
+        "PowerShell": {
+            "source": "PowerShell",
+            "args": ["-NoExit", "-Command", "if (Test-Path '${workspaceFolder}/.env') { Get-Content '${workspaceFolder}/.env' | Foreach-Object { if ($_ -match '=(.*)') { $k,$v = $_.Split('=',2); [Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), 'Process') } } }"]
+        },
+        // --- WINDOWS GIT BASH ---
+        "Git Bash": {
+            "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+        }
+    },
+    // --- FIX FOR AUTOMATION / DEBUG ERRORS ---
+    "terminal.integrated.automationProfile.windows": {
+        "path": "C:\\Windows\\System32\\cmd.exe",
+        "args": ["/k", "for /f %i in (${workspaceFolder}\\.env) do @set %i"]
+    },
+
+    "beans.ai.enabled": false
 }
