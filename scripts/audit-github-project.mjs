@@ -93,7 +93,7 @@ async function auditProjectScope(config) {
     },
   }
 
-  const merged = mergeConfigs(defaultsRaw, discovered)
+  const merged = mergeConfigs(config, discovered)
   output(merged)
 }
 
@@ -123,9 +123,9 @@ async function auditRepositoryScope(config) {
 
   console.log('[audit] Issue type: readable per-issue via fieldMappings type → { from: { kind: "issue", field: "type" } }')
 
-  // Flag projectV2 gaps from defaults
-  const defaultsMappings = defaultsRaw.github.fieldMappings ?? {}
-  const projectV2Gaps = Object.entries(defaultsMappings)
+  // Flag projectV2 gaps from effective config (preserves workspace customizations)
+  const configMappings = config.github.fieldMappings ?? {}
+  const projectV2Gaps = Object.entries(configMappings)
     .filter(([, e]) => e.from.kind === 'projectV2')
     .map(([k]) => k)
   if (projectV2Gaps.length > 0) {
@@ -134,9 +134,9 @@ async function auditRepositoryScope(config) {
     )
   }
 
-  // Build fieldMappings with issue-native entries only (no projectV2)
+  // Build fieldMappings from effective config, issue-native entries only (no projectV2)
   const fieldMappings = Object.fromEntries(
-    Object.entries(defaultsMappings).filter(([, e]) => e.from.kind === 'issue'),
+    Object.entries(configMappings).filter(([, e]) => e.from.kind === 'issue'),
   )
 
   const discovered = {
@@ -150,7 +150,8 @@ async function auditRepositoryScope(config) {
     },
   }
 
-  output(discovered)
+  const merged = mergeConfigs(config, discovered)
+  output(merged)
 }
 
 function output(config) {

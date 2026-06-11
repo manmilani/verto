@@ -66,7 +66,7 @@ export class GitHubClient {
               pageInfo { hasNextPage endCursor }
               nodes {
                 content { __typename ... on Issue { id } }
-                fieldValues(first: 30) {
+                fieldValues(first: 100) {
                   nodes { ${FIELD_VALUE_FRAGMENTS} }
                 }
               }

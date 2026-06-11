@@ -31,6 +31,8 @@ export async function expandGraphClosure(
             `${stillMissing.length} unresolved ref(s) will cause validation errors`,
         )
       }
+      // Known limitation: issues fetched on this final round are not themselves scanned
+      // for new refs. Any refs they introduce will surface as dangling_prereq from validateGraph.
     }
   }
 

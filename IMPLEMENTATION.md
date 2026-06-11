@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 0 | [Repository & tooling scaffold](#phase-0--repository--tooling-scaffold) | Buildable, testable monorepo with all packages scaffolded | Complete |
 | 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library | Complete |
-| 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns a real `DeliveryMapBundle` from GitHub | |
+| 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns a real `DeliveryMapBundle` from GitHub | Complete |
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
@@ -92,6 +92,8 @@ Phase 0 wires it into a proper package (build, exports) rather than starting fro
 ---
 
 ## Phase 2 — GitHub adapter (read-only)
+
+**Status:** Complete ([issue #4](https://github.com/manmilani/verto/issues/4)).
 
 **Goal:** `loadProject(config)` reads issues from a configured GitHub project or repository and
 returns a `DeliveryMapBundle`. First end-to-end path from a real tracker to a computed graph.
@@ -176,7 +178,9 @@ The first point at which Verto can be dogfooded against its own GitHub project.
 
 **Note:** Phase 3 assumes `.vscode/verto.config.json` is already seeded (by the Phase 2 audit
 script or by hand). The first-run setup wizard (DESIGN.md §4.6.3, §4.6.6) is a post–Phase 3
-stretch goal — it is not required to dogfood the extension.
+stretch goal — it is not required to dogfood the extension. Before the wizard, extract GitHub
+audit/bootstrap from `scripts/audit-github-project.mjs` into `@verto/adapter-github` (importable
+library); the script remains a thin CLI wrapper.
 
 ### Deliverables — extension host
 

@@ -46,10 +46,6 @@ describe('GitHubAdapter', () => {
     const item: GitHubProjectV2Item = { issueNodeId: 'I1', fieldValues: [] }
 
     const adapter = new GitHubAdapter('test-token')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = (adapter as any).buildClient?.() ?? null
-
-    // Patch the GitHubClient constructor to inject a mock
     const { GitHubClient } = await import('../client.js')
     const clientMock = {
       fetchProjectItems: vi.fn().mockResolvedValue([item]),

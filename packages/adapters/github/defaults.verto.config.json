@@ -38,6 +38,8 @@
       //   "from": { "kind": "projectV2", "field": "Priority" },
       //   "type": "select",
       //   "values": { "Critical": 1, "High": 3, "Medium": 5, "Low": 7, "Deferred": 9 }
+      //   // For a NUMBER field use: { "from": {...}, "type": "number" } — no "values" map needed.
+      //   // For a SINGLE_SELECT field, "values" is required; missing entries default to priority 5.
       // },
       "resolution": {
         "from": { "kind": "projectV2", "field": "resolution" },
