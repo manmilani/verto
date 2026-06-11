@@ -33,11 +33,11 @@ const ISSUE_FIELDS = `
 `
 
 const FIELD_VALUE_FRAGMENTS = `
-  ... on ProjectV2ItemFieldTextValue         { field { name } text }
-  ... on ProjectV2ItemFieldNumberValue       { field { name } number }
-  ... on ProjectV2ItemFieldDateValue         { field { name } date }
-  ... on ProjectV2ItemFieldSingleSelectValue { field { name } name }
-  ... on ProjectV2ItemFieldIterationValue    { field { name } title }
+  ... on ProjectV2ItemFieldTextValue         { field { ... on ProjectV2FieldCommon { name } } text }
+  ... on ProjectV2ItemFieldNumberValue       { field { ... on ProjectV2FieldCommon { name } } number }
+  ... on ProjectV2ItemFieldDateValue         { field { ... on ProjectV2FieldCommon { name } } date }
+  ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2FieldCommon { name } } name }
+  ... on ProjectV2ItemFieldIterationValue    { field { ... on ProjectV2FieldCommon { name } } title }
 `
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

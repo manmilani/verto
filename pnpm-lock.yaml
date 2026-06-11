@@ -8,6 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@octokit/graphql':
+        specifier: ^9.0.3
+        version: 9.0.3
+      '@verto/adapter-github':
+        specifier: workspace:*
+        version: link:packages/adapters/github
+      '@verto/config':
+        specifier: workspace:*
+        version: link:packages/config
       '@vitest/coverage-v8':
         specifier: ^4.1.8
         version: 4.1.8(vitest@4.1.8)
