@@ -263,3 +263,9 @@ M: `addBlockedBy(input: { issueId: B, blockingIssueId: A })` — B is now blocke
 
 **5. Read all sub-issues recursively**
 Q: `repository(owner: "ORG", name: "REPO") { issue(number: N) { subIssues(first: 100) { nodes { number title state subIssues(first: 100) { nodes { number title state } } } } } }`
+
+**6. Find ProjectV2 board(s) for an issue and set a number column**
+CLI: `gh-issues.mjs projects --number N [--json]` — returns `projectId`, `itemId`, `title`, `owner`, and current field values per board.
+Q: `repository(owner: O, name: R) { issue(number: N) { id projectItems(first: 20) { nodes { id project { id title number url owner { ... on User { login } } } fieldValues(first: 30) { nodes { ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2Field { name } } } } } } } } }`
+Q: `node(id: PROJECT_ID) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2Field { id name } } } } }` — get `fieldId` for e.g. `ai_tokens_used`
+M: `updateProjectV2ItemFieldValue(input: { projectId: P, itemId: ITEM, fieldId: FIELD, value: { number: 127700 } })`

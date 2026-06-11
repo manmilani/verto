@@ -17,8 +17,8 @@ dist/
 # Backlog.md files
 backlog/*
 
-# Workspace files
-.vscode/*
+# # Workspace files
+# .vscode/*
 
 # Secrets
 .env

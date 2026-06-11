@@ -18,6 +18,7 @@ function usage() {
   gh-issues.mjs list    [--owner O] [--repo R] [--state OPEN|CLOSED] [--limit N] [--json]
   gh-issues.mjs search  QUERY [--limit N] [--json]
   gh-issues.mjs template [--description T] [--acceptance-criteria "a\\nb"] [--definition-of-done "a\\nb"]
+  gh-issues.mjs projects  --number N [--owner O] [--repo R] [--json]
   gh-issues.mjs project fields [--project-id ID] [--project-owner U] [--project-number N] [--org]
   gh-issues.mjs project items  [--project-id ID] [--project-owner U] [--project-number N] [--org] [--limit N] [--json]
 
@@ -192,6 +193,79 @@ async function getIssueId(owner, repo, number) {
   return data.repository.issue.id;
 }
 
+/** ProjectV2 boards an issue belongs to (via Issue.projectItems). */
+async function fetchIssueProjects(owner, repo, number) {
+  const data = await graphql(
+    `query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        issue(number: $number) {
+          id
+          number
+          title
+          url
+          projectItems(first: 20) {
+            nodes {
+              id
+              project {
+                id
+                title
+                number
+                url
+                owner { ... on User { login } ... on Organization { login } }
+              }
+              fieldValues(first: 30) {
+                nodes {
+                  ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2Field { name } } }
+                  ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2Field { name } } }
+                  ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2Field { name } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { owner, name: repo, number: parseInt(number, 10) }
+  );
+  const issue = data.repository?.issue;
+  if (!issue) {
+    console.error(`Issue not found: ${owner}/${repo}#${number}`);
+    process.exit(1);
+  }
+  return issue;
+}
+
+function formatIssueProjects(issue) {
+  const items = issue.projectItems?.nodes ?? [];
+  if (items.length === 0) {
+    console.log(`#${issue.number} ${issue.title}`);
+    console.log('No linked ProjectV2 boards.');
+    return;
+  }
+  console.log(`#${issue.number} ${issue.title}`);
+  console.log(`${items.length} linked project(s):\n`);
+  for (const item of items) {
+    const p = item.project;
+    const owner = p.owner?.login ?? '?';
+    console.log(`  ${p.title} (owner: ${owner}, number: ${p.number})`);
+    console.log(`    projectId: ${p.id}`);
+    console.log(`    itemId:    ${item.id}`);
+    console.log(`    url:       ${p.url}`);
+    const fields = (item.fieldValues?.nodes ?? [])
+      .map((fv) => {
+        const fieldName = fv.field?.name;
+        if (!fieldName) return null;
+        if (fv.number !== undefined) return `${fieldName}=${fv.number}`;
+        if (fv.text !== undefined) return `${fieldName}=${JSON.stringify(fv.text)}`;
+        if (fv.name !== undefined) return `${fieldName}=${JSON.stringify(fv.name)}`;
+        return null;
+      })
+      .filter(Boolean);
+    if (fields.length) console.log(`    fields:    ${fields.join(', ')}`);
+    console.log('');
+  }
+}
+
 function splitLines(text) {
   return text.split(/\\n|\n/).map((s) => s.trim()).filter(Boolean);
 }
@@ -360,6 +434,51 @@ switch (command) {
       for (const i of issues) {
         console.log(`#${i.number} [${i.state}] ${i.title} — ${i.url}`);
       }
+    }
+    break;
+  }
+
+  case 'projects': {
+    if (!args.number) {
+      console.error('projects requires --number');
+      process.exit(1);
+    }
+    const { owner, repo } = resolveOwnerRepo(args);
+    const issue = await fetchIssueProjects(owner, repo, args.number);
+    if (args.json) {
+      const items = (issue.projectItems?.nodes ?? []).map((item) => ({
+        itemId: item.id,
+        project: {
+          id: item.project.id,
+          title: item.project.title,
+          number: item.project.number,
+          url: item.project.url,
+          owner: item.project.owner?.login ?? null,
+        },
+        fieldValues: (item.fieldValues?.nodes ?? []).map((fv) => ({
+          name: fv.field?.name,
+          number: fv.number,
+          text: fv.text,
+          singleSelect: fv.name,
+        })),
+      }));
+      console.log(
+        JSON.stringify(
+          {
+            issue: {
+              id: issue.id,
+              number: issue.number,
+              title: issue.title,
+              url: issue.url,
+            },
+            projects: items,
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      formatIssueProjects(issue);
     }
     break;
   }
