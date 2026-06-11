@@ -19,6 +19,6 @@ All paths below are relative to this folder (the **Verto project root**).
 | [graphql/hmans_beans_graphql.agent_prompt.md](./graphql/hmans_beans_graphql.agent_prompt.md) | hmans/beans GraphQL reference for the beans adapter |
 | [deprecated_original_canvas/](./deprecated_original_canvas/) | Deprecated Rustybu canvas + chat archive — **initial migration aid only**; see [deprecated_original_canvas/README.md](./deprecated_original_canvas/README.md) |
 
-**Status:** Design + implementation planning complete. Phase 0 not yet started.
+**Status:** Phases 0 & 1 complete (monorepo scaffold + `@verto/core` algorithms). Next: Phase 2 (GitHub adapter).
 
 **First shell:** Verto for VS Code (and Cursor). Core library: `@verto/core`.

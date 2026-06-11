@@ -8,19 +8,21 @@
 
 ## Phases at a glance
 
-| # | Phase | Key outcome |
-|---|---|---|
-| 0 | [Repository & tooling scaffold](#phase-0--repository--tooling-scaffold) | Buildable, testable monorepo with all packages scaffolded |
-| 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library |
-| 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns a real `DeliveryMapBundle` from GitHub |
-| 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data |
-| 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming |
-| 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub |
-| 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself |
+| # | Phase | Key outcome | Status |
+|---|---|---|---|
+| 0 | [Repository & tooling scaffold](#phase-0--repository--tooling-scaffold) | Buildable, testable monorepo with all packages scaffolded | Complete |
+| 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library | Complete |
+| 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns a real `DeliveryMapBundle` from GitHub | |
+| 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | |
+| 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming | |
+| 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
+| 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself | |
 
 ---
 
 ## Phase 0 — Repository & tooling scaffold
+
+**Status:** Complete ([issue #3](https://github.com/manmilani/verto/issues/3)).
 
 **Goal:** A buildable, testable monorepo. No domain logic — only the structure that all later
 phases depend on.
@@ -54,6 +56,8 @@ Phase 0 wires it into a proper package (build, exports) rather than starting fro
 ---
 
 ## Phase 1 — `@verto/core` algorithms
+
+**Status:** Complete ([issue #3](https://github.com/manmilani/verto/issues/3)).
 
 **Goal:** A fully tested, host-agnostic library implementing all graph algorithms.
 `packages/core/src/types.ts` is already complete — this phase adds the compute layer.

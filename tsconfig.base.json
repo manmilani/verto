@@ -4,6 +4,15 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@verto/core": ["packages/core/src/index.ts"],
+      "@verto/core/*": ["packages/core/src/*"],
+      "@verto/config": ["packages/config/src/index.ts"],
+      "@verto/config/*": ["packages/config/src/*"],
+      "@verto/adapter-github": ["packages/adapters/github/src/index.ts"],
+      "@verto/adapter-github/*": ["packages/adapters/github/src/*"]
+    },
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
