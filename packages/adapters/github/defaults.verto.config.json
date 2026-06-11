@@ -1,0 +1,58 @@
+{
+  // Default configuration for the GitHub adapter.
+  // Merge with your workspace .vscode/verto.config.json via mergeConfigs().
+  //
+  // Scope variants — uncomment ONE block in your workspace file:
+  //
+  //   Project scope (GitHub ProjectV2):
+  //     { "scope": "project", "owner": "you", "projectNumber": 1 }
+  //
+  //   Repository scope (all issues in a repo):
+  //     { "scope": "repository", "owner": "you", "repository": "your-repo",
+  //       "issueFilter": { "states": ["OPEN"] } }
+
+  "adapter": "github",
+  "github": {
+    "scope": "project",
+    "owner": "YOUR_OWNER",
+    // "ownerType": "organization",   // uncomment if owner is an org; default is "user"
+    "projectNumber": 0,
+
+    "fieldMappings": {
+      // -- Issue-native fields (common to all GitHub issues) --
+      "type":        { "from": { "kind": "issue", "field": "type" } },
+      "assignee":    { "from": { "kind": "issue", "field": "assignee" } },
+      "labels":      { "from": { "kind": "issue", "field": "labels" } },
+      "body":        { "from": { "kind": "issue", "field": "body" } },
+      "stateReason": { "from": { "kind": "issue", "field": "stateReason" } },
+      "created_at":  { "from": { "kind": "issue", "field": "created_at" } },
+      "updated_at":  { "from": { "kind": "issue", "field": "updated_at" } },
+      "milestone":   { "from": { "kind": "issue", "field": "milestone" } },
+
+      // -- Board fields (project scope only; field names must match your ProjectV2 columns) --
+      "status": {
+        "from": { "kind": "projectV2", "field": "Status" },
+        "type": "select"
+      },
+      // "priority": {
+      //   "from": { "kind": "projectV2", "field": "Priority" },
+      //   "type": "select",
+      //   "values": { "Critical": 1, "High": 3, "Medium": 5, "Low": 7, "Deferred": 9 }
+      // },
+      "resolution": {
+        "from": { "kind": "projectV2", "field": "resolution" },
+        "type": "select"
+      }
+
+      // -- AI SDLC traceability (uncomment if your board has these fields) --
+      // "specified_by":       { "from": { "kind": "projectV2", "field": "specified_by" } },
+      // "planned_by":         { "from": { "kind": "projectV2", "field": "planned_by" } },
+      // "implemented_by":     { "from": { "kind": "projectV2", "field": "implemented_by" } },
+      // "verified_by":        { "from": { "kind": "projectV2", "field": "verified_by" } },
+      // "ai_tokens_estimate": { "from": { "kind": "projectV2", "field": "ai_tokens_estimate" }, "type": "number" },
+      // "ai_tokens_used":     { "from": { "kind": "projectV2", "field": "ai_tokens_used" }, "type": "number" },
+      // "ai_model_worker":    { "from": { "kind": "projectV2", "field": "ai_model_worker" } },
+      // "ai_model_reviewer":  { "from": { "kind": "projectV2", "field": "ai_model_reviewer" } }
+    }
+  }
+}

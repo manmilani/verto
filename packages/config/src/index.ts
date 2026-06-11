@@ -1,3 +1,11 @@
-// Phase 2 will add VertoConfig type and JSON Schema.
-// This file is a placeholder — @verto/config exists in the workspace from Phase 0.
-export {}
+export type {
+  FieldMappingEntry,
+  FieldMappings,
+  GitHubIssueFilter,
+  GitHubConfig,
+  VertoConfig,
+} from './types.js'
+
+export { validateVertoConfig } from './schema.js'
+export { mergeConfigs } from './merge.js'
+export { parseVertoConfig, readVertoConfigFile } from './parse.js'

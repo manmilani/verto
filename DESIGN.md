@@ -653,9 +653,14 @@ identity, runs the **audit/bootstrap** step (§4.6.6), copies merged defaults in
 `.vscode/verto.config.json`, and presents the draft for user editing — never
 starting from a blank config.
 
-A shared **`VertoConfig` TypeScript type** (and ideally JSON Schema) will govern
-both config files so the extension, audit script, and mapper validate the same
-structure.
+**`@verto/config` package.** The `VertoConfig` TypeScript type, JSON Schema (validated
+via `ajv`), and runtime helpers live in `packages/config/` (`@verto/config`):
+`validateVertoConfig(raw)` — throws on invalid config; `mergeConfigs(defaults, workspace)`
+— field-level replace merge; `parseVertoConfig(jsonc)` / `readVertoConfigFile(path)` —
+JSONC-aware parsing. Config files use **JSONC format** (`.json` extension; `//` line
+comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` both fail
+on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
+`@verto/config`; the config type lives in `@verto/config` only.
 
 #### 4.6.4 Field mapping and the `FieldAccessor` contract
 
@@ -676,9 +681,11 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
 {
   "adapter": "github",
   "github": {
+    "scope": "project",          // "project" | "repository" — first-class config choice (§4.6.7)
+    "ownerType": "user",         // "user" | "organization" — default "user"
     "owner": "manmilani",
-    "projectNumber": 1,
-    "repository": { "owner": "…", "name": "…" },
+    "projectNumber": 1,          // required when scope is "project"
+    // "repository": "my-repo", // required when scope is "repository"
     "fieldMappings": {
       // --- Canonical VertoNode fields (routed to node root) ---
       //
@@ -852,6 +859,43 @@ Grounded in GitHub GraphQL capabilities documented under
 | **Source URL** (`ticketUrl`) | Native issue `url` field — canonical root field; system-mapped (no `fieldMappings` entry needed) |
 | **Priority** (`priority`) | Mapped via `fieldMappings` with `values` map when a source priority field exists. **If unmapped:** mapper uses **`5`** (neutral default) and continues; audit flags the gap. See required-field fallback policy (§4.6.5). |
 
+**`github.scope` — project vs. repository (Phase 2 decision).** The GitHub adapter
+supports two mutually exclusive modes, controlled by `github.scope` in `verto.config.json`:
+
+| `github.scope` | Issue enumeration | Board fields (`Status`, custom columns) |
+|---|---|---|
+| `"project"` | ProjectV2 API: `user\|organization(login).projectV2(number).items` | ProjectV2 API: per-item field values |
+| `"repository"` | Issues API: `repository(owner, name).issues` with optional `issueFilter` | Not available — `kind: 'projectV2'` entries skipped with a warning |
+
+**Issues-first API principle.** Regardless of scope, all issue-native fields (`id`,
+`title`, `body`, `closed`, `url`, `stateReason`, issue type, labels, assignees, milestone,
+`parent`, `subIssues`, `blockedBy`, `blocking`) are read via the **Issues GraphQL API**.
+The ProjectV2 API is used only to (a) enumerate which issues belong to the project and
+(b) read ProjectV2 board field values. This minimises ProjectV2 usage and keeps the
+mapping layer consistent across scopes.
+
+**`github.ownerType`.** Set to `"user"` (default) or `"organization"` to select between
+`user(login).projectV2` and `organization(login).projectV2` for project-scope enumeration.
+
+**Repository scope: issue filter.** Without narrowing, `repository.issues` returns every
+open issue — unworkable for large repos. `github.issueFilter` (labels, states, milestone,
+assignee) narrows the set. The audit script flags its absence as a warning.
+
+**Graph closure for cross-scope references.** Blocking links (`blockedBy`), sub-issues
+(`subIssues`), and external dependents (`blocking`) can reference issues outside the
+configured project or filter set. After the initial fetch the adapter runs
+`expandGraphClosure()` — a BFS fixed-point loop that collects all referenced issue node
+IDs not yet in the graph, fetches them in batches (via the Issues API), and repeats until
+closure is complete (capped at 5 rounds with a summary warning). Issues fetched during
+closure have no ProjectV2 field values; `priority` defaults to `5` for them. If the cap is
+reached with refs still unresolved, `validateGraph()` will surface the dangling refs as
+errors. Note: `parent.id` is intentionally excluded from the closure referenced set —
+under Verto semantics a child's `prereqIds` does **not** include its parent, so an
+unloaded parent causes no dangling reference.
+
+**Cross-link:** See [Phase 2 implementation plan](./IMPLEMENTATION.md#phase-2--github-adapter-read-only)
+for the full deliverables, decisions, and verification steps.
+
 **GitHub issue types (reference):** every org ships with **Task**, **Bug**, and
 **Feature**; org owners may create up to **25** types total (rename/disable/delete
 defaults allowed). Types are org-scoped and shared across repos.
@@ -1008,14 +1052,21 @@ All open questions, ambiguities, and not-yet-decided items live here.
   `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` are system-mapped (always
   present from tracker structure; `isDone` and `isDeliverySlice` overridable via
   fieldMappings); `priority` defaults to `5` with audit warning — see §4.6.5.
-- **`VertoConfig` schema.** Exact JSON/TypeScript shape for `fieldMappings` entries
-  (including value-map syntax, `from.kind` variants, validation rules).
-- **Read-only MVP vs. write-back day one.** Likely read-only first, but confirm.
+- ~~**`VertoConfig` schema.**~~ **Closed (Phase 2)** — `fieldMappings` is
+  `Record<string, FieldMappingEntry>` nested under `github` in `VertoConfig`; `from.kind:
+  'issue' | 'projectV2'`; optional `values` map (full-entry replace on merge); optional
+  `type` hint; `scope`-conditional required fields validated by JSON Schema via `ajv`;
+  JSONC format with `comment-json` parser — see `packages/config/` (`@verto/config`).
+- ~~**Read-only MVP vs. write-back day one.**~~ **Closed** — read-only MVP first
+  (Phases 2–4); write-back in Phase 5.
+- ~~**GitHub adapter scope.**~~ **Closed (Phase 2)** — `github.scope: "project" |
+  "repository"`; Issues-first API; `github.ownerType: "user" | "organization"`;
+  `expandGraphClosure()` for cross-scope refs — see §4.6.7.
 - **Write-back conflict policy.** Concurrency/merge rules when the UI and the
   tracker disagree.
-- **GitHub operational details.** Rate-limit and caching strategy; pagination
-  patterns for large projects; optional persistence of resolved ID cache in workspace
-  config vs in-memory only.
+- **GitHub operational details.** ID cache: in-memory only for Phase 2 (workspace-
+  persisted deferred to Phase 5). Rate-limit: exponential backoff (100 ms × 2ⁿ, max 3
+  retries). Pagination: cursor-based, fetch all pages (top-level + nested connections).
 - **Adapter capability differences.** How the core/UI degrade gracefully when an
   adapter lacks a feature (e.g. no custom fields, no native blocking links).
 - **Beans or Backlog.md / file-system shape.** File format, on-disk schema, and how
