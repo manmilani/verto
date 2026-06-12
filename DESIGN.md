@@ -443,7 +443,7 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 |  |                            |      |                          |  |
 |  |  - Adapter registry        | <==> |  - Delivery map lens     |  |
 |  |  - Active adapter (GH/...) | post |  - NCN graph lens        |  |
-|  |  - verto.config.json merge | msg  |  - Priorities + order    |  |
+|  |  - verto.config.jsonc merge | msg  |  - Priorities + order    |  |
 |  |  - Ticket body parser      |      |                          |  |
 |  |    (display-only)          |      |  - (dumb view of bundle) |  |
 |  |  - Workspace/global state  |      +--------------------------+  |
@@ -586,10 +586,10 @@ split between **fixed vendor semantics**, **config-driven project fields**, **I/
 
 ```
 .vscode/
-  verto.config.json          # workspace-specific adapter + mapping config (see §4.6.3)
+  verto.config.jsonc          # workspace-specific adapter + mapping config (see §4.6.3)
 
 packages/adapters/github/
-  defaults.verto.config.json # shipped defaults for this adapter (see §4.6.3)
+  defaults.verto.config.jsonc # shipped defaults for this adapter (see §4.6.3)
   system_types.ts            # vendor-native shapes (Issue, ProjectV2 field values, …)
   project_fields.ts          # config-driven field registry (see §4.6.4)
   client.ts                  # GraphQL / REST I/O — queries & mutations
@@ -613,8 +613,8 @@ Configuration is split into **adapter defaults** (versioned with the adapter) an
 
 | File | Location | Purpose |
 |---|---|---|
-| `defaults.verto.config.json` | `packages/adapters/<vendor>/` | Sensible conventions: adapter id, conventional field names, default **fieldMappings** (including value maps, type hints), priority mapping tables, recommended ticket passthrough entries, etc. |
-| `verto.config.json` | `.vscode/` | Workspace-specific wiring: adapter selection, repo/project identifiers, project-specific **fieldMappings** (including optional overrides for system-mapped fields). **No secrets** — auth tokens live in editor/env settings, not in this file. |
+| `defaults.verto.config.jsonc` | `packages/adapters/<vendor>/` | Sensible conventions: adapter id, conventional field names, default **fieldMappings** (including value maps, type hints), priority mapping tables, recommended ticket passthrough entries, etc. |
+| `verto.config.jsonc` | `.vscode/` | Workspace-specific wiring: adapter selection, repo/project identifiers, project-specific **fieldMappings** (including optional overrides for system-mapped fields). **No secrets** — auth tokens live in editor/env settings, not in this file. |
 
 **Effective config** is produced by merging defaults with workspace config; **workspace
 wins on conflict**:
@@ -639,25 +639,25 @@ This override rule applies uniformly to:
 
 - **System fields** (built-in tracker / ProjectV2 fields such as Status, Title,
   Assignees, Issue Type) — default semantics in `system_types.ts` and
-  `defaults.verto.config.json`; workspace `fieldMappings` override when present.
+  `defaults.verto.config.jsonc`; workspace `fieldMappings` override when present.
 - **Project-custom fields** (e.g. GitHub ProjectV2 custom columns such as
   `resolution`, AI SDLC metadata) — default bindings in
-  `defaults.verto.config.json`; workspace overrides when the project differs.
+  `defaults.verto.config.jsonc`; workspace overrides when the project differs.
 
 **Before the VS Code extension exists:** scripts and adapter development use
-`defaults.verto.config.json` directly, optionally merged with a hand-written or
-audit-generated `.vscode/verto.config.json`.
+`defaults.verto.config.jsonc` directly, optionally merged with a hand-written or
+audit-generated `.vscode/verto.config.jsonc`.
 
 **When the extension exists:** first-run setup asks for adapter type and project
 identity, runs the **audit/bootstrap** step (§4.6.6), copies merged defaults into
-`.vscode/verto.config.json`, and presents the draft for user editing — never
+`.vscode/verto.config.jsonc`, and presents the draft for user editing — never
 starting from a blank config.
 
 **`@verto/config` package.** The `VertoConfig` TypeScript type, JSON Schema (validated
 via `ajv`), and runtime helpers live in `packages/config/` (`@verto/config`):
 `validateVertoConfig(raw)` — throws on invalid config; `mergeConfigs(defaults, workspace)`
 — field-level replace merge; `parseVertoConfig(jsonc)` / `readVertoConfigFile(path)` —
-JSONC-aware parsing. Config files use **JSONC format** (`.json` extension; `//` line
+JSONC-aware parsing. Config files use **JSONC format** (`.jsonc` extension; `//` line
 comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` both fail
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
 `@verto/config`; the config type lives in `@verto/config` only.
@@ -665,7 +665,7 @@ on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not
 #### 4.6.4 Field mapping and the `FieldAccessor` contract
 
 All mapping configuration lives in a declarative **`fieldMappings`** object inside
-`verto.config.json` (and defaults). Each entry binds a **Verto canonical property**
+`verto.config.jsonc` (and defaults). Each entry binds a **Verto canonical property**
 to a **ticket field** and defines how **values** are translated — not just names.
 
 **`fieldMappings` must support:**
@@ -784,7 +784,7 @@ Verto field.
 **Status — system shape, project values.** The built-in ProjectV2 **Status** field
 is a **system** field in shape (single-select on the project), but its **allowed
 option set** is project-specific. Default value maps live in `system_types.ts` and
-`defaults.verto.config.json`; workspace `fieldMappings` override when the project's
+`defaults.verto.config.jsonc`; workspace `fieldMappings` override when the project's
 Status options differ. The audit step (§4.6.6) detects the current Status options
 and drafts the mapping section.
 
@@ -824,7 +824,7 @@ UI / core change → mapper.ts (reverse) → client.ts mutations → Tracker
 
 To avoid manual enumeration of project-specific fields, adapters support an
 **audit/bootstrap** step that queries the live project (e.g. GitHub ProjectV2
-fields, options, issue types) and produces a **draft** `.vscode/verto.config.json`:
+fields, options, issue types) and produces a **draft** `.vscode/verto.config.jsonc`:
 
 1. List all relevant ticket fields, types, and enum/option values (system + custom).
 2. Pre-fill `fieldMappings` by merging **adapter defaults** with what was discovered
@@ -837,7 +837,7 @@ fields, options, issue types) and produces a **draft** `.vscode/verto.config.jso
 **Interim tooling:** [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs)
 prototypes aligning a GitHub ProjectV2 field *schema* with the VertoNode-derived
 column set (Status options + custom fields). The extension's setup wizard will
-reuse this discovery logic when seeding `verto.config.json`.
+reuse this discovery logic when seeding `verto.config.jsonc`.
 
 #### 4.6.7 First adapter: GitHub Issues
 
@@ -851,7 +851,7 @@ Grounded in GitHub GraphQL capabilities documented under
 | **Done** (`isDone`) | Native GitHub issue `closed: boolean` — populated by system accessor; no `fieldMappings` entry needed by default. Drives `isReady` and `implementationOrder`. Overridable via `fieldMappings` if needed. |
 | **Vertical designation** (`isDeliverySlice`) | System accessor default: `true` for top-level tickets (`parent` is null). Override via standard `fieldMappings` entry — e.g. `{ "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }` |
 | **Status** (`ticketFields.status`) | ProjectV2 built-in `Status` field — non-canonical passthrough; `"type": "select"` |
-| **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.json` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
+| **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
 | **Body documentation** | Issue title + body; optional task-list parse for Delivery Map display only |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
@@ -860,7 +860,7 @@ Grounded in GitHub GraphQL capabilities documented under
 | **Priority** (`priority`) | Mapped via `fieldMappings` with `values` map when a source priority field exists. **If unmapped:** mapper uses **`5`** (neutral default) and continues; audit flags the gap. See required-field fallback policy (§4.6.5). |
 
 **`github.scope` — project vs. repository (Phase 2 decision).** The GitHub adapter
-supports two mutually exclusive modes, controlled by `github.scope` in `verto.config.json`:
+supports two mutually exclusive modes, controlled by `github.scope` in `verto.config.jsonc`:
 
 | `github.scope` | Issue enumeration | Board fields (`Status`, custom columns) |
 |---|---|---|
@@ -907,7 +907,7 @@ overriding via fieldMappings to use issue type).
 **`priority`** is optional on the board — when absent, mapper defaults to `5` (§4.6.5).
 **`ticketUrl`** is populated from the native issue `url`; no board column needed.
 
-**Recommended in `defaults.verto.config.json`.** Fields that are now non-canonical
+**Recommended in `defaults.verto.config.jsonc`.** Fields that are now non-canonical
 ticket passthroughs — particularly `labels`, `assignee`, `body`, `type`,
 `created_at`, `updated_at`, and AI SDLC metadata — should be pre-configured in the
 adapter defaults file so teams get them out of the box without manual enumeration.
@@ -923,16 +923,16 @@ these from the live project schema.
   vertical narrative, and — as much as possible — **vertical priority**. Rule of
   thumb: *if a teammate should see it without opening your IDE, it's in the
   ticket.*
-- **In workspace config** ([`.vscode/verto.config.json`](./.vscode/verto.config.json)):
+- **In workspace config** ([`.vscode/verto.config.jsonc`](./.vscode/verto.config.jsonc)):
   adapter selection; repo/project identifiers; **`fieldMappings`** (field bindings
   and value maps for all fields, including optional overrides for system-mapped fields
   such as `isDeliverySlice` and `isDone`); optional runtime ID caches. Rule of thumb:
   *if it's "how this workspace is wired to its tracker," it's workspace config.*
 - **In workspace/global editor state (transient UI):** refresh interval, selected
-  vertical, current lens, graph pan/zoom — not committed to `verto.config.json`
+  vertical, current lens, graph pan/zoom — not committed to `verto.config.jsonc`
   unless we later decide otherwise.
 - **Secrets** (GitHub PAT, etc.): editor or environment settings — **never** in
-  `verto.config.json`.
+  `verto.config.jsonc`.
 
 ### 4.8 Verto for VS Code (extension shell)
 
@@ -972,7 +972,7 @@ only as:
 - a **validation artefact** in CI (schema + dangling-dependency checks); or
 - the **on-disk format** for file-based adapters (e.g. Beans or Backlog.md).
 
-**`verto.config.json` is wiring, not backlog data.** It holds adapter selection and
+**`verto.config.jsonc` is wiring, not backlog data.** It holds adapter selection and
 **fieldMappings** (how tracker fields map to `VertoNode`) — not issue titles,
 status values, or dependency graphs. Those live in tickets and are loaded on each
 `loadProject()`.
@@ -1033,8 +1033,8 @@ All open questions, ambiguities, and not-yet-decided items live here.
   `adapter`), `FieldAccessor` contract, `CANONICAL_VERTO_NODE_KEYS` routing
   (canonical → node root; non-canonical → `node.ticketFields`), and read/write
   pipeline — see §4.6.1–§4.6.5.
-- ~~**Configuration model.**~~ **Closed** — `defaults.verto.config.json` per adapter,
-  `.vscode/verto.config.json` workspace overrides, `fieldMappings` (field + value),
+- ~~**Configuration model.**~~ **Closed** — `defaults.verto.config.jsonc` per adapter,
+  `.vscode/verto.config.jsonc` workspace overrides, `fieldMappings` (field + value),
   **field-level** merge granularity for `fieldMappings` (workspace entry replaces
   whole default entry; value-level merge deferred), names-only user-facing config,
   runtime ID cache with name fallback, workspace-wins merge — see §4.6.3–§4.6.4.
@@ -1046,7 +1046,7 @@ All open questions, ambiguities, and not-yet-decided items live here.
   via native org-level Issue Type — see §4.6.7. Prototyped field-schema sync:
   [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
 - ~~**Config bootstrap / audit.**~~ **Closed (design)** — audit step drafts
-  `verto.config.json` from live project shape; extension setup copies defaults and
+  `verto.config.jsonc` from live project shape; extension setup copies defaults and
   presents draft for edit — see §4.6.6.
 - ~~**Required-field fallback (read path).**~~ **Closed** — `id`, `title`, `isDone`,
   `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` are system-mapped (always
@@ -1086,8 +1086,8 @@ All open questions, ambiguities, and not-yet-decided items live here.
 - **Where the panel lives.** Editor tab vs. sidebar vs. custom editor; and how
   (if at all) it integrates with agent/chat workflows.
 - ~~**Setup UX (adapter config).**~~ **Closed (design)** — wizard asks adapter +
-  project identity, runs audit, seeds `.vscode/verto.config.json` from
-  `defaults.verto.config.json` + discovered project shape, user edits before save —
+  project identity, runs audit, seeds `.vscode/verto.config.jsonc` from
+  `defaults.verto.config.jsonc` + discovered project shape, user edits before save —
   see §4.6.3, §4.6.6. Remaining: exact wizard screens and validation UX.
 
 ### 5.5 Product & process

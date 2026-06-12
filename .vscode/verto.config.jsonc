@@ -1,6 +1,6 @@
 {
   // Workspace config for Verto's own GitHub project (manmilani/project #1).
-  // Merged over packages/adapters/github/defaults.verto.config.json at runtime.
+  // Merged over packages/adapters/github/defaults.verto.config.jsonc at runtime.
   // Note: no Priority column on this board — all nodes default to priority 5.
   "adapter": "github",
   "github": {

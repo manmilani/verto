@@ -101,7 +101,7 @@ returns a `DeliveryMapBundle`. First end-to-end path from a real tracker to a co
 ### GitHub scope and API usage
 
 **`github.scope` — a first-class config choice.** The GitHub adapter supports two mutually
-exclusive modes, set via `github.scope` in `verto.config.json`:
+exclusive modes, set via `github.scope` in `verto.config.jsonc`:
 
 | `github.scope` | Issue enumeration | Board fields (Status, custom columns) |
 |---|---|---|
@@ -125,7 +125,7 @@ must be sourced from issue-native fields (labels, milestones, etc.) or left unma
 defaults to `5`).
 
 **Repository scope: issue filter.** Without narrowing, `repository.issues` returns every issue
-in the repo, which is unworkable for large repos. `github.issueFilter` in `verto.config.json`
+in the repo, which is unworkable for large repos. `github.issueFilter` in `verto.config.jsonc`
 is an optional but recommended config when scope is `"repository"`, e.g.:
 `{ "labels": ["verto"], "states": ["OPEN"] }`. Unfiltered = all open issues in v1;
 the audit script flags the absence of a filter as a warning for large repos.
@@ -134,7 +134,7 @@ This scope distinction applies to all GitHub interactions: `client.ts` reads, wr
 mutations (Phase 5), and the audit script.
 
 > **DESIGN.md sync note:** At the start of Phase 2, update DESIGN.md §4.6.7 to reflect the
-> scope config, the Issues-first API preference, and the split `defaults.verto.config.json`; add
+> scope config, the Issues-first API preference, and the split `defaults.verto.config.jsonc`; add
 > a cross-link to this section.
 
 ### Deliverables
@@ -149,9 +149,9 @@ mutations (Phase 5), and the audit script.
 | `packages/adapters/github/project_fields.ts` | Config-driven `FieldAccessor` implementation; reads `fieldMappings` from effective config; routes to canonical root (`CANONICAL_VERTO_NODE_KEYS`) or `node.ticketFields`; skips `"kind": "projectV2"` entries (with a warning) when scope is `"repository"` |
 | `packages/adapters/github/mapper.ts` | Composes system + project `FieldAccessor`s; produces `VertoNode[]` + `VertoEdge[]`; applies required-field fallback policy (DESIGN.md §4.6.5): missing `priority` → default `5` + warning; missing system fields → error |
 | `packages/adapters/github/adapter.ts` | Implements `VertoAdapter<VertoConfig>`; `loadProject(config: VertoConfig): Promise<DeliveryMapBundle>` — load effective config → client fetch (scope-branched) → map → validate → `buildDeliveryMapBundle()` → return |
-| `packages/adapters/github/defaults.verto.config.json` | Two scope variants shipped as commented examples; active defaults for project scope: Issues API fields (`stateReason`, `type`, `labels`, `assignee`, `body`, timestamps) bound via `"kind": "issue"`; ProjectV2-only fields (`status`, `priority`, AI SDLC metadata) bound via `"kind": "projectV2"` |
-| `.vscode/verto.config.json` | Workspace config for this repo (Verto's own GitHub project, so `scope: "project"`) |
-| `scripts/audit-github-project.mjs` | Evolves `scripts/sync-github-project-fields.mjs`: scope-aware discovery — repository scope queries issue types + labels (Issues API); project scope additionally discovers ProjectV2 custom field names + options; in both cases drafts `.vscode/verto.config.json` by merging with `defaults.verto.config.json` and flags gaps |
+| `packages/adapters/github/defaults.verto.config.jsonc` | Two scope variants shipped as commented examples; active defaults for project scope: Issues API fields (`stateReason`, `type`, `labels`, `assignee`, `body`, timestamps) bound via `"kind": "issue"`; ProjectV2-only fields (`status`, `priority`, AI SDLC metadata) bound via `"kind": "projectV2"` |
+| `.vscode/verto.config.jsonc` | Workspace config for this repo (Verto's own GitHub project, so `scope: "project"`) |
+| `scripts/audit-github-project.mjs` | Evolves `scripts/sync-github-project-fields.mjs`: scope-aware discovery — repository scope queries issue types + labels (Issues API); project scope additionally discovers ProjectV2 custom field names + options; in both cases drafts `.vscode/verto.config.jsonc` by merging with `defaults.verto.config.jsonc` and flags gaps |
 | `scripts/load-project.mjs` | Dev smoke-test: run `loadProject()`, print bundle JSON — no extension needed |
 
 ### Decisions to resolve before this phase
@@ -176,7 +176,7 @@ same phase or as a fast follow without blocking Phase 3.
 **Goal:** An installable `.vsix` that opens a Webview panel showing both lenses with live data.
 The first point at which Verto can be dogfooded against its own GitHub project.
 
-**Note:** Phase 3 assumes `.vscode/verto.config.json` is already seeded (by the Phase 2 audit
+**Note:** Phase 3 assumes `.vscode/verto.config.jsonc` is already seeded (by the Phase 2 audit
 script or by hand). The first-run setup wizard (DESIGN.md §4.6.3, §4.6.6) is a post–Phase 3
 stretch goal — it is not required to dogfood the extension. Before the wizard, extract GitHub
 audit/bootstrap from `scripts/audit-github-project.mjs` into `@verto/adapter-github` (importable
@@ -187,7 +187,7 @@ library); the script remains a thin CLI wrapper.
 | File | Purpose |
 |---|---|
 | `packages/extension/src/extension.ts` | `activate()`: register open-panel command; wire GitHub auth; register refresh command |
-| `packages/extension/src/host/configLoader.ts` | Load + deep-merge `defaults.verto.config.json` and `.vscode/verto.config.json`; workspace config wins |
+| `packages/extension/src/host/configLoader.ts` | Load + deep-merge `defaults.verto.config.jsonc` and `.vscode/verto.config.jsonc`; workspace config wins |
 | `packages/extension/src/host/adapterRegistry.ts` | Adapter selection by `config.adapter` using the shared `VertoAdapter` interface from `@verto/core`; initially only `"github"` |
 | `packages/extension/src/host/authProvider.ts` | VS Code built-in GitHub auth provider; injects token into `client.ts` |
 | `packages/extension/src/host/bodyParser.ts` | Display-only ticket body parser: extracts markdown task lists for the Delivery Map lens; not connected to graph math. Initial heuristic implementation — exact conventions finalized in Phase 4 |
@@ -282,7 +282,7 @@ display its own development backlog (`backlog/`) with itself.
 | `packages/adapters/beans/client.ts` | File-system reads (and optionally Beans GraphQL — [`graphql/hmans_beans_graphql.agent_prompt.md`](./graphql/hmans_beans_graphql.agent_prompt.md)) |
 | `packages/adapters/beans/mapper.ts` | Beans task → `VertoNode` + `VertoEdge`; maps `dependencies:` to `prereqIds`, `priority:` to 1–9 |
 | `packages/adapters/beans/adapter.ts` | `loadProject(config): DeliveryMapBundle` |
-| `packages/adapters/beans/defaults.verto.config.json` | Shipped defaults for Beans field names and priority values |
+| `packages/adapters/beans/defaults.verto.config.jsonc` | Shipped defaults for Beans field names and priority values |
 
 ### Decisions to resolve before this phase
 

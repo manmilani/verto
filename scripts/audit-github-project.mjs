@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * Scope-aware bootstrap that queries a GitHub project or repository and drafts
- * a workspace verto.config.json from the discovered fields.
+ * a workspace verto.config.jsonc from the discovered fields.
  *
  * Usage:
  *   GITHUB_TOKEN=ghp_... node --import tsx/esm scripts/audit-github-project.mjs [--dry-run]
  *
  * Options:
- *   --dry-run   Print the merged config to stdout instead of writing to .vscode/verto.config.json
+ *   --dry-run   Print the merged config to stdout instead of writing to .vscode/verto.config.jsonc
  *
- * Reads .vscode/verto.config.json (if it exists) for owner/projectNumber/scope.
+ * Reads .vscode/verto.config.jsonc (if it exists) for owner/projectNumber/scope.
  * Falls back to the defaults file for scope and owner.
  */
 
@@ -27,8 +27,8 @@ const dryRun = process.argv.includes('--dry-run')
 
 const gql = graphql.defaults({ headers: { authorization: `token ${TOKEN}` } })
 
-const defaultsPath = 'packages/adapters/github/defaults.verto.config.json'
-const workspacePath = '.vscode/verto.config.json'
+const defaultsPath = 'packages/adapters/github/defaults.verto.config.jsonc'
+const workspacePath = '.vscode/verto.config.jsonc'
 
 const defaultsRaw = parseVertoConfig(readFileSync(defaultsPath, 'utf8'))
 const workspaceRaw = existsSync(workspacePath)

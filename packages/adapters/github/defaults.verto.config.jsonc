@@ -1,6 +1,6 @@
 {
   // Default configuration for the GitHub adapter.
-  // Merge with your workspace .vscode/verto.config.json via mergeConfigs().
+  // Merge with your workspace .vscode/verto.config.jsonc via mergeConfigs().
   //
   // Scope variants — uncomment ONE block in your workspace file:
   //
@@ -33,7 +33,9 @@
       "status": {
         "from": { "kind": "projectV2", "field": "Status" },
         "type": "select"
-      },
+      }
+
+      // Since ProjectV2 fiels are user-defined, they should be added to workspace verto.config.jsonc. Examples:
       // "priority": {
       //   "from": { "kind": "projectV2", "field": "Priority" },
       //   "type": "select",
@@ -41,11 +43,10 @@
       //   // For a NUMBER field use: { "from": {...}, "type": "number" } — no "values" map needed.
       //   // For a SINGLE_SELECT field, "values" is required; missing entries default to priority 5.
       // },
-      "resolution": {
-        "from": { "kind": "projectV2", "field": "resolution" },
-        "type": "select"
-      }
-
+      // "resolution": {
+      //   "from": { "kind": "projectV2", "field": "resolution" },
+      //   "type": "select"
+      // }
       // -- AI SDLC traceability (uncomment if your board has these fields) --
       // "specified_by":       { "from": { "kind": "projectV2", "field": "specified_by" } },
       // "planned_by":         { "from": { "kind": "projectV2", "field": "planned_by" } },

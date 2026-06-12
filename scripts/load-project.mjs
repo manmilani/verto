@@ -20,9 +20,9 @@ if (!TOKEN) {
 }
 
 const defaults = parseVertoConfig(
-  readFileSync('packages/adapters/github/defaults.verto.config.json', 'utf8'),
+  readFileSync('packages/adapters/github/defaults.verto.config.jsonc', 'utf8'),
 )
-const workspace = await readVertoConfigFile('.vscode/verto.config.json')
+const workspace = await readVertoConfigFile('.vscode/verto.config.jsonc')
 const config = mergeConfigs(defaults, workspace)
 
 const adapter = new GitHubAdapter(TOKEN)
