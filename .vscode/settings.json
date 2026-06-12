@@ -3,13 +3,13 @@
     "terminal.integrated.profiles.linux": {
         "bash": {
             "path": "bash",
-            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+            "args": ["--rcfile", "${workspaceFolder}/.env.sh"]
         }
     },
     "terminal.integrated.profiles.osx": {
         "zsh": {
             "path": "zsh",
-            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+            "args": ["--rcfile", "${workspaceFolder}/.env.sh"]
         }
     },
     // --- WINDOWS COMMAND PROMPT (cmd) ---
@@ -29,7 +29,7 @@
         // --- WINDOWS GIT BASH ---
         "Git Bash": {
             "path": "C:\\Program Files\\Git\\bin\\bash.exe",
-            "args": ["--rcfile", "${workspaceFolder}/env.sh"]
+            "args": ["--rcfile", "${workspaceFolder}\\.env.sh"]
         }
     },
     // --- FIX FOR AUTOMATION / DEBUG ERRORS ---

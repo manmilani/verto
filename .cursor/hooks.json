@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "bash .env_to_json.sh" }
+    ],
+    "preToolUse": [
+      {
+        "command": "bash .cursor/hooks/.env.pretool-wrap-shell.sh",
+        "matcher": "Shell"
+      }
+    ]
+  }
+}
