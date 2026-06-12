@@ -6,32 +6,43 @@ labels: type:feature,priority:medium
 assignees: ''
 ---
 
-## Description
-<!-- SECTION:DESCRIPTION:BEGIN -->
+## Specification
+<!-- SECTION:SPECIFICATION:BEGIN -->
+#### Description
+<!-- DESC:BEGIN -->
 
-<!-- SECTION:DESCRIPTION:END -->
+<!-- DESC:END -->
 
-## Acceptance Criteria
+#### Requirements
+<!-- REQ:BEGIN -->
+- [ ] 1. …
+<!-- REQ:END -->
+
+#### Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] 1. …
 <!-- AC:END -->
 
-## Definition of Done
+#### Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] 1. …
 <!-- DOD:END -->
+<!-- SECTION:SPECIFICATION:END -->
 
-## Work Plan
-<!-- SECTION:PLAN:BEGIN -->
+## Work
+<!-- SECTION:WORK:BEGIN -->
+#### Work Plan
+<!-- PLAN:BEGIN -->
 
-<!-- SECTION:PLAN:END -->
+<!-- PLAN:END -->
 
-## Notes
-<!-- SECTION:NOTES:BEGIN -->
+#### Work Retrospective Notes
+<!-- RETRONOTES:BEGIN -->
 
-<!-- SECTION:NOTES:END -->
+<!-- RETRONOTES:END -->
+<!-- SECTION:WORK:END -->
 
-## Final Summary
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Final Summary (V&V)
+<!-- FINAL_SUMMARY:BEGIN -->
 
-<!-- SECTION:FINAL_SUMMARY:END -->
+<!-- FINAL_SUMMARY:END -->

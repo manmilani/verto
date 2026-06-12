@@ -17,7 +17,8 @@ function usage() {
   gh-issues.mjs update  (--number N | --id NODE_ID) (--body-file PATH | --body TEXT) [--title T]
   gh-issues.mjs list    [--owner O] [--repo R] [--state OPEN|CLOSED] [--limit N] [--json]
   gh-issues.mjs search  QUERY [--limit N] [--json]
-  gh-issues.mjs template [--description T] [--acceptance-criteria "a\\nb"] [--definition-of-done "a\\nb"]
+  gh-issues.mjs template [--description T] [--requirements "a\\nb"] [--acceptance-criteria "a\\nb"]
+                        [--definition-of-done "a\\nb"] [--plan T] [--retronotes T] [--final-summary T]
   gh-issues.mjs projects  --number N [--owner O] [--repo R] [--json]
   gh-issues.mjs project fields [--project-id ID] [--project-owner U] [--project-number N] [--org]
   gh-issues.mjs project items  [--project-id ID] [--project-owner U] [--project-number N] [--org] [--limit N] [--json]
@@ -276,47 +277,56 @@ function numberedChecklist(items) {
     .join('\n');
 }
 
+function toChecklist(text) {
+  if (typeof text !== 'string' || text === '') return '';
+  return numberedChecklist(splitLines(text));
+}
+
 function buildTemplate(args) {
-  const ac = args['acceptance-criteria']
-    ? numberedChecklist(splitLines(args['acceptance-criteria']))
-    : '';
-  const dod = args['definition-of-done']
-    ? numberedChecklist(splitLines(args['definition-of-done']))
-    : '';
+  const req = toChecklist(args.requirements);
+  const ac = toChecklist(args['acceptance-criteria']);
+  const dod = toChecklist(args['definition-of-done']);
 
-  return `## Description
-
-<!-- SECTION:DESCRIPTION:BEGIN -->
+  return `## Specification
+<!-- SECTION:SPECIFICATION:BEGIN -->
+#### Description
+<!-- DESC:BEGIN -->
 ${args.description ?? ''}
-<!-- SECTION:DESCRIPTION:END -->
+<!-- DESC:END -->
 
-## Acceptance Criteria
+#### Requirements
+<!-- REQ:BEGIN -->
+${req}
+<!-- REQ:END -->
+
+#### Acceptance Criteria
 <!-- AC:BEGIN -->
 ${ac}
 <!-- AC:END -->
 
-## Definition of Done
+#### Definition of Done
 <!-- DOD:BEGIN -->
 ${dod}
 <!-- DOD:END -->
+<!-- SECTION:SPECIFICATION:END -->
 
-## Work Plan
-
-<!-- SECTION:PLAN:BEGIN -->
+## Work
+<!-- SECTION:WORK:BEGIN -->
+#### Work Plan
+<!-- PLAN:BEGIN -->
 ${args.plan ?? ''}
-<!-- SECTION:PLAN:END -->
+<!-- PLAN:END -->
 
-## Notes
+#### Work Retrospective Notes
+<!-- RETRONOTES:BEGIN -->
+${args.retronotes ?? ''}
+<!-- RETRONOTES:END -->
+<!-- SECTION:WORK:END -->
 
-<!-- SECTION:NOTES:BEGIN -->
-${args.notes ?? ''}
-<!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Final Summary (V&V)
+<!-- FINAL_SUMMARY:BEGIN -->
 ${args['final-summary'] ?? ''}
-<!-- SECTION:FINAL_SUMMARY:END -->
+<!-- FINAL_SUMMARY:END -->
 `;
 }
 

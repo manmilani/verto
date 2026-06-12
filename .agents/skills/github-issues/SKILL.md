@@ -21,7 +21,7 @@ GraphQL ref (read on demand): [github-issues-graphql.md](github-issues-graphql.m
 | create | `--title T --body-file f` |
 | update | `--number N --body-file f` (replaces full body) |
 | list / search | `list` · `search "repo:O/R …"` |
-| template | `--description` · `--acceptance-criteria` · `--definition-of-done` |
+| template | `--description` · `--requirements` · `--acceptance-criteria` · `--definition-of-done` · `--plan` · `--retronotes` · `--final-summary` |
 | **projects** | `--number N` — list ProjectV2 board(s) linked to an issue |
 | project | `project fields` · `project items` (needs project id) |
 

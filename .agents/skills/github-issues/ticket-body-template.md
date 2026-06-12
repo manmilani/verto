@@ -1,37 +1,48 @@
 # Issue body template
 
-Six sections with HTML comment markers. Empty sections keep markers. Checklists: `1.` not `#1`.
+`SECTION:*` = grouping only; all content lives in field markers (`DESC`, `REQ`, `AC`, `DOD`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY`). Empty fields keep markers. Checklists: `1.` not `#1`.
 
 ```markdown
-## Description
-<!-- SECTION:DESCRIPTION:BEGIN -->
+## Specification
+<!-- SECTION:SPECIFICATION:BEGIN -->
+#### Description
+<!-- DESC:BEGIN -->
 
-<!-- SECTION:DESCRIPTION:END -->
+<!-- DESC:END -->
 
-## Acceptance Criteria
+#### Requirements
+<!-- REQ:BEGIN -->
+- [ ] 1. …
+<!-- REQ:END -->
+
+#### Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] 1. …
 <!-- AC:END -->
 
-## Definition of Done
+#### Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] 1. …
 <!-- DOD:END -->
+<!-- SECTION:SPECIFICATION:END -->
 
-## Work Plan
-<!-- SECTION:PLAN:BEGIN -->
+## Work
+<!-- SECTION:WORK:BEGIN -->
+#### Work Plan
+<!-- PLAN:BEGIN -->
 
-<!-- SECTION:PLAN:END -->
+<!-- PLAN:END -->
 
-## Notes
-<!-- SECTION:NOTES:BEGIN -->
+#### Work Retrospective Notes
+<!-- RETRONOTES:BEGIN -->
 
-<!-- SECTION:NOTES:END -->
+<!-- RETRONOTES:END -->
+<!-- SECTION:WORK:END -->
 
-## Final Summary
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Final Summary (V&V)
+<!-- FINAL_SUMMARY:BEGIN -->
 
-<!-- SECTION:FINAL_SUMMARY:END -->
+<!-- FINAL_SUMMARY:END -->
 ```
 
-Markers: `SECTION:DESCRIPTION`, `AC`, `DOD`, `SECTION:PLAN`, `SECTION:NOTES`, `SECTION:FINAL_SUMMARY` (each `BEGIN`/`END`).
+Markers: `SECTION:SPECIFICATION`, `DESC`, `REQ`, `AC`, `DOD`, `SECTION:WORK`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY` (each `BEGIN`/`END`).
