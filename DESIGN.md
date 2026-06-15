@@ -464,7 +464,7 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 **Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
 
 - **Portfolio** — per slice, counts Requirements bucketed by
-  `deliveryMapView.portfolioColumns` in config (§4.6.3).
+  `portfolioColumns` in config (§4.6.3).
 - **UsageBar** — same buckets as portfolio columns; **counts** (not weighted scores).
 - **Gaps** — requirements that do **not** match any **done bucket**. A portfolio
   column is a **done bucket** when **any** of its `sources` entries has
@@ -778,18 +778,17 @@ comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` b
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
 `@verto/config`; the config type lives in `@verto/config` only.
 
-**`deliveryMapView.portfolioColumns` (Phase 2.5).** Configures how Requirements
-(pipeline rows) bucket into portfolio table columns and UsageBar segments. Shape:
+**`portfolioColumns` (Phase 2.5).** Root-level config array that configures how
+Requirements (pipeline rows) bucket into portfolio table columns and UsageBar segments.
+Shape:
 
 ```jsonc
 {
-  "deliveryMapView": {
-    "portfolioColumns": [
-      { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
-      { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
-      { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
-    ]
-  }
+  "portfolioColumns": [
+    { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
+    { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
+    { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
+  ]
 }
 ```
 
@@ -1314,7 +1313,7 @@ the body sections cited — this list is the index.
 - ~~**Enable Parsed Requirements toggle.**~~ **Closed (Phase 2.5)** — global,
   default on, `workspaceState`; filter graph when off — §3.7, §4.6.8.
 - ~~**Portfolio columns / UsageBar / gaps.**~~ **Closed (Phase 2.5)** —
-  `deliveryMapView.portfolioColumns` in config — §4.6.3.
+  `portfolioColumns` at config root — §4.6.3.
 - ~~**Portfolio column matching algorithm.**~~ **Closed (Phase 2.5)** — first matching
   column in config order; per-source OR between `isDone` predicate and `statuses`
   list; non-Done columns require `!isDone`; done buckets structural (not by label) —

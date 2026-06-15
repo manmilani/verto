@@ -214,7 +214,7 @@ prior two-column / display-only body / `REQ:` markers design.
 
 | File | Purpose |
 |---|---|
-| `packages/config/src/types.ts` | `deliveryMapView.portfolioColumns` — source-aware buckets (`ticket` / `parsed`); optional `fieldMappings.personas` override (no default binding) |
+| `packages/config/src/types.ts` | Root-level `portfolioColumns` — source-aware buckets (`ticket` / `parsed`); optional `fieldMappings.personas` override (no default binding) |
 | `packages/config/src/schema.ts` | JSON Schema for portfolio columns; `personas` allowed as optional `fieldMappings` key |
 | `packages/adapters/github/defaults.verto.config.jsonc` | Seed portfolio columns (Done / in-progress / raw); **no** default `personas` field binding (labels are the default source) |
 
@@ -223,7 +223,7 @@ prior two-column / display-only body / `REQ:` markers design.
 | File | Purpose |
 |---|---|
 | `scripts/load-project.mjs` | `adapter.loadProject()` → `runHostPipeline(graph, { parsedEnabled: !argv.noParsed })`; `--no-parsed` turns parsed nodes off |
-| `scripts/audit-github-project.mjs` | Seed `deliveryMapView.portfolioColumns` from discovered Status options + parsed raw/done rules |
+| `scripts/audit-github-project.mjs` | Seed root-level `portfolioColumns` from discovered Status options + parsed raw/done rules |
 
 ### Decisions (resolved)
 
@@ -242,7 +242,7 @@ prior two-column / display-only body / `REQ:` markers design.
 - **`VertoEdge.reason`:** closed union including `'parsed-req'`.
 - **Child sort:** unchanged — `implementationOrder` → `createdAt` → issue `id`.
 - **Completeness per row:** raw 0%/100% from checkbox; child `deliveryCompleteness(child)`.
-- **Portfolio / UsageBar / gaps:** `deliveryMapView.portfolioColumns` — §4.6.3 DESIGN.md.
+- **Portfolio / UsageBar / gaps:** root-level `portfolioColumns` — §4.6.3 DESIGN.md.
 - **`personas` (GitHub):** default from issue labels `persona:<value>`; optional `fieldMappings.personas` override (not in defaults).
 - **Slice header:** `personas[]` + DESC outcome; black-box canvas section **removed**.
 
