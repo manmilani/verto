@@ -27,7 +27,7 @@
 1. [Background — the existing Rustybu canvas](#1-background--the-existing-rustybu-canvas)
 2. [Verto — System Intention / Goal](#2-verto--system-intention--goal)
 3. [High-Level Abstract Solution Design](#3-high-level-abstract-solution-design)
-4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.7](#467-first-adapter-github-issues)
+4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.8](#468-parsed-requirements-verto-parsed-nodes)
 5. [Knowledge Gaps](#5-knowledge-gaps)
 6. [Implementation Plan](#6-implementation-plan)
 
@@ -147,8 +147,9 @@ The deprecated original canvas uses a separate `verts[]` field on nodes to assoc
 work-items with journeys, and hard-coded `steps[]` with status per journey. In
 the **target Verto system**, all tickets are **equal graph nodes**;
 parent/child and BlockedBy/Blocking are unified dependency links; vertical/epic/
-journey are equivalent semantic labels on certain nodes; and body task lists are
-documentation only (Delivery Map shows body + children — see §3.6–§3.7).
+journey are equivalent semantic labels on certain nodes; and **raw requirements**
+(parsed from ticket bodies) plus **child tickets** form the unified **Requirement**
+list in the Delivery Map (see §3.6–§3.8).
 
 **GitHub adapter reference:** [graphql/github_issues_graphql.agent_prompt.md](./graphql/github_issues_graphql.agent_prompt.md)
 
@@ -287,9 +288,9 @@ the NCN graph shows the full network with no special casing.
   parent/child and BlockedBy/Blocking. An edge `A → B` means *A must be
   sufficiently done before B can be fully built/delivered*. The full set of
   in-edges to a node is the complete set of its prerequisites.
-- **Status** — a source-specific progress label, passed through as a display field
-  (`node.ticketFields.status`). Not a canonical `@verto/core` concept. The canonical
-  done signal is `VertoNode.isDone: boolean` — see §4.4.
+- **Status** — workflow progress label on the canonical root (`node.status`), mapped
+  from the tracker via `fieldMappings` (Phase 2.5). **Not used in graph math** — the
+  canonical done signal is `VertoNode.isDone: boolean` (see §4.4).
 
 Modelling shared enablers as a *single* node that many delivery subgraphs depend
 on is what makes **leverage** visible: a missing foundational node may block many
@@ -366,46 +367,129 @@ For each node N, a canonical *global priority ranking value* is derived by trave
 
 A configurable constant `MIN_DEPTH_FLOOR` sets a minimum digit count for normalisation, using `D = max(actual_max_depth, MIN_DEPTH_FLOOR)`. This decouples per-node priority computation from a full graph scan, enabling live priority estimates when adding or reordering nodes without a full graph reload. Default: `undefined` (use actual graph max). Enable when incremental estimation is needed.
 
-### 3.6 Ticket body documentation vs graph nodes
+### 3.6 Requirements, raw requirements, and graph nodes
 
-A deliberate distinction (and a correction of the canvas's conflation):
+**Terminology** — see [§3.8 Glossary](#38-glossary).
 
-- **Graph nodes** = all tracked tickets. Same structure and behaviour throughout.
-  They participate in closure, readiness, leverage, and ordering.
-- **Body documentation** — including markdown task lists (`- [ ]` / `- [x]`) in
-  the body of **any** ticket — is free-form prose for describing what needs to
-  be delivered. It is **documentation only**. The graph and all core algorithms
-  **do not parse, depend on, or care about** task lists or other body content.
+Every **Requirement** is a **`VertoNode`** in the graph. Requirements are either:
 
-When scope becomes clearer, work is **decomposed into child tickets** that
-implement the parent — not by "promoting" checklist items into the graph, but by
-creating real tracked children. A parent may or may not retain a task list in its
-body; either way, only child tickets (and other dependency links) matter to the
-graph.
+- **`nodeType: 'ticket'`** — tracked issues from an adapter (e.g. GitHub); `nodeOrigin`
+  names the adapter (e.g. `'github'`).
+- **`nodeType: 'parsed'`** — lines materialized from a ticket body's **Raw
+  Requirements** block (`RAW_REQ:BEGIN` / `RAW_REQ:END`); `nodeOrigin: 'parsed-nodes'`.
+
+Parsed nodes are created by **`@verto/parsed-nodes`** (Phase 2.5) after the tracker
+adapter loads ticket nodes. They participate in **NCN math** (closure, readiness,
+leverage, implementation order) when **Enable Parsed Requirements** is on.
+
+**Deprecated canvas `steps[]`** mapped conceptually to the **union** of child
+sub-issues and raw requirement lines for a slice — shown as a **single pipeline
+column** in the Delivery Map (not two side-by-side columns). There is **no
+automatic deduplication or linking** between raw lines and child tickets.
+
+**`parsedReqs[]`** on a parent lists synthetic ids for that ticket's materialized
+raw lines. **`prereqIds`** = `parsedReqs ∪ childIds ∪ blocking` (deduped).
+**`childIds`** remains sub-issue ids only. Parsed → parent edges use
+`VertoEdge.reason: 'parsed-req'`.
+
+When **Enable Parsed Requirements** is off (global toggle, default **on**), parsed
+nodes are **filtered out** of the graph copy used for `buildDeliveryMapBundle()` —
+as if they did not exist — including from the Delivery Map pipeline (children only).
 
 ### 3.7 Delivery Map lens (vertical-focused presentation)
 
-The Delivery Map is a **presentation lens**, not a separate data model. It
-emphasises nodes designated as verticals (vertical delivery / vertical slice /
-user journey / epic — equivalent terms; materialised as a top node, probably
-Epic ticket type).
+The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey).
 
-For each vertical node, the Delivery Map shows **two complementary views**
-side by side:
+**Slice header (canvas fidelity):**
 
-1. **Body documentation** — the ticket description and any markdown task lists in
-   the body. These help envision and communicate what the vertical should achieve
-   (e.g. imagining what a user would need to be able to do). They are
-   **documentation only**; the graph does not parse or depend on them. An epic
-   may or may not include such a list.
-2. **Child tickets** — the node's children (if any), i.e. the decomposed work
-   that implements the epic. These **are** graph nodes and drive readiness,
-   delivery completeness, leverage, and ordering.
+- **Persona** — `personas: string[]` on the slice node (canonical root field;
+  default `[]`). **GitHub default (Phase 2.5):** extract from issue **labels** matching
+  `persona:<value>` — each matching label contributes `<value>` to the array (label
+  list order). Optional **`fieldMappings.personas`** in workspace config overrides
+  label extraction when present (no default entry in `defaults.verto.config.jsonc`).
+  See §4.6.7.
+- **Outcome** — display-only: full **Description** between `DESC:BEGIN` / `DESC:END`
+  on the slice ticket body (strip HTML comments).
 
-The deprecated original canvas showed a single hard-coded `steps[]` list per journey with
-status values; the target system replaces that with this dual presentation. As
-scope becomes clear, work is broken down into child tickets — with or without a
-task list remaining in the epic body.
+**Requirement pipeline** — one ordered list per slice (like deprecated canvas
+`steps[]`), **not** two columns:
+
+1. **Child tickets** (sub-issues) — first segment  
+2. **Raw requirement lines** — second segment  
+
+Concatenation only; **no deduplication**. Blocking-only prereqs are **not** shown.
+Parsed lines on **child** tickets affect that child's graph only — they do **not**
+appear on the parent slice's pipeline (same as sub-sub-issues).
+
+**Ordering.**
+
+| Segment | Sort rule |
+|---|---|
+| **Child tickets** | (1) `implementationOrder` rank; (2) `createdAt` ascending; (3) issue `id` alphanumeric ascending |
+| **Raw requirements** | Document order within `RAW_REQ:BEGIN` / `RAW_REQ:END`; ignore `1.`, `2.`, … prefixes |
+
+**Per-requirement display fields** (pipeline row; `title` = `VertoNode.title`):
+
+| Field | Raw requirement (`parsed`) | Child ticket (`ticket`) |
+|---|---|---|
+| **title** | Parsed from line text (see below) | Issue title |
+| **note** | Parsed from line text | Extracted from `DESC:BEGIN` / `DESC:END` in the **child ticket's own body** (see §4.6.8) |
+| **status** | `raw` (unchecked) or `done` (checked) | Tracker `status` (canonical root) |
+| **isDone** | Matches checkbox | Tracker closed / mapping |
+| **Completeness** (bar segment weight) | 0% unchecked; 100% checked | `deliveryCompleteness(nodeId)` |
+
+**Raw line name/note parsing** (`[ ]` or `[x]`):
+
+- If line matches `- [ ] 1. "Name": Description...` or `- [ ] "Name": Description...`
+  (colon immediately after closing `"` of name) → `title` = Name, `note` = rest.
+- Else → `title` = `note` = full line text; multiline: `title` = first line,
+  `note` = all lines.
+
+**Synthetic identity (parsed nodes):**
+
+- **id:** `{parentId}#raw-req-{n}` — **1-based** index in `RAW_REQ` **document order**
+- **ticketUrl:** parent `ticketUrl` + anchor `#raw-req-{n}`
+- Reordering body lines **changes ids** — accepted behaviour
+- `isDeliverySlice: false`, `priority: 5`
+
+**Slice picker (Phase 3).** Pills (deprecated canvas pattern).
+
+**Empty states.**
+
+| Situation | UI |
+|---|---|
+| No `isDeliverySlice` nodes | Empty screen (auto-promote deferred) |
+| Slice with no children and toggle off / no raw lines | Empty pipeline |
+
+**Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
+
+- **Portfolio** — per slice, counts Requirements bucketed by
+  `deliveryMapView.portfolioColumns` in config (§4.6.3).
+- **UsageBar** — same buckets as portfolio columns; **counts** (not weighted scores).
+- **Gaps** — requirements that do **not** match any **done bucket**. A portfolio
+  column is a **done bucket** when **any** of its `sources` entries has
+  `isDone: true` (for `ticket` and/or `parsed`). A requirement matches a column when
+  it satisfies that column's `sources` rules (§4.6.3). **Gaps** = pipeline rows that
+  match no done bucket. (A row with `isDone: true` but a non-Done workflow `status`
+  still counts as done if it matches a done bucket via `isDone: true`.)
+- **Removed:** deprecated canvas “The biggest black boxes” section. Term **black box**
+  is not used in Verto; unchecked raw status is **`raw`**.
+
+**Enable Parsed Requirements** — global setting (all lenses); persisted in
+`workspaceState`; default **on**. Host always materializes parsed nodes, then
+filters before bundle when off; rebuilds bundle on toggle.
+
+### 3.8 Glossary
+
+| Term | Meaning |
+|---|---|
+| **Raw Requirements** | Checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END`; markdown heading **Raw Requirements** |
+| **`raw` status** | Unchecked raw requirement (`isDone: false`) — replaces deprecated “missing” / “black box” *status* |
+| **`done` status** | Checked raw requirement (`isDone: true`) |
+| **Requirement** | Any pipeline row: a **child ticket** and/or a **raw requirement** line (union, concatenated) |
+| **`parsed` `nodeType`** | Graph node materialized from a raw requirement line |
+| **`ticket` `nodeType`** | Graph node from a tracker adapter |
+| **`nodeOrigin`** | Provenance: `'github'`, `'parsed-nodes'`, etc. |
 
 ---
 
@@ -444,9 +528,10 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 |  |  - Adapter registry        | <==> |  - Delivery map lens     |  |
 |  |  - Active adapter (GH/...) | post |  - NCN graph lens        |  |
 |  |  - verto.config.jsonc merge | msg  |  - Priorities + order    |  |
-|  |  - Ticket body parser      |      |                          |  |
-|  |    (display-only)          |      |  - (dumb view of bundle) |  |
-|  |  - Workspace/global state  |      +--------------------------+  |
+|  |  - @verto/parsed-nodes     |      |                          |  |
+|  |    (materialize / filter)  |      |  - (dumb view of bundle) |  |
+|  |  - Enable Parsed Reqs toggle|     +--------------------------+  |
+|  |  - Workspace/global state  |                                    |
 |  |  - Auth (e.g. GH provider) |                                    |
 |  +-------------+--------------+                                    |
 |                |                                                   |
@@ -458,6 +543,12 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
    (first adapter)                     e.g. Beans or Backlog.md)
                                                 |
                        (shared, reused by all shells)
+                +---------------------------------------+
+                |   @verto/parsed-nodes (enrichment)    |
+                |   - RAW_REQ parse + materialize       |
+                |   - filter when toggle off            |
+                +------------------+--------------------+
+                                   |
                 +---------------------------------------+
                 |        @verto/core (library)          |
                 |   - Canonical domain types/schema     |
@@ -479,16 +570,23 @@ Host- and vendor-agnostic. Responsibilities:
   depend only on the canonical model: `closureFor` (any node), `isReady`,
   leverage score, delivery completeness, **global priority ranking** (chain-traversal
   algorithm — see §3.5), and the priority-weighted topological **implementation order**.
-  Graph layout (DAG positioning) is either vendored from the deprecated original
-  `computeDAGLayout` logic or reimplemented on a standard lib.
+  DAG **rendering layout** (node positions) lives in the extension webview
+  (`@xyflow/react` + ELK), not in `@verto/core`.
 - **No I/O, no host APIs, no UI.** Everything network/disk/host lives behind the
   adapter interface and the extension host.
 
-### 4.4 Canonical domain model (design in progress)
+### 4.4 Canonical domain model (Phase 2.5 schema)
 
 > The canonical schema is defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts) — that file is the authoritative field-level definition and will become `@verto/core/src/types.ts`.
 >
-> **Minimal canonical design.** `VertoNode` exposes only the 8 fields that `@verto/core` algorithms and the UI strictly require (`id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`, `ticketUrl`). All other ticket fields are passed through to `node.ticketFields` via `fieldMappings` — see §4.6.4. Fields are promoted to canonical only when an algorithm or core UI feature genuinely needs them.
+> **Canonical schema (Phase 2.5).** `VertoNode` exposes the fields that `@verto/core`
+> algorithms and the UI require. Phase 2.5 promotes from ticket passthrough to canonical
+> root: `status`, `nodeType`, `nodeOrigin`, `personas`, `parsedReqs` (see
+> [`packages/core/src/types.ts`](./packages/core/src/types.ts)). Core algorithm fields
+> remain: `id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`,
+> `childIds`, `ticketUrl` (**required**). All other ticket fields stay in `node.ticketFields` via
+> `fieldMappings` — see §4.6.4. Fields are promoted to canonical only when an algorithm
+> or core UI feature genuinely needs them.
 
 The indicative mapping table below is retained for cross-referencing legacy canvas concepts.
 
@@ -496,18 +594,21 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 |---|---|---|---|
 | Graph node | `node.id` | Any tracked ticket — uniform structure (~95% identical across all nodes) | Issue / sub-issue |
 | Node identity | `node.id` | Stable identifier | Issue key / stable slug |
-| Title / description | `label`, `desc` | Human name + detail (body may include task lists) | Issue title + body |
-| Delivery status | `status` (4-valued) | Workflow progress label — `ticketFields.status` (ticket passthrough; not used in graph math) | Per adapter — e.g. GitHub **ProjectV2 Status** field (see §4.6.7) |
-| Done signal | *(not in deprecated original)* | Canonical "is done" signal for graph math — `isDone: boolean`; `isReady = !isDone && all prereqs isDone` | GitHub: native `closed` boolean (system accessor); other adapters: derived in system_types or overridable via fieldMappings |
+| Title / description | `label`, `desc` | Human name + detail (body may include Raw Requirements block) | Issue title + body |
+| Delivery status | `status` (4-valued) | Workflow progress — canonical `status` on root (from `ticketFields` via mapper); not used in graph math | Per adapter — e.g. GitHub **ProjectV2 Status** (see §4.6.7) |
+| Done signal | *(not in deprecated original)* | Canonical "is done" for graph math — `isDone: boolean`; `isReady = !isDone && all prereqs isDone` | GitHub: native `closed` boolean; parsed raw lines: checkbox |
+| Node kind | *(not in deprecated original)* | `nodeType: 'ticket' \| 'parsed'` | Adapter vs `@verto/parsed-nodes` |
+| Provenance | *(not in deprecated original)* | `nodeOrigin` — e.g. `'github'`, `'parsed-nodes'` | Per source |
+| Persona (slice) | `persona` | Who the slice serves — `personas: string[]` on slice node | GitHub: `persona:<value>` labels (default); overridable via `fieldMappings` |
+| Raw requirements | journey `steps[]` *(deprecated original)* | Parsed lines → `nodeType: 'parsed'` graph nodes when toggle on | `RAW_REQ:BEGIN` / `RAW_REQ:END` in ticket body |
+| ~~Black box~~ | `BLACK_BOXES` | **Removed** — not used in Verto; unchecked raw status is `raw` | — |
 | Necessary-condition edge | `deps[]` | Prerequisite nodes (unified) | "blocked by" / "blocks" link **or** parent/child link |
 | Parent/child link | *(not in deprecated original)* | Same as NCN edge: child blocks parent | Sub-issue / parent issue relationship |
 | Vertical designation | journey `id` / name | Semantic role: deployable, value-adding slice (same as epic / journey) | Epic issue type, label, or field |
-| Vertical narrative | `persona`, `outcome` | Why the slice matters | Body template sections on vertical nodes |
-| Body task lists | journey `steps[]` *(deprecated original)* | Documentation only — **ignored by graph** | Markdown `- [ ]` in **any** ticket body |
-| Black box | `BLACK_BOXES` | Absent system blocking many verticals | Tagged epic / meta issue |
+| Vertical narrative | `persona`, `outcome` | Slice header: `personas[]` + DESC body (outcome) | `persona:<value>` labels + DESC body markers |
 | Vertical priority | `journeyPriorities` | Manager's ranking of verticals | **Ticket field(s)** on vertical nodes |
 | Vertical membership *(deprecated original only)* | `verts[]` | Legacy canvas field — **not** used in target system | Replaced by parent/child + unified deps |
-| Journey steps with status *(deprecated original only)* | `steps[]` with `status` | Legacy canvas — **not** used in target system | Replaced by child tickets + body docs in Delivery Map |
+| Journey steps with status *(deprecated original only)* | `steps[]` with `status` | Legacy canvas — **not** used directly | Replaced by child tickets + parsed raw lines in Delivery Map pipeline (§3.7) |
 
 **Relationships at a glance:**
 
@@ -521,8 +622,14 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 - **Any ticket** may have children. All dependency links — parent/child or
   BlockedBy/Blocking — feed readiness, closure, leverage, and ordering
   identically.
-- **Body task lists** in any ticket are documentation for humans; only child
-  tickets and other dependency links affect the graph.
+- **Raw requirement lines** (`RAW_REQ:BEGIN` / `RAW_REQ:END`) are materialized as
+  **`nodeType: 'parsed'`** graph nodes by `@verto/parsed-nodes` when the global
+  **Enable Parsed Requirements** toggle is on (default). They participate in NCN math
+  like any other node. See §3.6–§3.8.
+- **Child tickets** decompose a parent into implementable work. Parent/child and
+  BlockedBy/Blocking both express necessary-condition edges (child blocks parent).
+- **Delivery Map** (see §3.7) shows the **union** of child tickets and raw requirement
+  lines in a **single pipeline column** per delivery-slice node.
 - **Priority** is a required field on **all nodes** (default 5), from which the
   global priority ranking and implementation order are derived — see §3.5.
 
@@ -530,18 +637,22 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 
 The agreed mapping that resolves the canvas's conflation:
 
-- **Every ticket = one graph node**, with uniform structure and behaviour.
+- **Every ticket = one graph node** (`nodeType: 'ticket'`), with uniform structure
+  and behaviour.
 - **Vertical** (vertical delivery / vertical slice / user journey / epic) =
-  the **same concept**, materialised as a top node (probably Epic ticket type)
-  carrying narrative (`persona`, `outcome`) in a templated body where needed.
-- **Body documentation** — description and optional markdown task lists in the
-  body of **any** ticket — is for human communication only. Parsed optionally
-  for **Delivery Map display**; never fed to NCN/leverage/order math.
-- **Child tickets** decompose a parent into implementable work. Parent/child
-  and BlockedBy/Blocking both express necessary-condition edges (child blocks
-  parent). Any ticket may have children, not only epics.
-- **Delivery Map** (see §3.7) shows body documentation and child tickets **side
-  by side** for each vertical node.
+  the **same concept**, materialised as a top node (probably Epic ticket type).
+  Slice header: **`personas: string[]`** (GitHub default: `persona:<value>` labels;
+  see §4.6.7) + **outcome** from `DESC:BEGIN` / `DESC:END` body markers.
+- **Raw requirements** — checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END` —
+  are materialized as **`nodeType: 'parsed'`** nodes by `@verto/parsed-nodes` (Phase
+  2.5). When **Enable Parsed Requirements** is on, they participate in NCN math and
+  appear in the Delivery Map pipeline after child tickets. **No linking** to child
+  tickets — concatenation only.
+- **Child tickets** decompose a parent into implementable work. Parent/child and
+  BlockedBy/Blocking both express necessary-condition edges (child blocks parent).
+  Any ticket may have children, not only epics.
+- **Parsed requirements on child tickets** affect that child's graph only — they do
+  not roll up to the parent slice pipeline.
 
 ### 4.6 Multi-adapter support
 
@@ -550,9 +661,10 @@ Each adapter translates a vendor's native issue layout into the canonical
 `VertoGraph` consumed by `@verto/core`. Adapters are **not** a second source of
 truth — tickets in the tracker remain authoritative (see §4.9).
 
-- **Adapter interface (conceptual):** `loadProject(config) → DeliveryMapBundle`
-  (+ optional **raw metadata** from the source), with optional `saveSession?` /
-  `writeBack?` capabilities added incrementally.
+- **Adapter interface (conceptual):** `loadProject(config) → VertoGraph` — ticket
+  nodes and edges only; no parsed-requirement enrichment, no bundle computation.
+  The **host load pipeline** (§4.6.8) calls `@verto/parsed-nodes`, validates, and
+  runs `buildDeliveryMapBundle()`.
 - **Later adapters:** Jira; local file-system trackers such as **Beans** or
   **Backlog.md**. All implement the same interface and are selected/configured at
   workspace setup (see §4.6.3–§4.6.6).
@@ -594,7 +706,11 @@ packages/adapters/github/
   project_fields.ts          # config-driven field registry (see §4.6.4)
   client.ts                  # GraphQL / REST I/O — queries & mutations
   mapper.ts                  # two-way mapping: tracker-native ↔ VertoNode / VertoEdge
-  adapter.ts                 # VertoAdapter: loadProject(), writeBack(), …
+  adapter.ts                 # VertoAdapter.loadProject() → VertoGraph only (§4.6.5)
+
+packages/parsed-nodes/       # post-adapter enrichment — NOT a tracker adapter (§4.6.8)
+  materialize.ts             # RAW_REQ → nodeType: 'parsed' nodes + edges
+  filter.ts                  # strip parsed nodes when toggle off
 ```
 
 Other adapters follow the same skeleton. File-system adapters may have a thinner
@@ -662,6 +778,45 @@ comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` b
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
 `@verto/config`; the config type lives in `@verto/config` only.
 
+**`deliveryMapView.portfolioColumns` (Phase 2.5).** Configures how Requirements
+(pipeline rows) bucket into portfolio table columns and UsageBar segments. Shape:
+
+```jsonc
+{
+  "deliveryMapView": {
+    "portfolioColumns": [
+      { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
+      { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
+      { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
+    ]
+  }
+}
+```
+
+- Each column has a **`label`** and **`sources`** keyed by requirement source:
+  **`ticket`** (child sub-issues) and/or **`parsed`** (raw requirement nodes).
+- **Done column:** matches `isDone: true` and/or listed workflow **`statuses`** (e.g.
+  map GitHub `Closed` → Done). Default seeds include first/last ProjectV2 Status
+  options from audit.
+- **Non-Done columns:** only requirements with **`!isDone`** whose `status` is in
+  the column's `statuses` list (parsed: `raw` / `done`).
+- **UsageBar** — same buckets as portfolio columns; **counts** per bucket (not
+  weighted scores).
+- **Done buckets (for gap callouts):** any column where `sources.ticket.isDone === true`
+  and/or `sources.parsed.isDone === true`. A requirement matches a column when it
+  satisfies that column's `sources` rules. **Gaps** = pipeline rows matching **no**
+  done bucket. Column label `"Done"` is conventional only — detection is structural.
+- **Column assignment (matching algorithm):** for each pipeline row, walk
+  `portfolioColumns` **in array order**; assign the row to the **first** column
+  whose `sources` entry for that row's `nodeType` (`ticket` or `parsed`) matches.
+  Skip columns with no rule for that source type.
+- **Within a `sources.<type>` block:** let `row` be the requirement node. Match if
+  **any** specified predicate holds: (`isDone` is present in config and
+  `row.isDone === config.isDone`) **or** (`statuses` is present and
+  `row.status` is in `statuses`). If only one predicate is present, that predicate
+  alone decides. **Non-Done columns** additionally require `row.isDone === false`
+  before evaluating `statuses` (see bullet above on non-Done columns).
+
 #### 4.6.4 Field mapping and the `FieldAccessor` contract
 
 All mapping configuration lives in a declarative **`fieldMappings`** object inside
@@ -696,16 +851,15 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
       // isDeliverySlice: system-mapped — true for top-level tickets (parent is null).
       // Override to use issue type instead:
       // "isDeliverySlice": { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }
+      "status": {
+        "from": { "kind": "projectV2", "field": "Status" }
+        // Canonical root (Phase 2.5) — no "type" hint; options discovered by audit
+      },
       "priority": {
         "from": { "kind": "projectV2", "field": "Priority" },
         "values": { "Critical": 1, "High": 3, "Medium": 5, "Low": 7, "Deferred": 9 }
       },
       // --- Ticket fields (routed to node.ticketFields) ---
-      "status": {
-        "from": { "kind": "projectV2", "field": "Status" },
-        "type": "select"
-        // Options discovered by audit: "Draft", "In Progress", "Done", …
-      },
       "storyPoints": {
         "from": { "kind": "projectV2", "field": "Story Points" },
         "type": "number"
@@ -724,12 +878,23 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
 No config annotation is needed — routing is automatic and transparent. To promote a field from `ticketFields` to canonical: add it to `VertoNode` and `CANONICAL_VERTO_NODE_KEYS`; the same `fieldMappings` entry then routes to the root without any config change.
 
 **System-only canonical fields.** Not all `CANONICAL_VERTO_NODE_KEYS` members appear
-in `fieldMappings`. `id`, `title`, `prereqIds`, and `childIds` are **always** populated
-by the system accessor (from tracker identity and dependency structure) and are **never**
-`fieldMappings` entries. `isDone` and `isDeliverySlice` are populated by the system
-accessor by default but may be overridden via an optional `fieldMappings` entry.
-`priority` requires a user-configured source binding and therefore always appears in
-`fieldMappings`.
+in `fieldMappings`. These are **always** populated outside `fieldMappings` and are
+**never** config entries:
+
+| Field | Stamped by |
+|---|---|
+| `id`, `title`, `prereqIds`, `childIds`, `ticketUrl` | System accessor (tracker identity + dependency structure) |
+| `nodeType`, `nodeOrigin` | **`mapper.ts`** on every adapter-produced node (`'ticket'` + adapter id, e.g. `'github'`) |
+| `parsedReqs` | **`@verto/parsed-nodes`** (`[]` on ticket nodes before materialize; populated after) |
+| `personas` (GitHub default) | **`mapper.ts`** — from issue labels `persona:<value>` when no `fieldMappings.personas` override |
+
+`isDone` and `isDeliverySlice` are populated by the system accessor by default but
+may be overridden via an optional `fieldMappings` entry. `priority` and `status`
+require user-configured `fieldMappings` bindings when the tracker exposes those
+fields (`status` may be absent — see §4.6.5). **`personas`:** GitHub adapter
+default is label extraction (above); if **`fieldMappings.personas`** is present in
+effective config, label extraction is **skipped** and the standard `fieldMappings`
+path populates `personas` instead. If neither applies, **`[]`**.
 
 **`type` hint for ticket fields.** Non-canonical `fieldMappings` entries may carry an optional `"type"` hint (`"text"`, `"number"`, `"date"`, `"select"`, `"iteration"`). The mapper uses it to coerce raw source values to the correct JavaScript type. The hint is omitted for canonical fields (their types are in `types.ts`). The audit step populates it automatically from the source's field schema (§4.6.6).
 
@@ -761,8 +926,14 @@ interface FieldAccessor {
   fields the adapter always handles (e.g. `id`, `title`, dependency links, issue type).
   Populate all system-mapped canonical fields: `prereqIds` and `childIds` from
   blocking/sub-issue relationships; `isDone` from the tracker's native done/closed
-  field; `isDeliverySlice` from parent presence. A `fieldMappings` entry for `isDone`
-  or `isDeliverySlice` overrides the system-accessor default for that field.
+  field; `isDeliverySlice` from parent presence; `ticketUrl` from native issue URL.
+  **`mapper.ts` stamps `nodeType: 'ticket'` and `nodeOrigin: '<adapter-id>'`** (e.g.
+  `'github'`) on every ticket node after accessors run — not via `fieldMappings`.
+  **GitHub `personas` default:** when `fieldMappings.personas` is absent, collect
+  `<value>` from each issue label whose name starts with `persona:` (prefix match,
+  case-sensitive); preserve label list order; dedupe not required. A `fieldMappings`
+  entry for `isDone` or `isDeliverySlice` overrides the system-accessor default for
+  that field; **`fieldMappings.personas`** overrides label extraction.
 - **Project accessors** — backed by `project_fields.ts`, a **config-driven field
   registry** that reads `fieldMappings` from effective config and exposes the same
   `FieldAccessor` interface for all remaining fields — both canonical ones that need
@@ -794,24 +965,47 @@ and drafts the mapping section.
 |---|---|
 | **`client.ts`** | All I/O with the data source: auth, pagination, rate limits, GraphQL/REST calls. Returns tracker-native shapes (`system_types`). Unrestricted by `FieldAccessor`. |
 | **`mapper.ts`** | Two-way translation between tracker-native data and `VertoNode` / `VertoEdge`, composing system and project `FieldAccessor`s and applying `fieldMappings` (field + value). Applies **required-field fallback policy** (below). May delegate to accessors; split into sub-modules later if it grows. |
-| **`adapter.ts`** | Orchestrates: load effective config → `client` read → map to `VertoGraph` → run `@verto/core` → `DeliveryMapBundle`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
+| **`adapter.ts`** | Orchestrates: load effective config → `client` read → `mapper` → **`VertoGraph`** (ticket nodes only). Does **not** call `@verto/parsed-nodes` or `buildDeliveryMapBundle()`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
+
+**Host load pipeline** (extension `loadPipeline.ts`, `scripts/load-project.mjs`) —
+not inside adapters:
+
+```
+adapter.loadProject(config) → VertoGraph
+  → runHostPipeline(graph, { parsedEnabled? })
+       → materializeParsedRequirements(graph)
+       → filterParsedNodes(graph)          // when !parsedEnabled / --no-parsed
+       → validateGraph(graph)
+       → buildDeliveryMapBundle(graph)
+```
 
 **Required-field fallback policy (read path).** Some `VertoNode` properties are
 required but may have no mapped ticket field. The mapper must behave consistently:
 
-| Category | Verto properties (examples) | Behaviour when unmapped / invalid |
+| Category | Verto properties | Behaviour when unmapped / invalid |
 |---|---|---|
-| **No fallback — fail** | `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` | **Error; do not produce a graph.** Populated by the system accessor from tracker structure (no `fieldMappings` entry needed). `isDone` and `isDeliverySlice` may be overridden via an optional `fieldMappings` entry; the system default applies when no override is present. If any of these are absent, the adapter or tracker data is corrupt. |
-| **Valid neutral default — continue** | `priority` | **Use default `5`**, continue loading. Audit flags the missing mapping as a gap; blocking the whole project for a missing priority column is unnecessarily heavy when `5` is the defined neutral value (see `types.ts`). Emit a non-fatal notice (log / UI warning). |
+| **No fallback — fail** | `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`, `nodeType`, `nodeOrigin` | **Error; do not produce a graph.** System-mapped or stamped by `mapper.ts` (see system-only table above). If absent after mapping, data is corrupt. |
+| **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Audit flags missing mapping; emit non-fatal notice. |
+| **Optional — continue** | `status` | **`undefined`** if no `fieldMappings` binding or board field absent (e.g. repository scope). No error. |
+| **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels (GitHub default path) and no `fieldMappings.personas` override. No error. Override: standard `fieldMappings` routing when `fieldMappings.personas` is set. |
+| **Enrichment-only** | `parsedReqs` | **`[]`** on ticket nodes from adapter; populated by `materializeParsedRequirements`. Adapter does not set parsed-node entries. |
 
-Other required fields will be classified into one of these categories as adapters
-are implemented. **`FieldWritePayload`** (used by `FieldAccessor.fromVertoNode`) is
-**to be defined when write-back is designed** — not required for read-only MVP.
+Parsed nodes (`nodeType: 'parsed'`) are created only by `@verto/parsed-nodes`; they
+are not subject to adapter fallback policy.
 
-**Read path:**
+**`FieldWritePayload`** (used by `FieldAccessor.fromVertoNode`) is **to be defined
+when write-back is designed** — not required for read-only MVP.
+
+**Read path (adapter):**
 
 ```
-Tracker → client.ts → tracker-native types → mapper.ts (+ FieldAccessors) → VertoGraph → @verto/core → DeliveryMapBundle
+Tracker → client.ts → tracker-native types → mapper.ts (+ FieldAccessors) → VertoGraph
+```
+
+**Read path (host — after adapter):**
+
+```
+VertoGraph → @verto/parsed-nodes (materialize / filter) → validateGraph → buildDeliveryMapBundle → DeliveryMapBundle
 ```
 
 **Write path (future):**
@@ -850,12 +1044,14 @@ Grounded in GitHub GraphQL capabilities documented under
 | **Parent/child** (child blocks parent) | Sub-issue relationship (`addSubIssue`, `parent` / `subIssues`); same graph semantics as blocking |
 | **Done** (`isDone`) | Native GitHub issue `closed: boolean` — populated by system accessor; no `fieldMappings` entry needed by default. Drives `isReady` and `implementationOrder`. Overridable via `fieldMappings` if needed. |
 | **Vertical designation** (`isDeliverySlice`) | System accessor default: `true` for top-level tickets (`parent` is null). Override via standard `fieldMappings` entry — e.g. `{ "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }` |
-| **Status** (`ticketFields.status`) | ProjectV2 built-in `Status` field — non-canonical passthrough; `"type": "select"` |
+| **Status** (`status`) | ProjectV2 built-in `Status` field — **canonical root** via `fieldMappings` (optional; `undefined` if unmapped) |
 | **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
-| **Body documentation** | Issue title + body; optional task-list parse for Delivery Map display only |
+| **Raw requirements** | Issue body `RAW_REQ:BEGIN` / `RAW_REQ:END` block; materialized by `@verto/parsed-nodes` |
+| **Personas** (`personas`) | **Default:** issue **labels** `persona:<value>` → `personas: string[]` (values after `persona:` prefix; label list order). **Override:** optional `fieldMappings.personas` in workspace config — when present, replaces label extraction (not in `defaults.verto.config.jsonc`). |
+| **Labels** (`ticketFields.labels`) | Native issue labels — passthrough includes all labels; `persona:*` labels also feed canonical `personas` unless overridden |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
-| **Labels, assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |
+| **Assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |
 | **Source URL** (`ticketUrl`) | Native issue `url` field — canonical root field; system-mapped (no `fieldMappings` entry needed) |
 | **Priority** (`priority`) | Mapped via `fieldMappings` with `values` map when a source priority field exists. **If unmapped:** mapper uses **`5`** (neutral default) and continues; audit flags the gap. See required-field fallback policy (§4.6.5). |
 
@@ -915,14 +1111,76 @@ Noisy or rarely-needed entries (e.g. AI SDLC fields) may be commented out by def
 but should be present and auditable. The extension's audit step (§4.6.6) populates
 these from the live project schema.
 
+#### 4.6.8 Parsed requirements (`@verto/parsed-nodes`)
+
+**Not a tracker adapter.** `@verto/parsed-nodes` runs in the **host load pipeline**
+(§4.6.5) on a `VertoGraph` returned by `adapter.loadProject()` — never inside adapters.
+
+**Exports:**
+
+1. **`materializeParsedRequirements(graph)`** — for every `nodeType: 'ticket'` node
+   whose `ticketFields.body` contains `RAW_REQ:BEGIN` / `RAW_REQ:END`, parse
+   checklist lines and append `nodeType: 'parsed'` nodes plus `parsed-req` edges to
+   the parent. Populate `parsedReqs[]` on parents. Recompute each affected parent's
+   `prereqIds` = `parsedReqs ∪ childIds ∪ blockingPrereqIds` (deduped), where
+   `blockingPrereqIds` = `{ edge.from | edge.to === node.id && edge.reason === 'blocking' }`
+   (parent-child deps are in `childIds`, not duplicated).
+2. **`filterParsedNodes(graph)`** — remove all `nodeType: 'parsed'` nodes and edges
+   with `reason: 'parsed-req'`; clear `parsedReqs` on parents; recompute `prereqIds`
+   without parsed ids. Used when **Enable Parsed Requirements** is off.
+3. **`parseDescBlock(body)`** — extract display text between `DESC:BEGIN` / `DESC:END`
+   (strip HTML comments). Used for child pipeline **note** rows (child's own
+   `ticketFields.body`) and slice-header **outcome** (slice node's body).
+4. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`):
+   `materializeParsedRequirements` → `filterParsedNodes` when `parsedEnabled` is
+   `false` → `validateGraph` → `buildDeliveryMapBundle`; returns `DeliveryMapBundle`.
+   Shared by `scripts/load-project.mjs` and extension `loadPipeline.ts`.
+
+**Orchestration** — single owner: **`runHostPipeline`** in `@verto/parsed-nodes`
+(§4.6.5). Adapters return **`VertoGraph` only**.
+
+```
+adapter.loadProject(config)  →  VertoGraph   // ticket nodes; parsedReqs: []
+  → runHostPipeline(graph, { parsedEnabled })
+```
+
+**Global toggle:** **Enable Parsed Requirements** — default **on**; persisted in
+`workspaceState`; applies to **all lenses**. Host rebuilds bundle on change. Always
+materialize, then filter when off.
+
+**`validateGraph` — `prereqIds` consistency (Phase 2.5).** For each node *after*
+materialize (parsed toggle on path), assert:
+
+```
+expectedPrereqs = dedupe(
+  node.childIds
+  ∪ node.parsedReqs
+  ∪ { edge.from | edge.to === node.id && edge.reason === 'blocking' }
+)
+```
+
+Mismatch → validation error. After `filterParsedNodes`, same formula with
+`parsedReqs` empty.
+
+Parsed nodes: `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'parsed-nodes'`,
+`nodeType: 'parsed'`, `status` = `raw` or `done` from checkbox. Synthetic **id:**
+`{parentId}#raw-req-{n}`; **ticketUrl:** parent `ticketUrl` + `#raw-req-{n}` (required).
+
+**`VertoEdge.reason` (Phase 2.5):** closed union `'parent-child' | 'blocking' |
+'parsed-req'` — remove open `| string` so `filterParsedNodes` is type-safe.
+
+**`ticketUrl` (Phase 2.5 alignment):** required on all nodes (`ticketUrl: string`,
+not optional). `validateGraph` emits an **error** (not warning) when absent on ticket
+nodes. Parsed nodes inherit parent URL + anchor.
+
 ### 4.7 State: tickets vs. workspace
 
-- **In tickets (shared, versioned with the backlog):** workflow status
-  (`ticketFields.status`) and done signal (`isDone`), dependency links
-  (parent/child and BlockedBy/Blocking), body content (including any task lists),
-  vertical narrative, and — as much as possible — **vertical priority**. Rule of
-  thumb: *if a teammate should see it without opening your IDE, it's in the
-  ticket.*
+- **In tickets (shared, versioned with the backlog):** workflow status (canonical
+  `status` when mapped), done signal (`isDone`), dependency links
+  (parent/child and BlockedBy/Blocking), body content (including **Raw Requirements**
+  between `RAW_REQ:BEGIN` / `RAW_REQ:END`), vertical narrative (DESC outcome,
+  `persona:<value>` labels → `personas`), and — as much as possible — **vertical priority**. Rule of
+  thumb: *if a teammate should see it without opening your IDE, it's in the ticket.*
 - **In workspace config** ([`.vscode/verto.config.jsonc`](./.vscode/verto.config.jsonc)):
   adapter selection; repo/project identifiers; **`fieldMappings`** (field bindings
   and value maps for all fields, including optional overrides for system-mapped fields
@@ -936,17 +1194,26 @@ these from the live project schema.
 
 ### 4.8 Verto for VS Code (extension shell)
 
-- **Product name:** Verto. **Extension display name:** Verto (or *Verto for VS
-  Code*). Extension identifier (e.g. `verto.verto`) and marketplace publisher —
-  to be finalised (see §5.5).
-- **Standard pieces only:** extension manifest + activation, a **Webview** (or
-  Custom Editor) hosting a bundled React app, `postMessage` for host↔webview
-  communication, `workspaceState`/`globalState` for persistence, the built-in
-  **GitHub authentication provider** for the GitHub adapter, and a standard
-  bundler (esbuild/Vite). CSP-safe bundle; no inline scripts.
+- **Product name:** Verto. **Extension display name:** **Verto**. **Extension
+  identifier:** `manmilani.verto` (`publisher`: `manmilani`, `name`: `verto`).
+  **npm scope:** `@verto/*` — monorepo-only / private; no npm publish action
+  required. **Distribution:** private `.vsix` (not Marketplace).
+- **Panel location:** **editor tab** via `WebviewPanel` (`createWebviewPanel`) —
+  not sidebar, not custom editor.
+- **NCN graph UI stack:** **@xyflow/react** (React Flow) for rendering; **ELK**
+  (`elkjs`) as the background layout engine. **Phase 3:** pan/zoom disabled;
+  pan/zoom/focus deferred to Phase 4.
+- **Bundlers:** extension **host** → **esbuild**; **webview** → **Vite**. CSP-safe
+  webview bundle; no inline scripts.
+- **Standard pieces only:** extension manifest + activation, a **WebviewPanel**
+  hosting a bundled React app, `postMessage` for host↔webview communication,
+  `workspaceState`/`globalState` for persistence, and the built-in **GitHub
+  authentication provider** for the GitHub adapter.
 - **Host responsibilities:** all I/O (adapter calls, GitHub GraphQL, file reads),
-  auth, secrets, optional ticket-body parsing (display-only, for Delivery Map),
-  and state persistence.
+  auth, secrets, **host load pipeline** (`adapter.loadProject` → `@verto/parsed-nodes`
+  → filter → validate → `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
+  Requirements** toggle persistence, and UI state. Adapters do **not** materialize
+  parsed nodes or build bundles.
 - **Webview responsibilities:** purely a view of the `DeliveryMapBundle` it
   receives — the two lenses, the priorities editor, and the implementation-order
   table. The deprecated original canvas's `useCanvasState` is replaced by a thin hook
@@ -954,9 +1221,10 @@ these from the live project schema.
   identical). Theme via VS Code CSS variables instead of hard-coded hex.
 - **Parity target:** the NCN graph lens, custom vertical priorities, and the
   implementation-order table behave **the same** as the deprecated original canvas
-  (same core algorithms). The Delivery Map lens keeps the vertical-focused presentation but
-  replaces hard-coded `steps[]` with **body documentation + child tickets** side
-  by side (see §3.7).
+  (same core algorithms). The Delivery Map lens achieves **canvas fidelity** in Phase 3:
+  persona/outcome slice header, single pipeline column (children + raw lines),
+  portfolio overview table, UsageBar, and gap callouts (see §3.7). Deprecated
+  “black boxes” section is **not** ported.
 
 ### 4.9 Data source of truth vs declarative formats
 
@@ -997,31 +1265,75 @@ not a separate user-editable project file in the ticket-first workflow.
 
 ## 5. Knowledge Gaps
 
-All open questions, ambiguities, and not-yet-decided items live here.
+Resolved decisions are struck through; genuinely open items remain. Detail lives in
+the body sections cited — this list is the index.
 
-### 5.1 Domain model & ticket schema (design in progress)
+### 5.1 Domain model & ticket schema
 
-- ~~**Final canonical schema.**~~ **Closed** — minimal canonical set (`id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`, `childIds`, `ticketUrl`) defined in [`packages/core/src/types.ts`](./packages/core/src/types.ts). All other fields are ticket passthroughs via `fieldMappings` → `node.ticketFields`. Fields are promoted to canonical only when an algorithm or core UI feature requires them.
-- ~~**Status vocabulary.**~~ **Closed** — no canonical status field; workflow status is a ticket passthrough (`ticketFields.status`); done signal is `isDone: boolean` (canonical, system-mapped). No enforced vocabulary. "Partial" is a derived completion percentage (closed children / total closure), not a discrete state.
+- ~~**Final canonical schema.**~~ **Closed (Phase 2.5)** — core algorithm fields plus
+  `status`, `nodeType`, `nodeOrigin`, `personas`, `parsedReqs` on `VertoNode`; `ticketUrl`
+  **required** (`string`, not optional); see [`packages/core/src/types.ts`](./packages/core/src/types.ts).
+  Ticket passthroughs via `fieldMappings` → `node.ticketFields` (**`status` is not** in
+  `ticketFields` after Phase 2.5).
+- ~~**VertoAdapter return type & orchestration.**~~ **Closed (Phase 2.5)** —
+  `adapter.loadProject()` → `VertoGraph` only; `runHostPipeline(graph, opts?)` in
+  `@verto/parsed-nodes` owns materialize → filter → validate → bundle (§4.6.5, §4.6.8).
+- ~~**Status vocabulary.**~~ **Closed** — workflow `status` on canonical root (from
+  tracker); graph math uses `isDone`. Parsed raw lines use `raw` / `done`. Slice-level
+  **partial** progress UI deferred to Phase 4 (`deliveryCompleteness` bar).
 - ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
 - ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
-- **Link metadata.** Parent/child and BlockedBy/Blocking are unified for graph math (**decided** — see §3.1). How is the *reason* for a link recorded as metadata (e.g. decomposition vs cross-cutting prerequisite)? (`VertoEdge.reason` field exists; exact vocabulary still open.)
-- **Black boxes.** First-class entity, a flavour of work-item/epic, or a derived view? How represented in tickets.
+- ~~**Black boxes.**~~ **Closed (removed)** — deprecated canvas section not ported;
+  term not used in Verto; unchecked raw requirement status is **`raw`**.
+- ~~**`VertoEdge.reason` vocabulary (known values).**~~ **Closed (Phase 2.5)** — closed
+  union `'parent-child' | 'blocking' | 'parsed-req'` (no open `| string`); see
+  `types.ts` and §4.6.8.
+- ~~**`prereqIds` consistency validation.**~~ **Closed (Phase 2.5)** — after
+  materialize/filter, assert `prereqIds` = `childIds ∪ parsedReqs ∪ blocking` edge
+  sources (§4.6.8 formula).
+- ~~**`ticketUrl` validation severity.**~~ **Closed (Phase 2.5)** — missing `ticketUrl`
+  on ticket nodes is a **validation error** (not a warning), aligned with §4.6.5.
+- **Link metadata (other reasons).** Decomposition vs cross-cutting prerequisite
+  labels for non–parent-child / non–blocking edges — still open (`VertoEdge.reason`
+  beyond the three known values).
 - **Additional fields.** Estimates, iterations/sprints — deferred; decide if/when they feed ordering.
 
 ### 5.2 Delivery Map presentation & decomposition
 
-- **Vertical designation (UI behaviour).** Default behaviour: `isDeliverySlice = true`
-  for top-level tickets (`parent` is null — system accessor); override via standard
-  `isDeliverySlice` fieldMappings entry (§4.6.4, §4.6.7). Remaining open: Delivery Map
-  filtering UX and behaviour when no delivery slices are present.
-- **Delivery Map layout.** Exact presentation of body documentation vs child
-  tickets side by side — ordering, grouping, status display, empty states (epic
-  with body but no children yet).
-- **Body parsing conventions.** Optional rules for extracting task lists from
-  ticket bodies for display-only rendering (any ticket, not only epics).
+- ~~**Vertical designation (UI behaviour).**~~ **Closed (Phase 3)** — default:
+  `isDeliverySlice = true` for top-level tickets (`parent` is null); override via
+  `isDeliverySlice` fieldMappings (§4.6.4, §4.6.7). When no delivery slices are
+  present: **empty screen** (auto-promote parents deferred).
+- ~~**Delivery Map layout.**~~ **Closed (Phase 2.5 / Phase 3 UI)** — **single pipeline
+  column** per slice: children first, then raw requirement lines; persona/outcome
+  header; portfolio table, UsageBar, gap callouts — §3.7. No two-column layout.
+- ~~**Raw requirements parsing.**~~ **Closed (Phase 2.5)** — `RAW_REQ:BEGIN` /
+  `RAW_REQ:END` markers; materialize as `nodeType: 'parsed'` via `@verto/parsed-nodes`;
+  name/note patterns, synthetic ids, NCN participation when toggle on — §3.6–§3.8,
+  §4.6.8.
+- ~~**Enable Parsed Requirements toggle.**~~ **Closed (Phase 2.5)** — global,
+  default on, `workspaceState`; filter graph when off — §3.7, §4.6.8.
+- ~~**Portfolio columns / UsageBar / gaps.**~~ **Closed (Phase 2.5)** —
+  `deliveryMapView.portfolioColumns` in config — §4.6.3.
+- ~~**Portfolio column matching algorithm.**~~ **Closed (Phase 2.5)** — first matching
+  column in config order; per-source OR between `isDone` predicate and `statuses`
+  list; non-Done columns require `!isDone`; done buckets structural (not by label) —
+  §4.6.3.
+- ~~**DESC blocks (outcome & child notes).**~~ **Closed (Phase 2.5)** —
+  `parseDescBlock(body)` in `@verto/parsed-nodes`: slice **outcome** from slice body;
+  child pipeline **note** from **that child's own** `ticketFields.body` (§3.7, §4.6.8).
+- ~~**UI port fidelity (Delivery Map).**~~ **Closed (Phase 3)** — persona/outcome,
+  pipeline, portfolio table, UsageBar, gaps required; deprecated black-box section
+  **not** ported.
+- **Requirements ↔ child ticket linking.** Explicit mechanism — **deferred**; union
+  is concatenation only, no dedupe.
+- **Decomposition CTA.** UI action when a slice has raw requirements but no children
+  — deferred.
+- **Auto-promote parents.** Fallback when no `isDeliverySlice` nodes — deferred.
 - **Decomposition workflow.** How child tickets are created when breaking down a
   parent (manual command, template, UI action, auto-link back to parent).
+- **Migrate legacy `REQ:` markers.** Existing tickets with old markers — ignored for
+  now; new work uses `RAW_REQ:`.
 - **The ~5% node differences.** What fields or behaviours differ between nodes
   if ~95% are structurally identical? (e.g. vertical designation,
   narrative template sections.)
@@ -1038,20 +1350,24 @@ All open questions, ambiguities, and not-yet-decided items live here.
   **field-level** merge granularity for `fieldMappings` (workspace entry replaces
   whole default entry; value-level merge deferred), names-only user-facing config,
   runtime ID cache with name fallback, workspace-wins merge — see §4.6.3–§4.6.4.
-- ~~**GitHub field conventions (Verto workspace).**~~ **Closed for initial project** —
-  `isDone` from native `closed` boolean (system accessor, no board column);
-  `isDeliverySlice` from `parent === null` by default (overridable via fieldMappings);
-  `status` on ProjectV2 built-in `Status`; `priority` + AI SDLC fields on ProjectV2
-  custom columns; `stateReason` as recommended passthrough in defaults; issue type
-  via native org-level Issue Type — see §4.6.7. Prototyped field-schema sync:
+- ~~**GitHub field conventions (Verto workspace).**~~ **Closed (updated Phase 2.5)** —
+  `isDone` from native `closed` boolean; `isDeliverySlice` from `parent === null` by
+  default (overridable); `status` canonical via ProjectV2 `Status` `fieldMappings`
+  (optional); `priority` + AI SDLC on ProjectV2 custom columns; `stateReason` passthrough;
+  issue type via org-level Issue Type; **`personas` default from issue labels
+  `persona:<value>`** (no default `fieldMappings.personas`); optional
+  `fieldMappings.personas` override — §4.6.7. Field-schema sync:
   [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
+- ~~**Personas source (GitHub).**~~ **Closed (Phase 2.5)** — label prefix `persona:`;
+  optional `fieldMappings.personas` replaces label extraction — §4.6.4, §4.6.7.
 - ~~**Config bootstrap / audit.**~~ **Closed (design)** — audit step drafts
   `verto.config.jsonc` from live project shape; extension setup copies defaults and
   presents draft for edit — see §4.6.6.
-- ~~**Required-field fallback (read path).**~~ **Closed** — `id`, `title`, `isDone`,
-  `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds` are system-mapped (always
-  present from tracker structure; `isDone` and `isDeliverySlice` overridable via
-  fieldMappings); `priority` defaults to `5` with audit warning — see §4.6.5.
+- ~~**Required-field fallback (read path).**~~ **Closed (Phase 2.5)** — fail:
+  `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`,
+  `nodeType`, `nodeOrigin`; default `5`: `priority`; optional: `status` (`undefined`),
+  `personas` (`[]` or label extraction); enrichment: `parsedReqs` (`[]` from adapter) —
+  see §4.6.5. `nodeType` / `nodeOrigin` stamped by `mapper.ts`.
 - ~~**`VertoConfig` schema.**~~ **Closed (Phase 2)** — `fieldMappings` is
   `Record<string, FieldMappingEntry>` nested under `github` in `VertoConfig`; `from.kind:
   'issue' | 'projectV2'`; optional `values` map (full-entry replace on merge); optional
@@ -1075,16 +1391,20 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.4 Extension & UI
 
-- **UI port fidelity.** How faithfully to reproduce the canvas's graph SVG,
-  focus mode, pan/zoom, and tables; which `cursor/canvas` primitives need
-  replacing (`Table`, `UsageBar`, `Pill`, DAG layout, …).
-- **DAG layout library.** Vendor the existing `computeDAGLayout` logic or adopt a
-  standard (dagre/elk)?
+- ~~**UI port fidelity (Phase 3 scope).**~~ **Closed** — Delivery Map requires
+  canvas fidelity (persona/outcome, pipeline, portfolio table, UsageBar, gaps).
+  NCN pan/zoom deferred to Phase 4.
+- ~~**DAG layout library.**~~ **Closed (Phase 3)** — **@xyflow/react** (React
+  Flow) for graph UI; **ELK** (`elkjs`) for layout. See §4.8.
+- ~~**Extension bundlers.**~~ **Closed (Phase 3)** — host: **esbuild**; webview:
+  **Vite** (§4.8).
+- ~~**NCN pan/zoom (Phase 3).**~~ **Closed (deferred to Phase 4)** — disabled in
+  Phase 3 read-only panel.
 - **Theming.** Mapping the status palette onto VS Code theme variables.
 - **Large-graph performance.** Behaviour and possible simplification for big node
   counts.
-- **Where the panel lives.** Editor tab vs. sidebar vs. custom editor; and how
-  (if at all) it integrates with agent/chat workflows.
+- ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**
+  (`WebviewPanel`). Agent/chat workflow integration — deferred.
 - ~~**Setup UX (adapter config).**~~ **Closed (design)** — wizard asks adapter +
   project identity, runs audit, seeds `.vscode/verto.config.jsonc` from
   `defaults.verto.config.jsonc` + discovered project shape, user edits before save —
@@ -1092,10 +1412,12 @@ All open questions, ambiguities, and not-yet-decided items live here.
 
 ### 5.5 Product & process
 
-- **Extension identifiers.** VS Code extension id (e.g. `verto.verto`), marketplace
-  publisher name, and npm scope availability for `@verto/core`. **Decided:** product
-  name **Verto**; core package **`@verto/core`**; first shell **Verto for VS Code**.
-- **Distribution.** Marketplace vs. private VSIX vs. monorepo packaging.
+- ~~**Extension identifiers.**~~ **Closed (Phase 3)** — product name **Verto**;
+  extension display name **Verto**; core package **`@verto/core`** (monorepo
+  `workspace:*`, no npm publish); first shell **Verto for VS Code**; extension id
+  **`manmilani.verto`**; marketplace publisher **`manmilani`**.
+- ~~**Distribution.**~~ **Closed (Phase 3)** — **private `.vsix`** only (not
+  Marketplace).
 - **Repository strategy.** Where the core + extension live relative to consuming
   projects (monorepo vs. standalone repo).
 - **Team vs. personal state.** Whether priorities/views are per-user, per-team,
@@ -1119,6 +1441,7 @@ Summary of phases:
 | 0 | Repository & tooling scaffold |
 | 1 | `@verto/core` algorithms |
 | 2 | GitHub adapter — read-only |
+| 2.5 | Parsed requirements & Delivery Map model |
 | 3 | VS Code extension — read-only panel |
 | 4 | Full UI fidelity |
 | 5 | Write-back |

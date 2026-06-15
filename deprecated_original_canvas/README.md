@@ -9,6 +9,12 @@ pieces no longer need it, this folder **will be deleted**.
 
 For the **target system design**, see [../DESIGN.md](../DESIGN.md).
 
+> **Terminology note:** The deprecated canvas `steps[]` / "body task list" maps to
+> checklist items between **`RAW_REQ:BEGIN` / `RAW_REQ:END`** body markers in the
+> target Verto system — materialized as `nodeType: 'parsed'` nodes by
+> `@verto/parsed-nodes` (see DESIGN.md §3.6–§3.8). Chat summaries in this folder
+> retain historical wording (including "black boxes" and `REQ:` markers).
+
 ## Files
 
 | File | Purpose |

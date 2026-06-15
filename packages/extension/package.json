@@ -3,7 +3,7 @@
   "displayName": "Verto",
   "description": "Plan and deliver vertical slices from your issue graph using NCN and TOC thinking.",
   "version": "0.0.1",
-  "publisher": "verto",
+  "publisher": "manmilani",
   "private": true,
   "engines": {
     "vscode": "^1.96.0"

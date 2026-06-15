@@ -294,10 +294,10 @@ function buildTemplate(args) {
 ${args.description ?? ''}
 <!-- DESC:END -->
 
-#### Requirements
-<!-- REQ:BEGIN -->
+#### Raw Requirements
+<!-- RAW_REQ:BEGIN -->
 ${req}
-<!-- REQ:END -->
+<!-- RAW_REQ:END -->
 
 #### Acceptance Criteria
 <!-- AC:BEGIN -->

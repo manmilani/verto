@@ -1,6 +1,8 @@
 # Issue body template
 
-`SECTION:*` = grouping only; all content lives in field markers (`DESC`, `REQ`, `AC`, `DOD`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY`). Empty fields keep markers. Checklists: `1.` not `#1`.
+`SECTION:*` = grouping only; all content lives in field markers (`DESC`, `RAW_REQ`, `AC`, `DOD`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY`). Empty fields keep markers. Checklists: `1.` not `#1`.
+
+**Verto:** checklist items between `RAW_REQ:BEGIN` and `RAW_REQ:END` are materialized as `nodeType: 'parsed'` graph nodes when **Enable Parsed Requirements** is on (document order within the block).
 
 ```markdown
 ## Specification
@@ -10,10 +12,10 @@
 
 <!-- DESC:END -->
 
-#### Requirements
-<!-- REQ:BEGIN -->
+#### Raw Requirements
+<!-- RAW_REQ:BEGIN -->
 - [ ] 1. …
-<!-- REQ:END -->
+<!-- RAW_REQ:END -->
 
 #### Acceptance Criteria
 <!-- AC:BEGIN -->
@@ -45,4 +47,4 @@
 <!-- FINAL_SUMMARY:END -->
 ```
 
-Markers: `SECTION:SPECIFICATION`, `DESC`, `REQ`, `AC`, `DOD`, `SECTION:WORK`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY` (each `BEGIN`/`END`).
+Markers: `SECTION:SPECIFICATION`, `DESC`, `RAW_REQ`, `AC`, `DOD`, `SECTION:WORK`, `PLAN`, `RETRONOTES`, `FINAL_SUMMARY` (each `BEGIN`/`END`).

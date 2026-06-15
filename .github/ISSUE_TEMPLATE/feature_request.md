@@ -13,10 +13,10 @@ assignees: ''
 
 <!-- DESC:END -->
 
-#### Requirements
-<!-- REQ:BEGIN -->
+#### Raw Requirements
+<!-- RAW_REQ:BEGIN -->  <!-- Verto: materializes checklist items as parsed graph nodes (RAW_REQ:BEGIN/END); section heading irrelevant -->
 - [ ] 1. …
-<!-- REQ:END -->
+<!-- RAW_REQ:END -->
 
 #### Acceptance Criteria
 <!-- AC:BEGIN -->
