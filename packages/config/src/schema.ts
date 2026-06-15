@@ -55,6 +55,36 @@ const githubConfigSchema = {
   else: { required: ['repository'] },
 }
 
+const portfolioColumnSourceRuleSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    isDone: { type: 'boolean' },
+    statuses: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+const portfolioColumnsSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['label', 'sources'],
+    additionalProperties: false,
+    properties: {
+      label: { type: 'string' },
+      sources: {
+        type: 'object',
+        minProperties: 1,
+        additionalProperties: false,
+        properties: {
+          ticket: portfolioColumnSourceRuleSchema,
+          parsed: portfolioColumnSourceRuleSchema,
+        },
+      },
+    },
+  },
+}
+
 const vertoConfigSchema = {
   type: 'object',
   required: ['adapter', 'github'],
@@ -62,6 +92,7 @@ const vertoConfigSchema = {
   properties: {
     adapter: { type: 'string' },
     github: githubConfigSchema,
+    portfolioColumns: portfolioColumnsSchema,
   },
 }
 

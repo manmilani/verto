@@ -4,6 +4,8 @@ export type {
   GitHubIssueFilter,
   GitHubConfig,
   VertoConfig,
+  PortfolioColumnSourceRule,
+  PortfolioColumn,
 } from './types.js'
 
 export { validateVertoConfig } from './schema.js'

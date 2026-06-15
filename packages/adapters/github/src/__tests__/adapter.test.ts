@@ -41,7 +41,7 @@ describe('GitHubAdapter', () => {
   beforeEach(() => { warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {}) })
   afterEach(() => { vi.restoreAllMocks() })
 
-  it('project scope: fetches items + issues + closure → returns valid bundle', async () => {
+  it('project scope: fetches items + issues + closure → returns graph', async () => {
     const issue = makeIssue('I1')
     const item: GitHubProjectV2Item = { issueNodeId: 'I1', fieldValues: [] }
 
@@ -55,10 +55,12 @@ describe('GitHubAdapter', () => {
     vi.spyOn(GitHubClient.prototype, 'fetchProjectItems').mockImplementation(clientMock.fetchProjectItems)
     vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockImplementation(clientMock.fetchIssuesByNodeIds)
 
-    const bundle = await adapter.loadProject(projectConfig)
-    expect(bundle.graph.nodes).toHaveLength(1)
-    expect(bundle.graph.nodes[0].id).toBe('I1')
-    expect(bundle.implementationOrder).toBeDefined()
+    const graph = await adapter.loadProject(projectConfig)
+    expect(graph.nodes).toHaveLength(1)
+    expect(graph.nodes[0].id).toBe('I1')
+    expect(graph.nodes[0].nodeType).toBe('ticket')
+    expect(graph.nodes[0].nodeOrigin).toBe('github')
+    expect(graph.nodes[0].parsedReqs).toEqual([])
   })
 
   it('external blocker auto-fetched via blockedBy → no dangling_prereq errors', async () => {
@@ -75,20 +77,20 @@ describe('GitHubAdapter', () => {
       .mockResolvedValueOnce([B])  // closure expansion
 
     const adapter = new GitHubAdapter('test-token')
-    const bundle = await adapter.loadProject(projectConfig)
-    expect(bundle.graph.nodes.map(n => n.id).sort()).toEqual(['A', 'B'])
+    const graph = await adapter.loadProject(projectConfig)
+    expect(graph.nodes.map(n => n.id).sort()).toEqual(['A', 'B'])
   })
 
-  it('repository scope: fetches filtered issues + closure → valid bundle', async () => {
+  it('repository scope: fetches filtered issues + closure → returns graph', async () => {
     const issue = makeIssue('R1')
     const { GitHubClient } = await import('../client.js')
     vi.spyOn(GitHubClient.prototype, 'fetchRepositoryIssues').mockResolvedValue([issue])
     vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([])
 
     const adapter = new GitHubAdapter('test-token')
-    const bundle = await adapter.loadProject(repoConfig)
-    expect(bundle.graph.nodes).toHaveLength(1)
-    expect(bundle.graph.nodes[0].id).toBe('R1')
+    const graph = await adapter.loadProject(repoConfig)
+    expect(graph.nodes).toHaveLength(1)
+    expect(graph.nodes[0].id).toBe('R1')
   })
 
   it('throws before network call when config is invalid', async () => {
@@ -116,12 +118,12 @@ describe('GitHubAdapter', () => {
       .mockResolvedValueOnce([D])  // closure: A.blocking=[D]
 
     const adapter = new GitHubAdapter('test-token')
-    const bundle = await adapter.loadProject(projectConfig)
-    expect(bundle.graph.nodes.map(n => n.id).sort()).toEqual(['A', 'D'])
-    expect(bundle.graph.edges).toContainEqual({ from: 'A', to: 'D', reason: 'blocking' })
+    const graph = await adapter.loadProject(projectConfig)
+    expect(graph.nodes.map(n => n.id).sort()).toEqual(['A', 'D'])
+    expect(graph.edges).toContainEqual({ from: 'A', to: 'D', reason: 'blocking' })
   })
 
-  it('loadProject throws when validateGraph errors (dangling prereq from failed closure)', async () => {
+  it('loadProject returns graph with dangling prereq when closure fails (validation is pipeline responsibility)', async () => {
     const A = makeIssue('A', {
       blockedBy: { nodes: [{ id: 'B' }], pageInfo: { hasNextPage: false, endCursor: null } },
     })
@@ -134,7 +136,10 @@ describe('GitHubAdapter', () => {
       .mockResolvedValue([])       // all closure rounds: B not found (inaccessible)
 
     const adapter = new GitHubAdapter('test-token')
-    await expect(adapter.loadProject(projectConfig)).rejects.toThrow(/Graph validation failed/)
+    const graph = await adapter.loadProject(projectConfig)
+    const nodeA = graph.nodes.find(n => n.id === 'A')!
+    expect(nodeA.prereqIds).toContain('B')
+    expect(graph.nodes.some(n => n.id === 'B')).toBe(false)
   })
 
   it('all nodes at priority 5 when no priority fieldMapping → valid (not an error)', async () => {
@@ -145,7 +150,7 @@ describe('GitHubAdapter', () => {
     vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([issue])
 
     const adapter = new GitHubAdapter('test-token')
-    const bundle = await adapter.loadProject(projectConfig)
-    expect(bundle.graph.nodes[0].priority).toBe(5)
+    const graph = await adapter.loadProject(projectConfig)
+    expect(graph.nodes[0].priority).toBe(5)
   })
 })

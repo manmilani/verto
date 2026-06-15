@@ -10,6 +10,7 @@
     "@octokit/graphql": "^9.0.3",
     "@verto/adapter-github": "workspace:*",
     "@verto/config": "workspace:*",
+    "@verto/parsed-nodes": "workspace:*",
     "@vitest/coverage-v8": "^4.1.8",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

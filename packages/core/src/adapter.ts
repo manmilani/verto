@@ -1,4 +1,4 @@
-import type { DeliveryMapBundle } from './types.js'
+import type { VertoGraph } from './types.js'
 
 /**
  * The shared adapter interface implemented by every tracker-specific adapter.
@@ -7,12 +7,14 @@ import type { DeliveryMapBundle } from './types.js'
  * @verto/core is intentionally config-agnostic — it does NOT depend on
  * @verto/config; the config type lives there, not here.
  *
- * Read path:  loadProject(config) → DeliveryMapBundle
+ * Read path:  loadProject(config) → VertoGraph
+ *   Adapters return the raw graph only; the host pipeline (@verto/parsed-nodes
+ *   runHostPipeline) owns materialize → filter → validate → bundle.
  * Write path: writeBack(changes)  → void  (optional; Phase 5)
  */
 export interface VertoAdapter<TConfig = unknown> {
-  /** Load the full project graph and compute a DeliveryMapBundle. */
-  loadProject(config: TConfig): Promise<DeliveryMapBundle>
+  /** Load the full project graph from the tracker. */
+  loadProject(config: TConfig): Promise<VertoGraph>
 
   /**
    * Write changes (priority overrides, status updates, new blocking links, etc.)

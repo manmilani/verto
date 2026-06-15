@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mergeConfigs } from '../merge.js'
-import type { VertoConfig } from '../types.js'
+import type { VertoConfig, PortfolioColumn } from '../types.js'
 
 const base: VertoConfig = {
   adapter: 'github',
@@ -13,6 +13,10 @@ const base: VertoConfig = {
       type: { from: { kind: 'issue', field: 'type' } },
     },
   },
+  portfolioColumns: [
+    { label: 'Done', sources: { ticket: { isDone: true } } },
+    { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+  ],
 }
 
 describe('mergeConfigs', () => {
@@ -62,5 +66,25 @@ describe('mergeConfigs', () => {
     if (merged.github.scope === 'project') {
       expect(merged.github.projectNumber).toBe(2)
     }
+  })
+
+  it('workspace portfolioColumns fully replaces defaults array (no append)', () => {
+    const workspaceCols: PortfolioColumn[] = [
+      { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
+    ]
+    const workspace: Partial<VertoConfig> = { portfolioColumns: workspaceCols }
+    const merged = mergeConfigs(base, workspace)
+    expect(merged.portfolioColumns).toHaveLength(2)
+    expect(merged.portfolioColumns).toEqual(workspaceCols)
+    expect(merged.portfolioColumns!.some(c => c.label === 'Raw')).toBe(false)
+  })
+
+  it('no workspace portfolioColumns → defaults portfolioColumns preserved', () => {
+    const workspace: Partial<VertoConfig> = {
+      github: { scope: 'project', owner: 'owner', projectNumber: 2 },
+    }
+    const merged = mergeConfigs(base, workspace)
+    expect(merged.portfolioColumns).toEqual(base.portfolioColumns)
   })
 })

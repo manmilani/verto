@@ -22,7 +22,21 @@ export type GitHubConfig = GitHubScopeVariant & {
   fieldMappings?: FieldMappings
 }
 
+export interface PortfolioColumnSourceRule {
+  isDone?: boolean
+  statuses?: string[]
+}
+
+export interface PortfolioColumn {
+  label: string
+  sources: {
+    ticket?: PortfolioColumnSourceRule
+    parsed?: PortfolioColumnSourceRule
+  }
+}
+
 export interface VertoConfig {
   adapter: string
   github: GitHubConfig
+  portfolioColumns?: PortfolioColumn[]
 }

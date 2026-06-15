@@ -243,8 +243,8 @@ prior two-column / display-only body / `REQ:` markers design.
 - **Child sort:** unchanged — `implementationOrder` → `createdAt` → issue `id`.
 - **Completeness per row:** raw 0%/100% from checkbox; child `deliveryCompleteness(child)`.
 - **Portfolio / UsageBar / gaps:** root-level `portfolioColumns` — §4.6.3 DESIGN.md.
-- **`personas` (GitHub):** default from issue labels `persona:<value>`; optional `fieldMappings.personas` override (not in defaults).
-- **Slice header:** `personas[]` + DESC outcome; black-box canvas section **removed**.
+- **`personas` (GitHub):** populated per-issue at map time on **all ticket nodes** whose issue carries `persona:<value>` labels (default) or a `fieldMappings.personas` binding — not gated on `isDeliverySlice`. Optional `fieldMappings.personas` override (not in defaults).
+- **Slice header (Phase 3 UI):** reads `personas[]` from the selected slice node + DESC outcome; black-box canvas section **removed**.
 
 **Unlocks:** Phase 3 (webview renders bundle with unified pipeline and portfolio widgets).
 

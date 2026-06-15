@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { VertoNode } from '../types.js'
 import { validateGraph } from '../validation.js'
 import { node, edge, graph } from './helpers.js'
 
@@ -69,11 +70,24 @@ describe('validateGraph', () => {
     expect(result.errors.filter(e => e.type === 'child_not_in_prereqs')).toHaveLength(0)
   })
 
-  it('missing ticketUrl produces a warning (not an error)', () => {
-    const n = { ...node('A'), ticketUrl: undefined }
+  it('missing ticketUrl on ticket node produces an error', () => {
+    const n = { ...node('A'), ticketUrl: '' } as VertoNode
     const result = validateGraph({ nodes: [n], edges: [] })
-    expect(result.valid).toBe(true) // warnings don't make it invalid
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.type === 'missing_ticket_url')).toBe(true)
+    expect(result.warnings.some(w => w.type === 'missing_ticket_url')).toBe(false)
+  })
+
+  it('missing ticketUrl on parsed node produces a warning not an error', () => {
+    const n = {
+      ...node('A'),
+      nodeType: 'parsed' as const,
+      nodeOrigin: 'parsed-nodes',
+      ticketUrl: '',
+    }
+    const result = validateGraph({ nodes: [n], edges: [] })
     expect(result.warnings.some(w => w.type === 'missing_ticket_url')).toBe(true)
+    expect(result.errors.some(e => e.type === 'missing_ticket_url')).toBe(false)
   })
 
   it('cycle detection: direct self-loop', () => {
@@ -109,5 +123,68 @@ describe('validateGraph', () => {
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.type === 'invalid_priority')).toBe(true)
     expect(result.errors.some(e => e.type === 'dangling_prereq')).toBe(true)
+  })
+
+  // prereqs_consistency tests
+  it('prereqs_consistency: extra id in prereqIds not in edges/childIds/parsedReqs → error', () => {
+    const A = node('A')
+    const B = node('B', { prereqIds: ['A'] }) // 'A' is in prereqIds but no blocking edge A→B
+    const result = validateGraph({ nodes: [A, B], edges: [] })
+    expect(result.errors.some(e => e.type === 'prereqs_consistency')).toBe(true)
+  })
+
+  it('prereqs_consistency: missing childId in prereqIds → both child_not_in_prereqs and prereqs_consistency error', () => {
+    const A = node('A')
+    const B = node('B', { childIds: ['A'], prereqIds: [] }) // childId not in prereqIds
+    const result = validateGraph({ nodes: [A, B], edges: [] })
+    expect(result.errors.some(e => e.type === 'child_not_in_prereqs')).toBe(true)
+    expect(result.errors.some(e => e.type === 'prereqs_consistency')).toBe(true)
+  })
+
+  it('prereqs_consistency: consistent graph (blocking edge) → no error', () => {
+    const A = node('A')
+    const B = node('B', { prereqIds: ['A'] })
+    const result = validateGraph({
+      nodes: [A, B],
+      edges: [{ from: 'A', to: 'B', reason: 'blocking' }],
+    })
+    expect(result.errors.filter(e => e.type === 'prereqs_consistency')).toHaveLength(0)
+  })
+
+  // parsedReqs_integrity tests
+  it('parsedReqs_integrity: parsedReqs id that references a non-existent node → error', () => {
+    const A = node('A', { parsedReqs: ['A#raw-req-1'], prereqIds: ['A#raw-req-1'] })
+    const result = validateGraph({ nodes: [A], edges: [] })
+    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+  })
+
+  it('parsedReqs_integrity: parsedReqs id referencing a ticket node → error', () => {
+    const B = node('B') // ticket, not parsed
+    const A = node('A', { parsedReqs: ['B'], prereqIds: ['B'] })
+    const result = validateGraph({ nodes: [A, B], edges: [] })
+    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+  })
+
+  it('parsedReqs_integrity: parsed-req edge with no matching parsedReqs entry on target → error', () => {
+    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'parsed-nodes' }
+    const A = node('A', { parsedReqs: [] })
+    const result = validateGraph({
+      nodes: [A, P1],
+      edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' as const }],
+    })
+    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+  })
+
+  it('parsedReqs_integrity: well-formed parsed graph → no integrity errors', () => {
+    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'parsed-nodes' }
+    const A = node('A', { parsedReqs: ['P1'], prereqIds: ['P1'] })
+    const result = validateGraph({
+      nodes: [A, P1],
+      edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' as const }],
+    })
+    const relevant = result.errors.filter(
+      e => e.type === 'parsedReqs_integrity' || e.type === 'prereqs_consistency',
+    )
+    expect(relevant).toHaveLength(0)
   })
 })

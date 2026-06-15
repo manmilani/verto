@@ -32,6 +32,7 @@ export type Priority = number;
 export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
   'id', 'title', 'isDone', 'isDeliverySlice',
   'priority', 'prereqIds', 'childIds', 'ticketUrl',
+  'status', 'nodeType', 'nodeOrigin', 'personas', 'parsedReqs',   // Phase 2.5
 ]);
 
 export interface VertoNode {
@@ -91,20 +92,56 @@ export interface VertoNode {
   childIds: string[];
 
   /**
+   * Workflow progress label mapped from the tracker via fieldMappings (e.g. GitHub ProjectV2 Status).
+   * Optional — undefined when no fieldMappings.status binding exists or scope lacks board fields.
+   * Not used in graph math; purely for display and portfolio bucketing.
+   * Parsed raw-requirement nodes use 'raw' or 'done' here.
+   */
+  status?: string;
+
+  /**
+   * Whether this node originated from a tracker adapter ('ticket') or was materialized
+   * from a RAW_REQ block by @verto/parsed-nodes ('parsed').
+   */
+  nodeType: 'ticket' | 'parsed';
+
+  /**
+   * Provenance of this node — e.g. 'github', 'parsed-nodes'.
+   * Stamped by mapper.ts for ticket nodes; by materializeParsedRequirements for parsed nodes.
+   */
+  nodeOrigin: string;
+
+  /**
+   * Personas this node serves. Populated per-issue at map time on any ticket node whose
+   * issue carries matching labels or a fieldMappings.personas binding — not gated on
+   * isDeliverySlice. GitHub adapter default: extract from labels matching 'persona:<value>'
+   * (each contributes <value>); optional fieldMappings.personas overrides label extraction.
+   * Always [] on parsed nodes. The Delivery Map slice header (Phase 3) reads this field
+   * from the selected slice node — that is a UI concern, not a load-time restriction.
+   */
+  personas: string[];
+
+  /**
+   * IDs of parsed-requirement child nodes created from this ticket's RAW_REQ block.
+   * Set to [] on all ticket nodes by the adapter; populated by materializeParsedRequirements.
+   * Always [] on parsed nodes themselves.
+   */
+  parsedReqs: string[];
+
+  /**
    * Ticket fields that do not map to a canonical VertoNode property.
    * Populated by the mapper from fieldMappings entries whose key is not in
    * CANONICAL_VERTO_NODE_KEYS. Values are type-coerced by the mapper using the
    * field's declared `type` hint in config. Not used by @verto/core algorithms.
    *
-   * Previously-canonical fields now configured here via fieldMappings:
-   *   status?: string         — ticket progress state (raw tracker values)
-   *   body?: string           — long-form description / markdown
+   *   body?: string           — long-form description / markdown (used by @verto/parsed-nodes)
+   *   note?: string           — display note for parsed-req rows (set by materializeParsedRequirements)
    *   type?: string           — issue type (Epic, Story, Task, Bug, etc.)
    *   assignee?: string       — assigned user
    *   labels?: string[]       — labels or tags
    *   created_at?: string     — ISO 8601 creation timestamp
    *   updated_at?: string     — ISO 8601 last-updated timestamp
-   *   stateReason?: string    — GitHub native stateReason (completed / not_planned / duplicate / reopened / null )
+   *   stateReason?: string    — GitHub native stateReason (completed / not_planned / duplicate / reopened / null)
    *
    * AI SDLC traceability and model tracking (recommended fieldMappings key names):
    *   specified_by?: string[]      — session IDs / authors who contributed to specification
@@ -119,9 +156,10 @@ export interface VertoNode {
   ticketFields?: Record<string, unknown>;
 
   /**
-   * URL of the ticket in the tracker.
+   * URL of the ticket in the tracker. Required on all nodes.
+   * Ticket nodes: native issue URL. Parsed nodes: parent ticketUrl + '#raw-req-{n}'.
    */
-  ticketUrl?: string;
+  ticketUrl: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +180,7 @@ export interface VertoEdge {
    * 'parent-child' edges are also used for delivery completeness % and may be
    * visually distinguished in the UI.
    */
-  reason: 'parent-child' | 'blocking' | string;
+  reason: 'parent-child' | 'blocking' | 'parsed-req';
 }
 
 // ---------------------------------------------------------------------------

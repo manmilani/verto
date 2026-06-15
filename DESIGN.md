@@ -402,12 +402,13 @@ The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey)
 
 **Slice header (canvas fidelity):**
 
-- **Persona** — `personas: string[]` on the slice node (canonical root field;
-  default `[]`). **GitHub default (Phase 2.5):** extract from issue **labels** matching
-  `persona:<value>` — each matching label contributes `<value>` to the array (label
-  list order). Optional **`fieldMappings.personas`** in workspace config overrides
-  label extraction when present (no default entry in `defaults.verto.config.jsonc`).
-  See §4.6.7.
+- **Persona** — `personas: string[]` (canonical root field; default `[]`). **Population
+  (load time):** the GitHub adapter extracts `personas` per-issue from labels matching
+  `persona:<value>` on **any** ticket node — not gated on `isDeliverySlice`. Optional
+  **`fieldMappings.personas`** in workspace config overrides label extraction when present
+  (no default entry in `defaults.verto.config.jsonc`). See §4.6.7. **Display (Phase 3
+  UI):** the Delivery Map slice header reads `personas` from the selected slice node;
+  the field may also be populated on non-slice tickets but is not displayed there.
 - **Outcome** — display-only: full **Description** between `DESC:BEGIN` / `DESC:END`
   on the slice ticket body (strip HTML comments).
 
@@ -599,7 +600,7 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 | Done signal | *(not in deprecated original)* | Canonical "is done" for graph math — `isDone: boolean`; `isReady = !isDone && all prereqs isDone` | GitHub: native `closed` boolean; parsed raw lines: checkbox |
 | Node kind | *(not in deprecated original)* | `nodeType: 'ticket' \| 'parsed'` | Adapter vs `@verto/parsed-nodes` |
 | Provenance | *(not in deprecated original)* | `nodeOrigin` — e.g. `'github'`, `'parsed-nodes'` | Per source |
-| Persona (slice) | `persona` | Who the slice serves — `personas: string[]` on slice node | GitHub: `persona:<value>` labels (default); overridable via `fieldMappings` |
+| Persona (slice header) | `persona` | Who the slice serves — `personas: string[]` on any labeled ticket node; slice header reads this field from the selected slice node | GitHub: `persona:<value>` labels on any ticket (default); overridable via `fieldMappings` |
 | Raw requirements | journey `steps[]` *(deprecated original)* | Parsed lines → `nodeType: 'parsed'` graph nodes when toggle on | `RAW_REQ:BEGIN` / `RAW_REQ:END` in ticket body |
 | ~~Black box~~ | `BLACK_BOXES` | **Removed** — not used in Verto; unchecked raw status is `raw` | — |
 | Necessary-condition edge | `deps[]` | Prerequisite nodes (unified) | "blocked by" / "blocks" link **or** parent/child link |
@@ -641,8 +642,10 @@ The agreed mapping that resolves the canvas's conflation:
   and behaviour.
 - **Vertical** (vertical delivery / vertical slice / user journey / epic) =
   the **same concept**, materialised as a top node (probably Epic ticket type).
-  Slice header: **`personas: string[]`** (GitHub default: `persona:<value>` labels;
-  see §4.6.7) + **outcome** from `DESC:BEGIN` / `DESC:END` body markers.
+  Slice header (Phase 3 UI): displays **`personas: string[]`** read from the slice node
+  + **outcome** from `DESC:BEGIN` / `DESC:END` body markers. `personas` is populated
+  per-issue at map time on any ticket that has matching labels (GitHub default:
+  `persona:<value>`; see §4.6.7) — not restricted to slice nodes at load time.
 - **Raw requirements** — checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END` —
   are materialized as **`nodeType: 'parsed'`** nodes by `@verto/parsed-nodes` (Phase
   2.5). When **Enable Parsed Requirements** is on, they participate in NCN math and

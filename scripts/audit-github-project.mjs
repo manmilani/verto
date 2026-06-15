@@ -68,6 +68,7 @@ async function auditProjectScope(config) {
   }
 
   const fieldMappings = {}
+  let statusOptions = []
   for (const field of project.fields.nodes) {
     if (!field.name || field.name === 'Title') continue
     const fv = { from: { kind: 'projectV2', field: field.name } }
@@ -76,14 +77,31 @@ async function auditProjectScope(config) {
     if (field.dataType === 'DATE') fv.type = 'date'
     if (field.dataType === 'ITERATION') fv.type = 'iteration'
     fieldMappings[field.name.toLowerCase().replace(/\s+/g, '_')] = fv
+    if (field.name === 'Status' && Array.isArray(field.options)) {
+      statusOptions = field.options.map(o => o.name)
+    }
   }
 
   if (!fieldMappings.priority) {
     console.warn('[audit] No Priority field found — nodes will default to priority 5')
   }
 
+  // Seed portfolioColumns from discovered Status options.
+  // Done bucket uses isDone:true (no statuses) since option names are project-specific.
+  // Each discovered status option gets its own in-progress ticket bucket.
+  // Raw bucket catches undone parsed nodes.
+  const portfolioColumns = [
+    { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+    ...statusOptions.map(name => ({
+      label: name,
+      sources: { ticket: { isDone: false, statuses: [name] } },
+    })),
+    { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+  ]
+
   const discovered = {
     adapter: 'github',
+    portfolioColumns,
     github: {
       scope: 'project',
       owner: config.github.owner,

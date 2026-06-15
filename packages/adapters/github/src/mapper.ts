@@ -12,6 +12,8 @@ export function mapIssuesToGraph(
   const system = new SystemFieldAccessor()
   const project = new ProjectFieldAccessor(config.github.fieldMappings ?? {}, scope)
 
+  const hasPersonaMapping = Boolean(config.github.fieldMappings?.['personas'])
+
   const nodes: VertoNode[] = issues.map(issue => {
     const projectItem = projectItemsByNodeId.get(issue.id)
     const sysFields = system.toVertoNodeFields(issue)
@@ -23,6 +25,14 @@ export function mapIssuesToGraph(
         ...sysFields.ticketFields,
         ...projFields.ticketFields,
       },
+      nodeType: 'ticket' as const,
+      nodeOrigin: 'github' as const,
+      parsedReqs: [],
+      personas: hasPersonaMapping
+        ? (((projFields as Record<string, unknown>).personas as string[]) ?? [])
+        : issue.labels.nodes
+            .filter(l => l.name.startsWith('persona:'))
+            .map(l => l.name.slice('persona:'.length)),
     } as VertoNode
   })
 

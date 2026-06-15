@@ -1,5 +1,4 @@
-import type { VertoAdapter, DeliveryMapBundle } from '@verto/core'
-import { validateGraph, buildDeliveryMapBundle } from '@verto/core'
+import type { VertoAdapter, VertoGraph } from '@verto/core'
 import { validateVertoConfig } from '@verto/config'
 import type { VertoConfig } from '@verto/config'
 import { GitHubClient } from './client.js'
@@ -10,7 +9,7 @@ import type { GitHubProjectV2Item } from './system_types.js'
 export class GitHubAdapter implements VertoAdapter<VertoConfig> {
   constructor(private readonly token: string) {}
 
-  async loadProject(config: VertoConfig): Promise<DeliveryMapBundle> {
+  async loadProject(config: VertoConfig): Promise<VertoGraph> {
     validateVertoConfig(config)
     const client = new GitHubClient(this.token)
 
@@ -35,15 +34,6 @@ export class GitHubAdapter implements VertoAdapter<VertoConfig> {
       issues = await expandGraphClosure(client, filtered)
     }
 
-    const graph = mapIssuesToGraph(issues, projectItemsByNodeId, config)
-    const result = validateGraph(graph)
-    if (!result.valid) {
-      throw new Error(
-        `Graph validation failed:\n${result.errors.map(e => e.message).join('\n')}`,
-      )
-    }
-    result.warnings.forEach(w => console.warn('[verto]', w.message))
-
-    return buildDeliveryMapBundle(graph)
+    return mapIssuesToGraph(issues, projectItemsByNodeId, config)
   }
 }

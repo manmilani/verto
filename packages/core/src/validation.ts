@@ -7,6 +7,8 @@ export type ValidationErrorType =
   | 'invalid_priority'
   | 'child_not_in_prereqs'
   | 'missing_ticket_url'
+  | 'prereqs_consistency'
+  | 'parsedReqs_integrity'
 
 export interface ValidationIssue {
   type: ValidationErrorType
@@ -29,15 +31,19 @@ export interface ValidationResult {
  *   - dangling_prereq: prereqId references a non-existent node
  *   - dangling_child: childId references a non-existent node
  *   - invalid_priority: priority is not an integer in [1, 9]
- *   - child_not_in_prereqs: childIds is not a subset of prereqIds
+ *   - child_not_in_prereqs: childIds is not a subset of prereqIds (specific subset of prereqs_consistency)
+ *   - prereqs_consistency: prereqIds does not equal dedupe(childIds ∪ parsedReqs ∪ blocking-edge sources)
+ *   - parsedReqs_integrity: parsedReqs ids point at missing/non-parsed nodes, or parsed-req edges
+ *     lack a matching parsedReqs entry on the target node
  *
  * Warnings (degrade gracefully but worth surfacing):
- *   - missing_ticket_url: ticketUrl is absent (required per §4.6.5)
+ *   - missing_ticket_url: ticketUrl is absent on a ticket node (error); absent on a parsed node (warning)
  */
 export function validateGraph(graph: VertoGraph): ValidationResult {
   const errors: ValidationIssue[] = []
   const warnings: ValidationIssue[] = []
   const nodeIds = new Set(graph.nodes.map(n => n.id))
+  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
 
   for (const node of graph.nodes) {
     // Dangling prereqIds
@@ -83,12 +89,85 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
       }
     }
 
-    // ticketUrl missing (warning)
+    // ticketUrl missing: error for ticket nodes, warning for parsed nodes
     if (!node.ticketUrl) {
-      warnings.push({
+      const issue: ValidationIssue = {
         type: 'missing_ticket_url',
         nodeId: node.id,
         message: `node "${node.id}" has no ticketUrl — required per adapter policy (§4.6.5)`,
+      }
+      if (node.nodeType === 'parsed') {
+        warnings.push(issue)
+      } else {
+        errors.push(issue)
+      }
+    }
+  }
+
+  // prereqs_consistency: prereqIds must equal dedupe(childIds ∪ parsedReqs ∪ blocking-edge sources)
+  // Build map of blocking-edge sources per node (reason === 'blocking' only).
+  // parent-child edges are captured by childIds; parsed-req edges by parsedReqs.
+  const blockingSources = new Map<string, Set<string>>()
+  for (const node of graph.nodes) blockingSources.set(node.id, new Set())
+  for (const edge of graph.edges) {
+    if (edge.reason === 'blocking' && blockingSources.has(edge.to)) {
+      blockingSources.get(edge.to)!.add(edge.from)
+    }
+  }
+
+  for (const node of graph.nodes) {
+    const expected = new Set([
+      ...node.childIds,
+      ...node.parsedReqs,
+      ...(blockingSources.get(node.id) ?? []),
+    ])
+    const actual = new Set(node.prereqIds)
+    const inExpectedNotActual = [...expected].filter(id => !actual.has(id))
+    const inActualNotExpected = [...actual].filter(id => !expected.has(id))
+    if (inExpectedNotActual.length > 0 || inActualNotExpected.length > 0) {
+      const parts: string[] = []
+      if (inExpectedNotActual.length > 0)
+        parts.push(`missing from prereqIds: ${inExpectedNotActual.map(id => `"${id}"`).join(', ')}`)
+      if (inActualNotExpected.length > 0)
+        parts.push(`extra in prereqIds not in childIds/parsedReqs/blocking-edges: ${inActualNotExpected.map(id => `"${id}"`).join(', ')}`)
+      errors.push({
+        type: 'prereqs_consistency',
+        nodeId: node.id,
+        message: `node "${node.id}" prereqIds inconsistent — ${parts.join('; ')}`,
+      })
+    }
+  }
+
+  // parsedReqs_integrity check 1: every id in parsedReqs must reference a nodeType:'parsed' node
+  for (const node of graph.nodes) {
+    for (const parsedId of node.parsedReqs) {
+      const target = nodeById.get(parsedId)
+      if (!target) {
+        errors.push({
+          type: 'parsedReqs_integrity',
+          nodeId: node.id,
+          message: `parsedReqs id "${parsedId}" on node "${node.id}" references a non-existent node`,
+        })
+      } else if (target.nodeType !== 'parsed') {
+        errors.push({
+          type: 'parsedReqs_integrity',
+          nodeId: node.id,
+          message: `parsedReqs id "${parsedId}" on node "${node.id}" references a ticket node, not a parsed node`,
+        })
+      }
+    }
+  }
+
+  // parsedReqs_integrity check 2: every parsed-req edge must have a matching parsedReqs entry on target
+  for (const edge of graph.edges) {
+    if (edge.reason !== 'parsed-req') continue
+    const targetNode = nodeById.get(edge.to)
+    if (!targetNode) continue // dangling_prereq already covers this
+    if (!targetNode.parsedReqs.includes(edge.from)) {
+      errors.push({
+        type: 'parsedReqs_integrity',
+        nodeId: edge.to,
+        message: `parsed-req edge from "${edge.from}" to "${edge.to}" has no matching parsedReqs entry on the target node`,
       })
     }
   }
@@ -98,7 +177,6 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
   const colour = new Map<string, 0 | 1 | 2>()
   for (const node of graph.nodes) colour.set(node.id, WHITE)
 
-  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
   const reportedCycles = new Set<string>()
 
   // Use iterative DFS to avoid stack overflow on large graphs

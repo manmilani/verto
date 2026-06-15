@@ -136,4 +136,62 @@ describe('mapIssuesToGraph', () => {
     expect(pNode.prereqIds).toEqual(['X'])
     expect(pNode.childIds).toEqual(['X'])
   })
+
+  it('stamps nodeType: ticket, nodeOrigin: github, parsedReqs: [] on all nodes', () => {
+    const graph = mapIssuesToGraph([makeIssue('A')], new Map(), baseConfig)
+    const n = graph.nodes[0]
+    expect(n.nodeType).toBe('ticket')
+    expect(n.nodeOrigin).toBe('github')
+    expect(n.parsedReqs).toEqual([])
+  })
+
+  it('extracts personas from persona: labels when no fieldMappings.personas', () => {
+    const issue = makeIssue('A', {
+      labels: { nodes: [{ name: 'persona:admin' }, { name: 'persona:user' }, { name: 'bug' }] },
+    })
+    const graph = mapIssuesToGraph([issue], new Map(), baseConfig)
+    expect(graph.nodes[0].personas).toEqual(['admin', 'user'])
+  })
+
+  it('personas from fieldMappings.personas overrides label extraction', () => {
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'test', projectNumber: 1,
+        fieldMappings: {
+          personas: { from: { kind: 'issue', field: 'labels' } },
+        },
+      },
+    }
+    // Issue has both a persona: label and a plain label
+    const issue = makeIssue('A', {
+      labels: { nodes: [{ name: 'persona:admin' }, { name: 'bug' }] },
+    })
+    const graph = mapIssuesToGraph([issue], new Map(), config)
+    const n = graph.nodes[0]
+    // With fieldMappings.personas → ProjectFieldAccessor returns all label names (raw, unfiltered)
+    // vs. default extraction which would return ['admin'] (only persona: labels, prefix stripped)
+    expect(n.personas).toEqual(['persona:admin', 'bug'])
+  })
+
+  it('status from fieldMappings routes to node.status (canonical root), not ticketFields.status', () => {
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'test', projectNumber: 1,
+        fieldMappings: {
+          status: { from: { kind: 'projectV2', field: 'Status' }, type: 'select' },
+        },
+      },
+    }
+    const issue = makeIssue('A')
+    const item = {
+      issueNodeId: 'A',
+      fieldValues: [{ fieldName: 'Status', kind: 'single_select' as const, value: 'In Progress' }],
+    }
+    const graph = mapIssuesToGraph([issue], new Map([['A', item]]), config)
+    const n = graph.nodes[0]
+    expect(n.status).toBe('In Progress')
+    expect(n.ticketFields?.['status']).toBeUndefined()
+  })
 })

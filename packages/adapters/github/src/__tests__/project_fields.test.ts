@@ -77,7 +77,7 @@ describe('ProjectFieldAccessor', () => {
     expect(fields.ticketFields!['created_at']).toBe('2024-01-01T00:00:00Z')
   })
 
-  it('resolves kind:projectV2 field case-insensitively', () => {
+  it('resolves kind:projectV2 field case-insensitively; status routes to node root (canonical)', () => {
     const mappings: FieldMappings = {
       status: { from: { kind: 'projectV2', field: 'status' } },
     }
@@ -88,7 +88,8 @@ describe('ProjectFieldAccessor', () => {
     }
     const pfa = new ProjectFieldAccessor(mappings, 'project')
     const fields = pfa.toVertoNodeFields(issue, item)
-    expect(fields.ticketFields!['status']).toBe('In Progress')
+    expect(fields.status).toBe('In Progress')
+    expect(fields.ticketFields?.['status']).toBeUndefined()
   })
 
   it('applies values map for single_select priority', () => {

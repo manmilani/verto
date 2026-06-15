@@ -13,6 +13,11 @@ export function node(
     priority: 5,
     prereqIds: [],
     childIds: [],
+    parsedReqs: [],
+    personas: [],
+    nodeType: 'ticket',
+    nodeOrigin: 'test',
+    status: undefined,
     ticketUrl: `https://example.com/${id}`,
     ...overrides,
   }

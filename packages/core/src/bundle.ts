@@ -8,8 +8,9 @@ import { deliveryCompleteness } from './algorithms/completeness.js'
 
 /**
  * Runs all @verto/core algorithms over a VertoGraph and assembles the complete
- * DeliveryMapBundle. Every adapter's loadProject() should call this rather than
- * assembling the bundle by hand.
+ * DeliveryMapBundle. Called by runHostPipeline() in @verto/parsed-nodes after
+ * graph materialization and validation. Adapters return VertoGraph; the host
+ * pipeline owns bundling.
  *
  * The returned bundle is the authoritative, host-computed payload forwarded to
  * the webview via postMessage. The webview does NOT recompute any fields.
