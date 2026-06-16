@@ -24,6 +24,7 @@ export class SystemFieldAccessor implements FieldAccessor {
       prereqIds: [...new Set([...blockedByIds, ...subIssueIds])],
       childIds: [...new Set(subIssueIds)],
       ticketUrl: issue.url,
+      created_at: issue.createdAt,
     }
   }
 }

@@ -4,7 +4,7 @@ import { leverageScores } from './algorithms/leverage.js'
 import { readyNodes } from './algorithms/readiness.js'
 import { globalPriorityRanking } from './algorithms/priority.js'
 import { implementationOrder } from './algorithms/order.js'
-import { deliveryCompleteness } from './algorithms/completeness.js'
+import { deliveryCompletenessMap } from './algorithms/completeness.js'
 
 /**
  * Runs all @verto/core algorithms over a VertoGraph and assembles the complete
@@ -30,10 +30,7 @@ export function buildDeliveryMapBundle(
   const order = implementationOrder(graph, rankings, leverage) // pass pre-computed leverage
   const ready = readyNodes(graph).map(n => n.id)
 
-  const completeness: Record<string, number> = {}
-  for (const node of graph.nodes) {
-    completeness[node.id] = deliveryCompleteness(graph, node.id)
-  }
+  const completeness = deliveryCompletenessMap(graph)
 
   return {
     graph,

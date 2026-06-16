@@ -13,7 +13,7 @@
 | 0 | [Repository & tooling scaffold](#phase-0--repository--tooling-scaffold) | Buildable, testable monorepo with all packages scaffolded | Complete |
 | 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library | Complete |
 | 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns graph from GitHub *(bundle via host pipeline after Phase 2.5)* | Complete |
-| 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | |
+| 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | Complete |
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
@@ -70,7 +70,7 @@ Phase 0 wires it into a proper package (build, exports) rather than starting fro
 | `packages/core/src/algorithms/closure.ts` | `closureFor(graph, nodeId): Set<string>` — transitive prereq closure |
 | `packages/core/src/algorithms/readiness.ts` | `isReady(graph, node): boolean`; `readyNodes(graph): VertoNode[]` |
 | `packages/core/src/algorithms/leverage.ts` | `leverageScores(graph): Record<string, number>` — upward transitive dependent count |
-| `packages/core/src/algorithms/completeness.ts` | `deliveryCompleteness(graph, nodeId): number` — ratio of `isDone` nodes in closure (0–1) |
+| `packages/core/src/algorithms/completeness.ts` | `deliveryCompleteness(graph, nodeId): number` — weighted ratio of done weight to total weight in closure (`nodeWeight(node)`); returns NaN for unknown `nodeId`; `deliveryCompletenessMap(graph)` for bundle builds |
 | `packages/core/src/algorithms/priority.ts` | `globalPriorityRanking(graph, opts?): Record<string, number>` — chain-traversal algorithm (DESIGN.md §3.5) |
 | `packages/core/src/algorithms/order.ts` | `implementationOrder(graph, rankings): string[]` — dependency-respecting, priority-weighted topological sort |
 | `packages/core/src/types.ts` | Extended with two new `DeliveryMapBundle` fields: `globalPriorityRanking?: Record<string, number>` and `deliveryCompleteness?: Record<string, number>` |
@@ -175,6 +175,8 @@ same phase or as a fast follow without blocking Phase 3.
 
 ## Phase 2.5 — Parsed requirements & Delivery Map model
 
+**Status:** Complete.
+
 **Goal:** Model, enrichment, config, and shared load pipeline for **raw requirements**
 and the unified Delivery Map **Requirement** list — before Phase 3 UI. Supersedes the
 prior two-column / display-only body / `REQ:` markers design.
@@ -186,7 +188,7 @@ prior two-column / display-only body / `REQ:` markers design.
 
 | File | Purpose |
 |---|---|
-| `packages/core/src/types.ts` | Promote to canonical root: `status`, `nodeType` (`'ticket' \| 'parsed'`), `nodeOrigin`, `personas: string[]`, `_rawReqIds: string[]`, `_note?: string`, `_outcome?: string`; `ticketUrl: string` (**required**, not optional); `VertoEdge.reason`: closed union `'parent-child' \| 'blocking' \| 'parsed-req'`; update `CANONICAL_VERTO_NODE_KEYS` |
+| `packages/core/src/types.ts` | Promote to canonical root: `status`, `nodeType` (`'ticket' \| 'parsed'`), `nodeOrigin`, `personas: string[]`, `created_at?: string`, `weight?: number`, `_rawReqIds: string[]`, `_note?: string`, `_outcome?: string`; `ticketUrl: string` (**required**, not optional); `VertoEdge.reason`: closed union `'parent-child' \| 'blocking' \| 'parsed-req'`; update `CANONICAL_VERTO_NODE_KEYS` |
 | `packages/core/src/adapter.ts` | **`loadProject()` return type → `Promise<VertoGraph>`** (breaking change from Phase 1–2) |
 | `packages/core/src/validation.ts` | `prereqIds` consistency check (§4.6.8 formula); parsed node id / `_rawReqIds` consistency (`_rawReqIds_integrity`); **`ticketUrl` missing → error** (align with §4.6.5) |
 
@@ -241,9 +243,9 @@ prior two-column / display-only body / `REQ:` markers design.
 - **`nodeType` / `nodeOrigin`:** stamped by `mapper.ts` (`'ticket'` / `'github'`); not `fieldMappings` entries.
 - **`ticketUrl`:** required; validation error if missing on ticket nodes.
 - **`VertoEdge.reason`:** closed union including `'parsed-req'`.
-- **Child sort:** unchanged — `implementationOrder` → `createdAt` → issue `id`.
-- **Completeness per row:** raw 0%/100% from checkbox; child `deliveryCompleteness(child)`.
-- **Portfolio / UsageBar / gaps:** root-level `portfolioColumns` — §4.6.3 DESIGN.md.
+- **Child sort:** `implementationOrder` → `created_at` (canonical root; missing → last) → issue `id`.
+- **Completeness:** weighted — `deliveryCompleteness` uses `nodeWeight()`; parsed rows `isDone ? weight : 0`.
+- **Portfolio / UsageBar / gaps:** root-level `portfolioColumns` — §4.6.3 DESIGN.md; unbucketed rows → implicit **Other** bucket.
 - **`personas` (GitHub):** populated per-issue at map time on **all ticket nodes** whose issue carries `persona:<value>` labels (default) or a `fieldMappings.personas` binding — not gated on `isDeliverySlice`. Optional `fieldMappings.personas` override (not in defaults).
 - **Slice header (Phase 3 UI):** reads `personas[]` from the selected slice node + DESC outcome; black-box canvas section **removed**.
 
@@ -281,7 +283,7 @@ stretch goal — it is not required to dogfood the extension.
 | File | Purpose |
 |---|---|
 | `packages/extension/src/webview/App.tsx` | Root component: receives `'update'` via `postMessage`; restores lens + focus from `restoredState`; lens switcher; global **Enable Parsed Requirements** toggle (checkbox in toolbar) that sends `'setParsedEnabled'` to host |
-| `packages/extension/src/webview/hooks/useVertoState.ts` | Thin `postMessage` ↔ host bridge for bundle updates and UI state persistence (selected lens, focused node); replaces canvas `useCanvasState` |
+| `packages/extension/src/webview/hooks/useVertoState.ts` | Thin `postMessage` ↔ host bridge for bundle updates and UI state persistence (selected lens, `focusedNode`); replaces canvas `useCanvasState` |
 | `packages/extension/src/webview/lenses/DeliveryMap.tsx` | Delivery Map lens: pill selector; persona/outcome header; **single pipeline**; child **note** from `node._note` and slice **outcome** from `node._outcome` (pre-computed by host pipeline, §4.6.8); portfolio table, UsageBar, gap callouts (done-bucket rules §4.6.3) |
 | `packages/extension/src/webview/lenses/NcnGraph.tsx` | NCN graph lens: `@xyflow/react` + ELK layout; ready/not-done coloring; leverage badges; **no pan/zoom** (Phase 3) |
 | `packages/extension/src/webview/theme.ts` | Status color palette mapped to VS Code CSS variables — no hard-coded hex |
@@ -296,12 +298,15 @@ stretch goal — it is not required to dogfood the extension.
 - **Delivery Map layout** (§5.2) — see DESIGN.md §3.7:
   - **Terminology:** deprecated canvas `steps[]` = union of child tickets + raw requirement lines (`RAW_REQ` block).
   - **Pipeline:** single column — children first, then raw lines; no dedupe; no linking.
-  - **Child ordering:** `implementationOrder` → `createdAt` (oldest first) → issue `id` (alphanumeric ascending).
+  - **Child ordering:** `implementationOrder` → `created_at` on node root (oldest first; missing → last) → issue `id` (alphanumeric ascending).
   - **Raw ordering:** document order within `RAW_REQ:BEGIN` / `RAW_REQ:END`; ignore `1.`, `2.`, … prefixes.
   - **Parsing:** `@verto/text-parser` (Phase 2.5); not extension `bodyParser`.
-  - **Slice picker:** pills (deprecated canvas pattern).
+  - **Slice picker:** pills (deprecated canvas pattern); **neutral tone** in Phase 3 (completion-based colouring Phase 4).
+  - **Portfolio table:** sort slices by `deliveryCompleteness[sliceId]` descending.
+  - **UsageBar / portfolio buckets:** configured `portfolioColumns` plus implicit **Other** for unbucketed rows; segment value = sum of `weight` (default 1).
   - **Empty states:** no children and toggle off / no raw lines → empty pipeline; no delivery slices → empty screen.
-  - **Status:** children show canonical `status`; parsed rows show `raw` / `done`; slice completeness per-row in pipeline.
+  - **Status:** children show canonical `status`; parsed rows show `raw` / `done`.
+  - **Completeness (pipeline rows):** parsed — binary from `isDone` × `weight`; children — `deliveryCompleteness(childId)` (weighted).
   - **Canvas fidelity:** persona/outcome, portfolio table, UsageBar, gaps — **required** in Phase 3.
 - **Enable Parsed Requirements** (§5.2) — global toggle, default on, host rebuilds bundle (Phase 2.5 pipeline).
 - **Distribution** (§5.5) — private `.vsix` only.
@@ -309,7 +314,7 @@ stretch goal — it is not required to dogfood the extension.
 - **Bundlers** — host: **esbuild**; webview: **Vite**.
 - **UI port fidelity** (§5.4) — Delivery Map canvas components required (§3.7); NCN pan/zoom Phase 4.
 - **NCN interaction** — React Flow pan/zoom **out** for Phase 3 (Phase 4).
-- **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` carries `'update'` (`bundle`, `portfolioColumns`, `parsedEnabled`, `restoredState?`); `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`; host waits for `'ready'` before sending first `'update'`.
+- **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` carries `'update'` (`bundle`, `portfolioColumns`, `parsedEnabled`, `restoredState?`); `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`; `PersistedPanelState.focusedNode` = selected slice id; host waits for `'ready'` before sending first `'update'`.
 - **`portfolioColumns` in webview payload** (§4.6.3) — sent in `'update'` message alongside `bundle`; not part of `DeliveryMapBundle`; keeps `@verto/core` free of config concerns.
 - **Enable Parsed Requirements toggle UI** (§5.2) — webview toolbar checkbox; sends `'setParsedEnabled'` to host; host updates `workspaceState`, rebuilds bundle, and sends new `'update'`.
 - **Adapter defaults export** (§4.6.3) — `@verto/adapter-github` exports `githubAdapterDefaults` from `src/defaults.ts` (re-exported via `src/index.ts`); `configLoader.ts` imports it directly; no filesystem reads at runtime.
@@ -409,7 +414,7 @@ Each is linked to the phase where it blocks progress.
 | Personas source (GitHub `persona:` labels) | Resolved Phase 2.5 | §4.6.7, §5.3 |
 | `VertoEdge.reason` closed union + `prereqIds` validation | Resolved Phase 2.5 | §4.6.8, §5.1 |
 | Required-field fallback (Phase 2.5 fields) | Resolved Phase 2.5 | §4.6.5, §5.3 |
-| Canonical schema — `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds`, `_note`, `_outcome` | Resolved Phase 2.5 | §4.4, `types.ts` |
+| Canonical schema — `status`, `nodeType`, `nodeOrigin`, `personas`, `created_at`, `weight`, `_rawReqIds`, `_note`, `_outcome` | Resolved Phase 2.5 | §4.4, `types.ts` |
 | Extension identifiers — `manmilani.verto`, publisher `manmilani`, `@verto/*` monorepo-only | Resolved Phase 3 | §5.5 |
 | Extension display name — **Verto** | Resolved Phase 3 | §4.8 |
 | Distribution — private `.vsix` | Resolved Phase 3 | §5.5 |
@@ -419,7 +424,10 @@ Each is linked to the phase where it blocks progress.
 | Delivery Map layout — pipeline, portfolio, UsageBar, gaps, pill selector | Resolved Phase 2.5 / 3 | §5.2, §3.7 |
 | Raw requirements parsing — `RAW_REQ:BEGIN` / `RAW_REQ:END` | Resolved Phase 2.5 | §4.6.8 |
 | Enable Parsed Requirements toggle | Resolved Phase 2.5 | §4.6.8 |
-| Child sort tie-break — `implementationOrder` → `createdAt` → issue `id` | Resolved Phase 2.5 / 3 | §3.7 |
+| Child sort tie-break — `implementationOrder` → `created_at` → issue `id` | Resolved Phase 2.5 / 3 | §3.7 |
+| Portfolio Other bucket — unbucketed rows | Resolved Phase 3 | §4.6.3, §3.7 |
+| Weighted delivery completeness (`nodeWeight()`) | Resolved Phase 2.5 / 3 | §3.3, `completeness.ts` |
+| Portfolio sort — `deliveryCompleteness[sliceId]` desc; neutral pills Phase 3 | Resolved Phase 3 | §3.7 |
 | UI port fidelity (Delivery Map) — canvas components required | Resolved Phase 3 | §5.4, §3.7 |
 | NCN pan/zoom — out for Phase 3 | Resolved Phase 3 | §5.4 |
 | Extract audit into `@verto/adapter-github` | Phase 4 | IMPLEMENTATION Phase 4 |

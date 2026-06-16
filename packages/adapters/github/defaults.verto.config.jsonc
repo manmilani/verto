@@ -32,7 +32,6 @@
       "labels":      { "from": { "kind": "issue", "field": "labels" } },
       "body":        { "from": { "kind": "issue", "field": "body" } },
       "stateReason": { "from": { "kind": "issue", "field": "stateReason" } },
-      "created_at":  { "from": { "kind": "issue", "field": "created_at" } },
       "updated_at":  { "from": { "kind": "issue", "field": "updated_at" } },
       "milestone":   { "from": { "kind": "issue", "field": "milestone" } },
 

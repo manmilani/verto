@@ -313,8 +313,12 @@ algorithms are node-agnostic):
   its incompleteness is blocking the most upward value. Completing high-leverage
   nodes first is Verto's operationalisation of TOC's "exploit the constraint" policy.
   High-leverage nodes are the ones whose completion unblocks the most.
-- **Delivery completeness** — for any focused node, how much of its delivery
-  subgraph (closure) is already done, i.e. how close that node is to deliverable.
+- **Delivery completeness** — for any focused node, the **weighted** fraction of its
+  delivery subgraph (closure) that is already done: each node in the closure contributes
+  `weight` (default **1**); done nodes contribute their full weight. Ratio =
+  (sum of weights of done nodes) / (sum of weights of all nodes in closure). With
+  default weights this equals the unweighted done-node fraction; future effort
+  estimates map to `weight` without changing the algorithm.
 
 ### 3.4 TOC — Theory of Constraints as the sequencing philosophy
 
@@ -429,7 +433,7 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 
 | Segment | Sort rule |
 |---|---|
-| **Child tickets** | (1) `implementationOrder` rank; (2) `createdAt` ascending; (3) issue `id` alphanumeric ascending |
+| **Child tickets** | (1) `implementationOrder` rank; (2) `created_at` ascending (oldest first; missing → sort last); (3) issue `id` alphanumeric ascending |
 | **Raw requirements** | Document order within `RAW_REQ:BEGIN` / `RAW_REQ:END`; ignore `1.`, `2.`, … prefixes |
 
 **Per-requirement display fields** (pipeline row; `title` = `VertoNode.title`):
@@ -440,7 +444,7 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 | **note** | `node._note` (set by `materializeParsedRequirements`) | `node._note` — **first paragraph** of the child's `DESC:BEGIN` / `DESC:END` block, pre-computed by `computeBodyFields` (§4.6.8) |
 | **status** | `raw` (unchecked) or `done` (checked) | Tracker `status` (canonical root) |
 | **isDone** | Matches checkbox | Tracker closed / mapping |
-| **Completeness** (bar segment weight) | 0% unchecked; 100% checked | `deliveryCompleteness(nodeId)` |
+| **Completeness** | `isDone ? 1 : 0` × `weight` (display as %; default weight 1) | `deliveryCompleteness(nodeId)` (weighted; §3.3) |
 
 **Raw line name/note parsing** (`[ ]` or `[x]`):
 
@@ -467,9 +471,13 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 
 **Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
 
-- **Portfolio** — per slice, counts Requirements bucketed by
-  `portfolioColumns` in config (§4.6.3).
-- **UsageBar** — same buckets as portfolio columns; **counts** (not weighted scores).
+- **Portfolio** — per slice, bucket Requirements using `portfolioColumns` (§4.6.3).
+  **Sort:** delivery slices by `deliveryCompleteness[sliceId]` descending (highest
+  completeness first). **Slice picker pills:** neutral tone in Phase 3 (completion-based
+  pill colouring deferred to Phase 4).
+- **UsageBar** — same buckets as portfolio columns plus an implicit **Other** bucket;
+  segment value = **sum of `weight`** (default 1) of requirements in that bucket.
+  With default weights this equals a count.
 - **Gaps** — requirements that do **not** match any **done bucket**. A portfolio
   column is a **done bucket** when **any** of its `sources` entries has
   `isDone: true` (for `ticket` and/or `parsed`). A requirement matches a column when
@@ -494,6 +502,8 @@ filters before bundle when off; rebuilds bundle on toggle.
 | **`parsed` `nodeType`** | Graph node materialized from a raw requirement line |
 | **`ticket` `nodeType`** | Graph node from a tracker adapter |
 | **`nodeOrigin`** | Provenance: `'github'`, `'text-parser'`, etc. |
+| **`created_at`** | Canonical ISO 8601 creation timestamp (optional); child-sort tie-break |
+| **`weight`** | Optional effort weight for weighted completeness (default **1**) |
 
 ---
 
@@ -585,7 +595,8 @@ Host- and vendor-agnostic. Responsibilities:
 >
 > **Canonical schema (Phase 2.5).** `VertoNode` exposes the fields that `@verto/core`
 > algorithms and the UI require. Phase 2.5 promotes from ticket passthrough to canonical
-> root: `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds` (see
+> root: `status`, `nodeType`, `nodeOrigin`, `personas`, `created_at`, `weight`,
+> `_rawReqIds`, `_note`, `_outcome` (see
 > [`packages/core/src/types.ts`](./packages/core/src/types.ts)). Core algorithm fields
 > remain: `id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`,
 > `childIds`, `ticketUrl` (**required**). All other ticket fields stay in `node.ticketFields` via
@@ -805,8 +816,9 @@ Shape:
   options from audit.
 - **Non-Done columns:** only requirements with **`!isDone`** whose `status` is in
   the column's `statuses` list (parsed: `raw` / `done`).
-- **UsageBar** — same buckets as portfolio columns; **counts** per bucket (not
-  weighted scores).
+- **UsageBar** — same buckets as portfolio columns plus an implicit **Other** bucket;
+  segment value = **sum of `weight`** (default 1) of requirements in that bucket.
+  With default weights this equals a count.
 - **Done buckets (for gap callouts):** any column where `sources.ticket.isDone === true`
   and/or `sources.parsed.isDone === true`. A requirement matches a column when it
   satisfies that column's `sources` rules. **Gaps** = pipeline rows matching **no**
@@ -814,7 +826,9 @@ Shape:
 - **Column assignment (matching algorithm):** for each pipeline row, walk
   `portfolioColumns` **in array order**; assign the row to the **first** column
   whose `sources` entry for that row's `nodeType` (`ticket` or `parsed`) matches.
-  Skip columns with no rule for that source type.
+  Skip columns with no rule for that source type. Rows matching **no** configured
+  column are assigned to an implicit **Other** bucket (not in config; used for
+  portfolio table counts and UsageBar only — not for gap detection).
 - **Within a `sources.<type>` block:** let `row` be the requirement node. Match if
   **any** specified predicate holds: (`isDone` is present in config and
   `row.isDone === config.isDone`) **or** (`statuses` is present and
@@ -888,12 +902,13 @@ in `fieldMappings`. These are **always** populated outside `fieldMappings` and a
 
 | Field | Stamped by |
 |---|---|
-| `id`, `title`, `prereqIds`, `childIds`, `ticketUrl` | System accessor (tracker identity + dependency structure) |
+| `id`, `title`, `prereqIds`, `childIds`, `ticketUrl`, `created_at` | System accessor (tracker identity + dependency structure + creation time; GitHub: `createdAt`) |
 | `nodeType`, `nodeOrigin` | **`mapper.ts`** on every adapter-produced node (`'ticket'` + adapter id, e.g. `'github'`) |
 | `_rawReqIds` | **`@verto/text-parser`** (`[]` on ticket nodes before materialize; populated after) |
 | `_note` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph); `materializeParsedRequirements` (parsed: note from RAW_REQ line) |
 | `_outcome` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph; same as `_note`); always `undefined` on parsed nodes |
 | `personas` (GitHub default) | **`mapper.ts`** — from issue labels `persona:<value>` when no `fieldMappings.personas` override |
+| `weight` | **`fieldMappings`** when an effort estimate exists (optional; normalized by `nodeWeight()` — see `completeness.ts`) |
 
 `isDone` and `isDeliverySlice` are populated by the system accessor by default but
 may be overridden via an optional `fieldMappings` entry. `priority` and `status`
@@ -995,6 +1010,8 @@ required but may have no mapped ticket field. The mapper must behave consistentl
 | **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Audit flags missing mapping; emit non-fatal notice. |
 | **Optional — continue** | `status` | **`undefined`** if no `fieldMappings` binding or board field absent (e.g. repository scope). No error. |
 | **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels (GitHub default path) and no `fieldMappings.personas` override. No error. Override: standard `fieldMappings` routing when `fieldMappings.personas` is set. |
+| **Optional — continue** | `weight` | **`undefined`** if unmapped. Algorithms use `nodeWeight()` (see `completeness.ts`). No error. |
+| **Optional — continue** | `created_at` | **System accessor** on GitHub (`issue.createdAt`); overridable via `fieldMappings.created_at`. No error if absent on other adapters. |
 | **Enrichment-only** | `_rawReqIds` | **`[]`** on ticket nodes from adapter; populated by `materializeParsedRequirements`. Adapter does not set parsed-node entries. |
 
 Parsed nodes (`nodeType: 'parsed'`) are created only by `@verto/text-parser`; they
@@ -1239,22 +1256,22 @@ nodes. Parsed nodes inherit parent URL + anchor.
   → filter → validate → `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
   Requirements** toggle persistence, and UI state. Adapters do **not** materialize
   parsed nodes or build bundles.
-- **Webview responsibilities:** purely a view of the `DeliveryMapBundle` it
-  receives — the two lenses, the priorities editor, and the implementation-order
-  table. The deprecated original canvas's `useCanvasState` is replaced by a thin hook
-  over `postMessage` + host persistence (the React-facing API can stay nearly
-  identical). Theme via VS Code CSS variables instead of hard-coded hex.
-- **Parity target:** the NCN graph lens, custom vertical priorities, and the
-  implementation-order table behave **the same** as the deprecated original canvas
-  (same core algorithms). The Delivery Map lens achieves **canvas fidelity** in Phase 3:
-  persona/outcome slice header, single pipeline column (children + raw lines),
-  portfolio overview table, UsageBar, and gap callouts (see §3.7). Deprecated
-  “black boxes” section is **not** ported.
+- **Webview responsibilities (Phase 3):** purely a view of the `DeliveryMapBundle`
+  and config payload it receives — the **Delivery Map** and **NCN graph** lenses.
+  Priority editor and implementation-order table are **Phase 4**. The deprecated
+  original canvas's `useCanvasState` is replaced by a thin hook over `postMessage`
+  + host persistence. Theme via VS Code CSS variables instead of hard-coded hex.
+- **Parity target:** Phase 3 Delivery Map achieves **canvas fidelity** (persona/outcome,
+  pipeline, portfolio table, UsageBar, gaps — §3.7). Phase 3 NCN graph is an MVP
+  (full graph, ready colouring, leverage badges; no pan/zoom). Phase 4 adds NCN
+  pan/zoom/focus, custom vertical priorities, implementation-order table, and
+  completion-based pill colouring — same core algorithms throughout.
 
 **Host↔webview message protocol.** All communication between the extension host and
 the webview uses a typed `postMessage` contract defined in
 `packages/extension/src/shared/protocol.ts`, imported by both host and webview build
-targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedSliceId?: string }`.
+targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?: string }`
+  (`focusedNode` = selected delivery-slice id in Delivery Map lens; NCN focus in Phase 4).
 
 *Host → webview:*
 
@@ -1268,7 +1285,7 @@ targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedS
 |---|---|---|
 | `'ready'` | — | Webview mounted; host holds the first `'update'` until this arrives |
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
-| `'persistState'` | `state: PersistedPanelState` | Lens switch or slice selection change (debounced) |
+| `'persistState'` | `state: PersistedPanelState` | Lens switch or focused-node change (debounced) |
 
 `portfolioColumns` travels in `'update'` alongside the bundle — **not** inside
 `DeliveryMapBundle` — keeping `@verto/core` free of config concerns.
@@ -1325,7 +1342,7 @@ the body sections cited — this list is the index.
 ### 5.1 Domain model & ticket schema
 
 - ~~**Final canonical schema.**~~ **Closed (Phase 2.5)** — core algorithm fields plus
-  `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds` on `VertoNode`; `ticketUrl`
+  `status`, `nodeType`, `nodeOrigin`, `personas`, `created_at`, `weight`, `_rawReqIds` on `VertoNode`; `ticketUrl`
   **required** (`string`, not optional); see [`packages/core/src/types.ts`](./packages/core/src/types.ts).
   Ticket passthroughs via `fieldMappings` → `node.ticketFields` (**`status` is not** in
   `ticketFields` after Phase 2.5).

@@ -38,6 +38,10 @@ export interface ValidationResult {
  *
  * Warnings (degrade gracefully but worth surfacing):
  *   - missing_ticket_url: ticketUrl is absent on a ticket node (error); absent on a parsed node (warning)
+ *
+ * Not yet checked (callers should ensure unique node ids, or extend validation):
+ *   - duplicate node id: repeated `node.id` values last-wins in Map-based indexes
+ *     (`deliveryCompletenessMap`, closure, etc.)
  */
 export function validateGraph(graph: VertoGraph): ValidationResult {
   const errors: ValidationIssue[] = []

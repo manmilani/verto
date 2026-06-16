@@ -33,6 +33,7 @@ export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
   'id', 'title', 'isDone', 'isDeliverySlice',
   'priority', 'prereqIds', 'childIds', 'ticketUrl',
   'status', 'nodeType', 'nodeOrigin', 'personas',
+  'created_at', 'weight',
   '_rawReqIds', '_note', '_outcome',               // @verto/text-parser outputs (Phase 2.5)
 ]);
 
@@ -148,6 +149,22 @@ export interface VertoNode {
   _outcome?: string;
 
   /**
+   * ISO 8601 creation timestamp from the tracker (e.g. GitHub issue `createdAt`).
+   * Populated by the system accessor on ticket nodes; overridable via
+   * `fieldMappings.created_at`. Used for pipeline child-ticket sort tie-break (§3.7).
+   */
+  created_at?: string;
+
+  /**
+   * Relative effort weight for weighted delivery completeness (§3.3).
+   * Optional — treated as **1** when absent, non-finite, ≤ 0, or non-numeric.
+   * Positive numeric strings (e.g. untyped fieldMappings) are parsed. Zero-weight
+   * nodes are not supported — explicit 0 falls back to 1. Future adapters may
+   * map ticket estimates (story points, etc.) here.
+   */
+  weight?: number;
+
+  /**
    * Ticket fields that do not map to a canonical VertoNode property.
    * Populated by the mapper from fieldMappings entries whose key is not in
    * CANONICAL_VERTO_NODE_KEYS. Values are type-coerced by the mapper using the
@@ -159,7 +176,6 @@ export interface VertoNode {
    *   type?: string           — issue type (Epic, Story, Task, Bug, etc.)
    *   assignee?: string       — assigned user
    *   labels?: string[]       — labels or tags
-   *   created_at?: string     — ISO 8601 creation timestamp
    *   updated_at?: string     — ISO 8601 last-updated timestamp
    *   stateReason?: string    — GitHub native stateReason (completed / not_planned / duplicate / reopened / null)
    *
@@ -238,10 +254,11 @@ export interface DeliveryMapBundle {
    */
   globalPriorityRanking?: Record<string, number>;
   /**
-   * Per-node delivery completeness: maps node id → ratio of isDone nodes in its
-   * transitive prerequisite closure (0 = nothing done, 1 = fully delivered).
-   * Computed server-side by buildDeliveryMapBundle(); not recomputed in the webview.
-   * See DESIGN.md §3.3.
+   * Per-node weighted delivery completeness: maps node id → ratio of done weight
+   * to total weight in its transitive prerequisite closure (0 = nothing done,
+   * 1 = fully delivered). Per-node contribution uses `nodeWeight()` (see
+   * `completeness.ts`) — not raw `weight ?? 1`. Computed server-side by
+   * `buildDeliveryMapBundle()`; not recomputed in the webview. See DESIGN.md §3.3.
    */
   deliveryCompleteness?: Record<string, number>;
 }

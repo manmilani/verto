@@ -37,6 +37,7 @@ describe('SystemFieldAccessor', () => {
     expect(fields.isDone).toBe(true)
     expect(fields.isDeliverySlice).toBe(true)
     expect(fields.ticketUrl).toBe(issue.url)
+    expect(fields.created_at).toBe('2024-01-01T00:00:00Z')
   })
 
   it('isDeliverySlice is false when issue has a parent', () => {
@@ -74,7 +75,8 @@ describe('ProjectFieldAccessor', () => {
     const fields = pfa.toVertoNodeFields(issue)
     expect(fields.ticketFields!['type']).toBe('Bug')
     expect(fields.ticketFields!['assignee']).toBe('alice')
-    expect(fields.ticketFields!['created_at']).toBe('2024-01-01T00:00:00Z')
+    expect(fields.created_at).toBe('2024-01-01T00:00:00Z')
+    expect(fields.ticketFields?.['created_at']).toBeUndefined()
   })
 
   it('resolves kind:projectV2 field case-insensitively; status routes to node root (canonical)', () => {
