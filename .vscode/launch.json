@@ -7,7 +7,7 @@
       "request": "launch",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}/packages/extension"],
       "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
-      "preLaunchTask": "${defaultBuildTask}"
+      "preLaunchTask": "Build Extension"
     }
   ]
 }
