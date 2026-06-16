@@ -34,8 +34,12 @@
     },
     // --- FIX FOR AUTOMATION / DEBUG ERRORS ---
     "terminal.integrated.automationProfile.windows": {
+        // "path": "C:\\Windows\\System32\\cmd.exe",
+        // "args": ["/k", "for /f %i in (${workspaceFolder}\\.env) do @set %i"]
         "path": "C:\\Windows\\System32\\cmd.exe",
-        "args": ["/k", "for /f %i in (${workspaceFolder}\\.env) do @set %i"]
+        "args": ["for /f %i in (${workspaceFolder}\\.env) do @set %i"]
+        // "path": "powershell.exe",
+        // "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
     },
 
     "beans.ai.enabled": false

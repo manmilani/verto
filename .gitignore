@@ -11,15 +11,15 @@ dist/
 *.tsbuildinfo
 
 # hmans/beans files
-.beans/*
+.beans/
 .beans.yml
 
 # Backlog.md files
-backlog/*
+backlog/
 
 # # Workspace files
 # .vscode/*
 
 # Secrets
 .env
-coverage/*
+coverage/

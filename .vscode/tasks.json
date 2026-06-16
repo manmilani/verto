@@ -5,7 +5,13 @@
       "label": "Build Extension",
       "type": "shell",
       "command": "pnpm build",
-      "options": { "cwd": "${workspaceFolder}/packages/extension" },
+      "options": { 
+        "cwd": "${workspaceFolder}/packages/extension" ,
+        "shell": {
+          "executable": "powershell.exe",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
+        }        
+      },
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "close": true }
