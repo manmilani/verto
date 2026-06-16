@@ -14,7 +14,7 @@
 | 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library | Complete |
 | 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns graph from GitHub *(bundle via host pipeline after Phase 2.5)* | Complete |
 | 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | Complete |
-| 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | |
+| 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | Complete |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
 | 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself | |
@@ -254,6 +254,8 @@ prior two-column / display-only body / `REQ:` markers design.
 ---
 
 ## Phase 3 — VS Code extension (read-only panel)
+
+**Status:** Complete ([issue #5](https://github.com/manmilani/verto/issues/5)).
 
 **Goal:** An installable `.vsix` that opens a Webview panel showing both lenses with live data.
 The first point at which Verto can be dogfooded against its own GitHub project.
