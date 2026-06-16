@@ -60,7 +60,7 @@ describe('GitHubAdapter', () => {
     expect(graph.nodes[0].id).toBe('I1')
     expect(graph.nodes[0].nodeType).toBe('ticket')
     expect(graph.nodes[0].nodeOrigin).toBe('github')
-    expect(graph.nodes[0].parsedReqs).toEqual([])
+    expect(graph.nodes[0]._rawReqIds).toEqual([])
   })
 
   it('external blocker auto-fetched via blockedBy → no dangling_prereq errors', async () => {

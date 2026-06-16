@@ -27,7 +27,7 @@
 1. [Background — the existing Rustybu canvas](#1-background--the-existing-rustybu-canvas)
 2. [Verto — System Intention / Goal](#2-verto--system-intention--goal)
 3. [High-Level Abstract Solution Design](#3-high-level-abstract-solution-design)
-4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.8](#468-parsed-requirements-verto-parsed-nodes)
+4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.8](#468-parsed-requirements-verto-text-parser)
 5. [Knowledge Gaps](#5-knowledge-gaps)
 6. [Implementation Plan](#6-implementation-plan)
 
@@ -376,9 +376,9 @@ Every **Requirement** is a **`VertoNode`** in the graph. Requirements are either
 - **`nodeType: 'ticket'`** — tracked issues from an adapter (e.g. GitHub); `nodeOrigin`
   names the adapter (e.g. `'github'`).
 - **`nodeType: 'parsed'`** — lines materialized from a ticket body's **Raw
-  Requirements** block (`RAW_REQ:BEGIN` / `RAW_REQ:END`); `nodeOrigin: 'parsed-nodes'`.
+  Requirements** block (`RAW_REQ:BEGIN` / `RAW_REQ:END`); `nodeOrigin: 'text-parser'`.
 
-Parsed nodes are created by **`@verto/parsed-nodes`** (Phase 2.5) after the tracker
+Parsed nodes are created by **`@verto/text-parser`** (Phase 2.5) after the tracker
 adapter loads ticket nodes. They participate in **NCN math** (closure, readiness,
 leverage, implementation order) when **Enable Parsed Requirements** is on.
 
@@ -387,8 +387,8 @@ sub-issues and raw requirement lines for a slice — shown as a **single pipelin
 column** in the Delivery Map (not two side-by-side columns). There is **no
 automatic deduplication or linking** between raw lines and child tickets.
 
-**`parsedReqs[]`** on a parent lists synthetic ids for that ticket's materialized
-raw lines. **`prereqIds`** = `parsedReqs ∪ childIds ∪ blocking` (deduped).
+**`_rawReqIds[]`** on a parent lists synthetic ids for that ticket's materialized
+raw lines. **`prereqIds`** = `_rawReqIds ∪ childIds ∪ blocking` (deduped).
 **`childIds`** remains sub-issue ids only. Parsed → parent edges use
 `VertoEdge.reason: 'parsed-req'`.
 
@@ -409,8 +409,11 @@ The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey)
   (no default entry in `defaults.verto.config.jsonc`). See §4.6.7. **Display (Phase 3
   UI):** the Delivery Map slice header reads `personas` from the selected slice node;
   the field may also be populated on non-slice tickets but is not displayed there.
-- **Outcome** — display-only: full **Description** between `DESC:BEGIN` / `DESC:END`
-  on the slice ticket body (strip HTML comments).
+- **Outcome** — display-only: `node._outcome` on the selected slice node — the
+  **first paragraph** of its `DESC:BEGIN` / `DESC:END` block, pre-computed by
+  `computeBodyFields` in `@verto/text-parser` (§4.6.8). Read directly from the node;
+  do not re-parse the body in the webview (`ticketFields.body` is stripped before
+  the `'update'` message).
 
 **Requirement pipeline** — one ordered list per slice (like deprecated canvas
 `steps[]`), **not** two columns:
@@ -434,7 +437,7 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 | Field | Raw requirement (`parsed`) | Child ticket (`ticket`) |
 |---|---|---|
 | **title** | Parsed from line text (see below) | Issue title |
-| **note** | Parsed from line text | Extracted from `DESC:BEGIN` / `DESC:END` in the **child ticket's own body** (see §4.6.8) |
+| **note** | `node._note` (set by `materializeParsedRequirements`) | `node._note` — **first paragraph** of the child's `DESC:BEGIN` / `DESC:END` block, pre-computed by `computeBodyFields` (§4.6.8) |
 | **status** | `raw` (unchecked) or `done` (checked) | Tracker `status` (canonical root) |
 | **isDone** | Matches checkbox | Tracker closed / mapping |
 | **Completeness** (bar segment weight) | 0% unchecked; 100% checked | `deliveryCompleteness(nodeId)` |
@@ -490,7 +493,7 @@ filters before bundle when off; rebuilds bundle on toggle.
 | **Requirement** | Any pipeline row: a **child ticket** and/or a **raw requirement** line (union, concatenated) |
 | **`parsed` `nodeType`** | Graph node materialized from a raw requirement line |
 | **`ticket` `nodeType`** | Graph node from a tracker adapter |
-| **`nodeOrigin`** | Provenance: `'github'`, `'parsed-nodes'`, etc. |
+| **`nodeOrigin`** | Provenance: `'github'`, `'text-parser'`, etc. |
 
 ---
 
@@ -529,7 +532,7 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
 |  |  - Adapter registry        | <==> |  - Delivery map lens     |  |
 |  |  - Active adapter (GH/...) | post |  - NCN graph lens        |  |
 |  |  - verto.config.jsonc merge | msg  |  - Priorities + order    |  |
-|  |  - @verto/parsed-nodes     |      |                          |  |
+|  |  - @verto/text-parser     |      |                          |  |
 |  |    (materialize / filter)  |      |  - (dumb view of bundle) |  |
 |  |  - Enable Parsed Reqs toggle|     +--------------------------+  |
 |  |  - Workspace/global state  |                                    |
@@ -545,7 +548,7 @@ Anything still undecided is recorded in [Knowledge Gaps](#5-knowledge-gaps).
                                                 |
                        (shared, reused by all shells)
                 +---------------------------------------+
-                |   @verto/parsed-nodes (enrichment)    |
+                |   @verto/text-parser (enrichment)    |
                 |   - RAW_REQ parse + materialize       |
                 |   - filter when toggle off            |
                 +------------------+--------------------+
@@ -582,7 +585,7 @@ Host- and vendor-agnostic. Responsibilities:
 >
 > **Canonical schema (Phase 2.5).** `VertoNode` exposes the fields that `@verto/core`
 > algorithms and the UI require. Phase 2.5 promotes from ticket passthrough to canonical
-> root: `status`, `nodeType`, `nodeOrigin`, `personas`, `parsedReqs` (see
+> root: `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds` (see
 > [`packages/core/src/types.ts`](./packages/core/src/types.ts)). Core algorithm fields
 > remain: `id`, `title`, `isDone`, `isDeliverySlice`, `priority`, `prereqIds`,
 > `childIds`, `ticketUrl` (**required**). All other ticket fields stay in `node.ticketFields` via
@@ -598,8 +601,8 @@ The indicative mapping table below is retained for cross-referencing legacy canv
 | Title / description | `label`, `desc` | Human name + detail (body may include Raw Requirements block) | Issue title + body |
 | Delivery status | `status` (4-valued) | Workflow progress — canonical `status` on root (from `ticketFields` via mapper); not used in graph math | Per adapter — e.g. GitHub **ProjectV2 Status** (see §4.6.7) |
 | Done signal | *(not in deprecated original)* | Canonical "is done" for graph math — `isDone: boolean`; `isReady = !isDone && all prereqs isDone` | GitHub: native `closed` boolean; parsed raw lines: checkbox |
-| Node kind | *(not in deprecated original)* | `nodeType: 'ticket' \| 'parsed'` | Adapter vs `@verto/parsed-nodes` |
-| Provenance | *(not in deprecated original)* | `nodeOrigin` — e.g. `'github'`, `'parsed-nodes'` | Per source |
+| Node kind | *(not in deprecated original)* | `nodeType: 'ticket' \| 'parsed'` | Adapter vs `@verto/text-parser` |
+| Provenance | *(not in deprecated original)* | `nodeOrigin` — e.g. `'github'`, `'text-parser'` | Per source |
 | Persona (slice header) | `persona` | Who the slice serves — `personas: string[]` on any labeled ticket node; slice header reads this field from the selected slice node | GitHub: `persona:<value>` labels on any ticket (default); overridable via `fieldMappings` |
 | Raw requirements | journey `steps[]` *(deprecated original)* | Parsed lines → `nodeType: 'parsed'` graph nodes when toggle on | `RAW_REQ:BEGIN` / `RAW_REQ:END` in ticket body |
 | ~~Black box~~ | `BLACK_BOXES` | **Removed** — not used in Verto; unchecked raw status is `raw` | — |
@@ -624,7 +627,7 @@ The indicative mapping table below is retained for cross-referencing legacy canv
   BlockedBy/Blocking — feed readiness, closure, leverage, and ordering
   identically.
 - **Raw requirement lines** (`RAW_REQ:BEGIN` / `RAW_REQ:END`) are materialized as
-  **`nodeType: 'parsed'`** graph nodes by `@verto/parsed-nodes` when the global
+  **`nodeType: 'parsed'`** graph nodes by `@verto/text-parser` when the global
   **Enable Parsed Requirements** toggle is on (default). They participate in NCN math
   like any other node. See §3.6–§3.8.
 - **Child tickets** decompose a parent into implementable work. Parent/child and
@@ -643,11 +646,11 @@ The agreed mapping that resolves the canvas's conflation:
 - **Vertical** (vertical delivery / vertical slice / user journey / epic) =
   the **same concept**, materialised as a top node (probably Epic ticket type).
   Slice header (Phase 3 UI): displays **`personas: string[]`** read from the slice node
-  + **outcome** from `DESC:BEGIN` / `DESC:END` body markers. `personas` is populated
+  + `node._outcome` (first paragraph of `DESC:BEGIN` / `DESC:END`, pre-computed — §4.6.8). `personas` is populated
   per-issue at map time on any ticket that has matching labels (GitHub default:
   `persona:<value>`; see §4.6.7) — not restricted to slice nodes at load time.
 - **Raw requirements** — checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END` —
-  are materialized as **`nodeType: 'parsed'`** nodes by `@verto/parsed-nodes` (Phase
+  are materialized as **`nodeType: 'parsed'`** nodes by `@verto/text-parser` (Phase
   2.5). When **Enable Parsed Requirements** is on, they participate in NCN math and
   appear in the Delivery Map pipeline after child tickets. **No linking** to child
   tickets — concatenation only.
@@ -666,7 +669,7 @@ truth — tickets in the tracker remain authoritative (see §4.9).
 
 - **Adapter interface (conceptual):** `loadProject(config) → VertoGraph` — ticket
   nodes and edges only; no parsed-requirement enrichment, no bundle computation.
-  The **host load pipeline** (§4.6.8) calls `@verto/parsed-nodes`, validates, and
+  The **host load pipeline** (§4.6.8) calls `@verto/text-parser`, validates, and
   runs `buildDeliveryMapBundle()`.
 - **Later adapters:** Jira; local file-system trackers such as **Beans** or
   **Backlog.md**. All implement the same interface and are selected/configured at
@@ -711,7 +714,7 @@ packages/adapters/github/
   mapper.ts                  # two-way mapping: tracker-native ↔ VertoNode / VertoEdge
   adapter.ts                 # VertoAdapter.loadProject() → VertoGraph only (§4.6.5)
 
-packages/parsed-nodes/       # post-adapter enrichment — NOT a tracker adapter (§4.6.8)
+packages/text-parser/       # post-adapter enrichment — NOT a tracker adapter (§4.6.8)
   materialize.ts             # RAW_REQ → nodeType: 'parsed' nodes + edges
   filter.ts                  # strip parsed nodes when toggle off
 ```
@@ -887,7 +890,9 @@ in `fieldMappings`. These are **always** populated outside `fieldMappings` and a
 |---|---|
 | `id`, `title`, `prereqIds`, `childIds`, `ticketUrl` | System accessor (tracker identity + dependency structure) |
 | `nodeType`, `nodeOrigin` | **`mapper.ts`** on every adapter-produced node (`'ticket'` + adapter id, e.g. `'github'`) |
-| `parsedReqs` | **`@verto/parsed-nodes`** (`[]` on ticket nodes before materialize; populated after) |
+| `_rawReqIds` | **`@verto/text-parser`** (`[]` on ticket nodes before materialize; populated after) |
+| `_note` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph); `materializeParsedRequirements` (parsed: note from RAW_REQ line) |
+| `_outcome` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph; same as `_note`); always `undefined` on parsed nodes |
 | `personas` (GitHub default) | **`mapper.ts`** — from issue labels `persona:<value>` when no `fieldMappings.personas` override |
 
 `isDone` and `isDeliverySlice` are populated by the system accessor by default but
@@ -967,7 +972,7 @@ and drafts the mapping section.
 |---|---|
 | **`client.ts`** | All I/O with the data source: auth, pagination, rate limits, GraphQL/REST calls. Returns tracker-native shapes (`system_types`). Unrestricted by `FieldAccessor`. |
 | **`mapper.ts`** | Two-way translation between tracker-native data and `VertoNode` / `VertoEdge`, composing system and project `FieldAccessor`s and applying `fieldMappings` (field + value). Applies **required-field fallback policy** (below). May delegate to accessors; split into sub-modules later if it grows. |
-| **`adapter.ts`** | Orchestrates: load effective config → `client` read → `mapper` → **`VertoGraph`** (ticket nodes only). Does **not** call `@verto/parsed-nodes` or `buildDeliveryMapBundle()`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
+| **`adapter.ts`** | Orchestrates: load effective config → `client` read → `mapper` → **`VertoGraph`** (ticket nodes only). Does **not** call `@verto/text-parser` or `buildDeliveryMapBundle()`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
 
 **Host load pipeline** (extension `loadPipeline.ts`, `scripts/load-project.mjs`) —
 not inside adapters:
@@ -990,9 +995,9 @@ required but may have no mapped ticket field. The mapper must behave consistentl
 | **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Audit flags missing mapping; emit non-fatal notice. |
 | **Optional — continue** | `status` | **`undefined`** if no `fieldMappings` binding or board field absent (e.g. repository scope). No error. |
 | **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels (GitHub default path) and no `fieldMappings.personas` override. No error. Override: standard `fieldMappings` routing when `fieldMappings.personas` is set. |
-| **Enrichment-only** | `parsedReqs` | **`[]`** on ticket nodes from adapter; populated by `materializeParsedRequirements`. Adapter does not set parsed-node entries. |
+| **Enrichment-only** | `_rawReqIds` | **`[]`** on ticket nodes from adapter; populated by `materializeParsedRequirements`. Adapter does not set parsed-node entries. |
 
-Parsed nodes (`nodeType: 'parsed'`) are created only by `@verto/parsed-nodes`; they
+Parsed nodes (`nodeType: 'parsed'`) are created only by `@verto/text-parser`; they
 are not subject to adapter fallback policy.
 
 **`FieldWritePayload`** (used by `FieldAccessor.fromVertoNode`) is **to be defined
@@ -1007,7 +1012,7 @@ Tracker → client.ts → tracker-native types → mapper.ts (+ FieldAccessors) 
 **Read path (host — after adapter):**
 
 ```
-VertoGraph → @verto/parsed-nodes (materialize / filter) → validateGraph → buildDeliveryMapBundle → DeliveryMapBundle
+VertoGraph → @verto/text-parser (materialize / filter) → validateGraph → buildDeliveryMapBundle → DeliveryMapBundle
 ```
 
 **Write path (future):**
@@ -1049,7 +1054,7 @@ Grounded in GitHub GraphQL capabilities documented under
 | **Status** (`status`) | ProjectV2 built-in `Status` field — **canonical root** via `fieldMappings` (optional; `undefined` if unmapped) |
 | **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
-| **Raw requirements** | Issue body `RAW_REQ:BEGIN` / `RAW_REQ:END` block; materialized by `@verto/parsed-nodes` |
+| **Raw requirements** | Issue body `RAW_REQ:BEGIN` / `RAW_REQ:END` block; materialized by `@verto/text-parser` |
 | **Personas** (`personas`) | **Default:** issue **labels** `persona:<value>` → `personas: string[]` (values after `persona:` prefix; label list order). **Override:** optional `fieldMappings.personas` in workspace config — when present, replaces label extraction (not in `defaults.verto.config.jsonc`). |
 | **Labels** (`ticketFields.labels`) | Native issue labels — passthrough includes all labels; `persona:*` labels also feed canonical `personas` unless overridden |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
@@ -1113,9 +1118,9 @@ Noisy or rarely-needed entries (e.g. AI SDLC fields) may be commented out by def
 but should be present and auditable. The extension's audit step (§4.6.6) populates
 these from the live project schema.
 
-#### 4.6.8 Parsed requirements (`@verto/parsed-nodes`)
+#### 4.6.8 Parsed requirements (`@verto/text-parser`)
 
-**Not a tracker adapter.** `@verto/parsed-nodes` runs in the **host load pipeline**
+**Not a tracker adapter.** `@verto/text-parser` runs in the **host load pipeline**
 (§4.6.5) on a `VertoGraph` returned by `adapter.loadProject()` — never inside adapters.
 
 **Exports:**
@@ -1123,27 +1128,45 @@ these from the live project schema.
 1. **`materializeParsedRequirements(graph)`** — for every `nodeType: 'ticket'` node
    whose `ticketFields.body` contains `RAW_REQ:BEGIN` / `RAW_REQ:END`, parse
    checklist lines and append `nodeType: 'parsed'` nodes plus `parsed-req` edges to
-   the parent. Populate `parsedReqs[]` on parents. Recompute each affected parent's
-   `prereqIds` = `parsedReqs ∪ childIds ∪ blockingPrereqIds` (deduped), where
+   the parent. Populate `_rawReqIds[]` on parents; set `_note` on each parsed node
+   from the RAW_REQ line text. Recompute each affected parent's
+   `prereqIds` = `_rawReqIds ∪ childIds ∪ blockingPrereqIds` (deduped), where
    `blockingPrereqIds` = `{ edge.from | edge.to === node.id && edge.reason === 'blocking' }`
    (parent-child deps are in `childIds`, not duplicated).
-2. **`filterParsedNodes(graph)`** — remove all `nodeType: 'parsed'` nodes and edges
-   with `reason: 'parsed-req'`; clear `parsedReqs` on parents; recompute `prereqIds`
+2. **`computeBodyFields(graph)`** — for every `nodeType: 'ticket'` node, parse
+   `ticketFields.body` and extract the **first paragraph** of the `DESC:BEGIN` /
+   `DESC:END` block (split on `\n\s*\n`, take index 0; strip HTML comments). Sets
+   `_note` and `_outcome` on the node root. Both fields receive the same value (the
+   first DESC paragraph). Run **after** `materializeParsedRequirements` in the pipeline.
+3. **`filterParsedNodes(graph)`** — remove all `nodeType: 'parsed'` nodes and edges
+   with `reason: 'parsed-req'`; clear `_rawReqIds` on parents; recompute `prereqIds`
    without parsed ids. Used when **Enable Parsed Requirements** is off.
-3. **`parseDescBlock(body)`** — extract display text between `DESC:BEGIN` / `DESC:END`
-   (strip HTML comments). Used for child pipeline **note** rows (child's own
-   `ticketFields.body`) and slice-header **outcome** (slice node's body).
-4. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`):
-   `materializeParsedRequirements` → `filterParsedNodes` when `parsedEnabled` is
-   `false` → `validateGraph` → `buildDeliveryMapBundle`; returns `DeliveryMapBundle`.
-   Shared by `scripts/load-project.mjs` and extension `loadPipeline.ts`.
+4. **`parseDescBlock(body)`** — low-level helper: extract the first paragraph of the
+   `DESC:BEGIN` / `DESC:END` block (strip HTML comments, split on blank line, take
+   first paragraph). Called by `computeBodyFields`; not for direct use in the webview.
+5. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`):
+   `materializeParsedRequirements` → `computeBodyFields` → `filterParsedNodes` when
+   `parsedEnabled` is `false` → `validateGraph` → `buildDeliveryMapBundle`; returns
+   `DeliveryMapBundle`. Shared by `scripts/load-project.mjs` and extension `loadPipeline.ts`.
 
-**Orchestration** — single owner: **`runHostPipeline`** in `@verto/parsed-nodes`
+**Body stripping (Phase 3, `panelManager.ts`):** After `runHostPipeline` returns the
+bundle, `panelManager.ts` removes `ticketFields.body` from every node before sending
+the `'update'` message to the webview. `_note` and `_outcome` are already on the node
+root; the raw body is not needed by the webview and is stripped to reduce payload size.
+
+**Orchestration** — single owner: **`runHostPipeline`** in `@verto/text-parser`
 (§4.6.5). Adapters return **`VertoGraph` only**.
 
 ```
-adapter.loadProject(config)  →  VertoGraph   // ticket nodes; parsedReqs: []
+adapter.loadProject(config)  →  VertoGraph   // ticket nodes; _rawReqIds: []
   → runHostPipeline(graph, { parsedEnabled })
+       materializeParsedRequirements   // parsed nodes + _rawReqIds
+     → computeBodyFields               // _note + _outcome on ticket nodes
+     → filterParsedNodes?              // only when parsedEnabled: false
+     → validateGraph
+     → buildDeliveryMapBundle
+     → DeliveryMapBundle
+  → panelManager strips ticketFields.body before webview 'update' message
 ```
 
 **Global toggle:** **Enable Parsed Requirements** — default **on**; persisted in
@@ -1156,15 +1179,15 @@ materialize (parsed toggle on path), assert:
 ```
 expectedPrereqs = dedupe(
   node.childIds
-  ∪ node.parsedReqs
+  ∪ node._rawReqIds
   ∪ { edge.from | edge.to === node.id && edge.reason === 'blocking' }
 )
 ```
 
 Mismatch → validation error. After `filterParsedNodes`, same formula with
-`parsedReqs` empty.
+`_rawReqIds` empty.
 
-Parsed nodes: `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'parsed-nodes'`,
+Parsed nodes: `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'text-parser'`,
 `nodeType: 'parsed'`, `status` = `raw` or `done` from checkbox. Synthetic **id:**
 `{parentId}#raw-req-{n}`; **ticketUrl:** parent `ticketUrl` + `#raw-req-{n}` (required).
 
@@ -1212,7 +1235,7 @@ nodes. Parsed nodes inherit parent URL + anchor.
   `workspaceState`/`globalState` for persistence, and the built-in **GitHub
   authentication provider** for the GitHub adapter.
 - **Host responsibilities:** all I/O (adapter calls, GitHub GraphQL, file reads),
-  auth, secrets, **host load pipeline** (`adapter.loadProject` → `@verto/parsed-nodes`
+  auth, secrets, **host load pipeline** (`adapter.loadProject` → `@verto/text-parser`
   → filter → validate → `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
   Requirements** toggle persistence, and UI state. Adapters do **not** materialize
   parsed nodes or build bundles.
@@ -1227,6 +1250,35 @@ nodes. Parsed nodes inherit parent URL + anchor.
   persona/outcome slice header, single pipeline column (children + raw lines),
   portfolio overview table, UsageBar, and gap callouts (see §3.7). Deprecated
   “black boxes” section is **not** ported.
+
+**Host↔webview message protocol.** All communication between the extension host and
+the webview uses a typed `postMessage` contract defined in
+`packages/extension/src/shared/protocol.ts`, imported by both host and webview build
+targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedSliceId?: string }`.
+
+*Host → webview:*
+
+| Message `type` | Extra payload fields | Sent when |
+|---|---|---|
+| `'update'` | `bundle: DeliveryMapBundle`; `portfolioColumns: PortfolioColumn[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, or **Enable Parsed Requirements** toggle change |
+
+*Webview → host:*
+
+| Message `type` | Extra payload fields | Sent when |
+|---|---|---|
+| `'ready'` | — | Webview mounted; host holds the first `'update'` until this arrives |
+| `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
+| `'persistState'` | `state: PersistedPanelState` | Lens switch or slice selection change (debounced) |
+
+`portfolioColumns` travels in `'update'` alongside the bundle — **not** inside
+`DeliveryMapBundle` — keeping `@verto/core` free of config concerns.
+
+**Adapter defaults programmatic export.** `configLoader.ts` imports adapter defaults
+directly as a JS object rather than reading files at runtime (safe for the bundled
+extension and for tests). Each adapter package therefore exports its defaults:
+`@verto/adapter-github` exports `githubAdapterDefaults` from `src/index.ts`; esbuild
+inlines it at build time. `defaults.verto.config.jsonc` remains the human-readable
+source; the exported object mirrors it exactly.
 
 ### 4.9 Data source of truth vs declarative formats
 
@@ -1273,13 +1325,13 @@ the body sections cited — this list is the index.
 ### 5.1 Domain model & ticket schema
 
 - ~~**Final canonical schema.**~~ **Closed (Phase 2.5)** — core algorithm fields plus
-  `status`, `nodeType`, `nodeOrigin`, `personas`, `parsedReqs` on `VertoNode`; `ticketUrl`
+  `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds` on `VertoNode`; `ticketUrl`
   **required** (`string`, not optional); see [`packages/core/src/types.ts`](./packages/core/src/types.ts).
   Ticket passthroughs via `fieldMappings` → `node.ticketFields` (**`status` is not** in
   `ticketFields` after Phase 2.5).
 - ~~**VertoAdapter return type & orchestration.**~~ **Closed (Phase 2.5)** —
   `adapter.loadProject()` → `VertoGraph` only; `runHostPipeline(graph, opts?)` in
-  `@verto/parsed-nodes` owns materialize → filter → validate → bundle (§4.6.5, §4.6.8).
+  `@verto/text-parser` owns materialize → filter → validate → bundle (§4.6.5, §4.6.8).
 - ~~**Status vocabulary.**~~ **Closed** — workflow `status` on canonical root (from
   tracker); graph math uses `isDone`. Parsed raw lines use `raw` / `done`. Slice-level
   **partial** progress UI deferred to Phase 4 (`deliveryCompleteness` bar).
@@ -1291,7 +1343,7 @@ the body sections cited — this list is the index.
   union `'parent-child' | 'blocking' | 'parsed-req'` (no open `| string`); see
   `types.ts` and §4.6.8.
 - ~~**`prereqIds` consistency validation.**~~ **Closed (Phase 2.5)** — after
-  materialize/filter, assert `prereqIds` = `childIds ∪ parsedReqs ∪ blocking` edge
+  materialize/filter, assert `prereqIds` = `childIds ∪ _rawReqIds ∪ blocking` edge
   sources (§4.6.8 formula).
 - ~~**`ticketUrl` validation severity.**~~ **Closed (Phase 2.5)** — missing `ticketUrl`
   on ticket nodes is a **validation error** (not a warning), aligned with §4.6.5.
@@ -1310,7 +1362,7 @@ the body sections cited — this list is the index.
   column** per slice: children first, then raw requirement lines; persona/outcome
   header; portfolio table, UsageBar, gap callouts — §3.7. No two-column layout.
 - ~~**Raw requirements parsing.**~~ **Closed (Phase 2.5)** — `RAW_REQ:BEGIN` /
-  `RAW_REQ:END` markers; materialize as `nodeType: 'parsed'` via `@verto/parsed-nodes`;
+  `RAW_REQ:END` markers; materialize as `nodeType: 'parsed'` via `@verto/text-parser`;
   name/note patterns, synthetic ids, NCN participation when toggle on — §3.6–§3.8,
   §4.6.8.
 - ~~**Enable Parsed Requirements toggle.**~~ **Closed (Phase 2.5)** — global,
@@ -1322,8 +1374,9 @@ the body sections cited — this list is the index.
   list; non-Done columns require `!isDone`; done buckets structural (not by label) —
   §4.6.3.
 - ~~**DESC blocks (outcome & child notes).**~~ **Closed (Phase 2.5)** —
-  `parseDescBlock(body)` in `@verto/parsed-nodes`: slice **outcome** from slice body;
-  child pipeline **note** from **that child's own** `ticketFields.body` (§3.7, §4.6.8).
+  `computeBodyFields` in `@verto/text-parser` sets `_outcome` (first DESC paragraph) on
+  ticket nodes at pipeline time; `_note` on children likewise. `ticketFields.body`
+  stripped by `panelManager.ts` before webview `'update'` message (§3.7, §4.6.8).
 - ~~**UI port fidelity (Delivery Map).**~~ **Closed (Phase 3)** — persona/outcome,
   pipeline, portfolio table, UsageBar, gaps required; deprecated black-box section
   **not** ported.
@@ -1368,7 +1421,7 @@ the body sections cited — this list is the index.
 - ~~**Required-field fallback (read path).**~~ **Closed (Phase 2.5)** — fail:
   `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`,
   `nodeType`, `nodeOrigin`; default `5`: `priority`; optional: `status` (`undefined`),
-  `personas` (`[]` or label extraction); enrichment: `parsedReqs` (`[]` from adapter) —
+  `personas` (`[]` or label extraction); enrichment: `_rawReqIds` (`[]` from adapter) —
   see §4.6.5. `nodeType` / `nodeOrigin` stamped by `mapper.ts`.
 - ~~**`VertoConfig` schema.**~~ **Closed (Phase 2)** — `fieldMappings` is
   `Record<string, FieldMappingEntry>` nested under `github` in `VertoConfig`; `from.kind:

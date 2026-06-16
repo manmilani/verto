@@ -10,7 +10,7 @@ function node(overrides: Partial<VertoNode> & { id: string; title: string }): Ve
     priority: 5,
     prereqIds: [],
     childIds: [],
-    parsedReqs: [],
+    _rawReqIds: [],
     personas: [],
     nodeType: 'ticket',
     nodeOrigin: 'test',
@@ -29,10 +29,10 @@ function parsedNode(id: string, parentId: string): VertoNode {
     priority: 5,
     prereqIds: [],
     childIds: [],
-    parsedReqs: [],
+    _rawReqIds: [],
     personas: [],
     nodeType: 'parsed',
-    nodeOrigin: 'parsed-nodes',
+    nodeOrigin: 'text-parser',
     status: 'raw',
     ticketUrl: `https://example.com/${parentId}#${id}`,
   }
@@ -40,7 +40,7 @@ function parsedNode(id: string, parentId: string): VertoNode {
 
 describe('filterParsedNodes', () => {
   it('does not mutate input graph', () => {
-    const ticket = node({ id: 'A', title: 'A', parsedReqs: ['A#raw-req-1'] })
+    const ticket = node({ id: 'A', title: 'A', _rawReqIds: ['A#raw-req-1'] })
     const parsed = parsedNode('A#raw-req-1', 'A')
     const original: VertoGraph = {
       nodes: [ticket, parsed],
@@ -54,7 +54,7 @@ describe('filterParsedNodes', () => {
   })
 
   it('removes parsed nodes', () => {
-    const ticket = node({ id: 'A', title: 'A', parsedReqs: ['A#raw-req-1'] })
+    const ticket = node({ id: 'A', title: 'A', _rawReqIds: ['A#raw-req-1'] })
     const parsed = parsedNode('A#raw-req-1', 'A')
     const graph: VertoGraph = {
       nodes: [ticket, parsed],
@@ -66,7 +66,7 @@ describe('filterParsedNodes', () => {
   })
 
   it('removes parsed-req edges', () => {
-    const ticket = node({ id: 'A', title: 'A', parsedReqs: ['A#raw-req-1'] })
+    const ticket = node({ id: 'A', title: 'A', _rawReqIds: ['A#raw-req-1'] })
     const parsed = parsedNode('A#raw-req-1', 'A')
     const graph: VertoGraph = {
       nodes: [ticket, parsed],
@@ -81,8 +81,8 @@ describe('filterParsedNodes', () => {
     expect(result.edges[0].reason).toBe('blocking')
   })
 
-  it('clears parsedReqs on remaining nodes', () => {
-    const ticket = node({ id: 'A', title: 'A', parsedReqs: ['A#raw-req-1'] })
+  it('clears _rawReqIds on remaining nodes', () => {
+    const ticket = node({ id: 'A', title: 'A', _rawReqIds: ['A#raw-req-1'] })
     const parsed = parsedNode('A#raw-req-1', 'A')
     const graph: VertoGraph = {
       nodes: [ticket, parsed],
@@ -90,7 +90,7 @@ describe('filterParsedNodes', () => {
     }
     const result = filterParsedNodes(graph)
     const remaining = result.nodes.find(n => n.id === 'A')!
-    expect(remaining.parsedReqs).toEqual([])
+    expect(remaining._rawReqIds).toEqual([])
   })
 
   it('recomputes prereqIds from childIds and blocking edges only', () => {
@@ -100,7 +100,7 @@ describe('filterParsedNodes', () => {
       id: 'A',
       title: 'A',
       childIds: ['C'],
-      parsedReqs: ['A#raw-req-1'],
+      _rawReqIds: ['A#raw-req-1'],
       prereqIds: ['C', 'B', 'A#raw-req-1'],
     })
     const parsed = parsedNode('A#raw-req-1', 'A')
@@ -144,7 +144,7 @@ describe('filterParsedNodes', () => {
       id: 'A',
       title: 'A',
       childIds: ['C'],
-      parsedReqs: ['A#raw-req-1'],
+      _rawReqIds: ['A#raw-req-1'],
       prereqIds: ['C', 'A#raw-req-1'],
     })
     const parsed = parsedNode('A#raw-req-1', 'A')

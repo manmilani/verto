@@ -27,7 +27,7 @@ export function mapIssuesToGraph(
       },
       nodeType: 'ticket' as const,
       nodeOrigin: 'github' as const,
-      parsedReqs: [],
+      _rawReqIds: [],
       personas: hasPersonaMapping
         ? (((projFields as Record<string, unknown>).personas as string[]) ?? [])
         : issue.labels.nodes

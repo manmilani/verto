@@ -22,8 +22,8 @@ export function materializeParsedRequirements(graph: VertoGraph): VertoGraph {
     }
   }
 
-  // Track per-parent updates: parsedReq ids created for each ticket node
-  const parsedReqsMap = new Map<string, string[]>()
+  // Track per-parent updates: raw-req ids created for each ticket node
+  const rawReqIdsMap = new Map<string, string[]>()
   const newParsedNodes: VertoNode[] = []
   const newParsedEdges: VertoEdge[] = []
 
@@ -44,33 +44,34 @@ export function materializeParsedRequirements(graph: VertoGraph): VertoGraph {
         isDeliverySlice: false,
         priority: 5,
         nodeType: 'parsed',
-        nodeOrigin: 'parsed-nodes',
+        nodeOrigin: 'text-parser',
         prereqIds: [],
         childIds: [],
-        parsedReqs: [],
+        _rawReqIds: [],
         personas: [],
         status: req.status,
         ticketUrl: node.ticketUrl + req.id.slice(node.id.length),
-        ticketFields: req.note !== undefined ? { note: req.note } : {},
+        _note: req.note,
+        ticketFields: {},
       })
       newParsedEdges.push({ from: req.id, to: node.id, reason: 'parsed-req' })
       parsedIds.push(req.id)
     }
-    parsedReqsMap.set(node.id, parsedIds)
+    rawReqIdsMap.set(node.id, parsedIds)
   }
 
-  // Rebuild all ticket nodes: update parsedReqs and recompute prereqIds
+  // Rebuild all ticket nodes: update _rawReqIds and recompute prereqIds
   const updatedTicketNodes: VertoNode[] = graph.nodes.map(node => {
     if (node.nodeType !== 'ticket') return { ...node }
-    const newParsedReqs = parsedReqsMap.get(node.id) ?? node.parsedReqs
+    const newRawReqIds = rawReqIdsMap.get(node.id) ?? node._rawReqIds
     const newPrereqIds = dedupeIds([
       ...node.childIds,
-      ...newParsedReqs,
+      ...newRawReqIds,
       ...(blockingSources.get(node.id) ?? []),
     ])
     return {
       ...node,
-      parsedReqs: newParsedReqs,
+      _rawReqIds: newRawReqIds,
       prereqIds: newPrereqIds,
     }
   })

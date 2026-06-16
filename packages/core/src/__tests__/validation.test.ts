@@ -82,7 +82,7 @@ describe('validateGraph', () => {
     const n = {
       ...node('A'),
       nodeType: 'parsed' as const,
-      nodeOrigin: 'parsed-nodes',
+      nodeOrigin: 'text-parser',
       ticketUrl: '',
     }
     const result = validateGraph({ nodes: [n], edges: [] })
@@ -126,7 +126,7 @@ describe('validateGraph', () => {
   })
 
   // prereqs_consistency tests
-  it('prereqs_consistency: extra id in prereqIds not in edges/childIds/parsedReqs → error', () => {
+  it('prereqs_consistency: extra id in prereqIds not in edges/childIds/_rawReqIds → error', () => {
     const A = node('A')
     const B = node('B', { prereqIds: ['A'] }) // 'A' is in prereqIds but no blocking edge A→B
     const result = validateGraph({ nodes: [A, B], edges: [] })
@@ -151,39 +151,39 @@ describe('validateGraph', () => {
     expect(result.errors.filter(e => e.type === 'prereqs_consistency')).toHaveLength(0)
   })
 
-  // parsedReqs_integrity tests
-  it('parsedReqs_integrity: parsedReqs id that references a non-existent node → error', () => {
-    const A = node('A', { parsedReqs: ['A#raw-req-1'], prereqIds: ['A#raw-req-1'] })
+  // _rawReqIds_integrity tests
+  it('_rawReqIds_integrity: _rawReqIds entry that references a non-existent node → error', () => {
+    const A = node('A', { _rawReqIds: ['A#raw-req-1'], prereqIds: ['A#raw-req-1'] })
     const result = validateGraph({ nodes: [A], edges: [] })
-    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+    expect(result.errors.some(e => e.type === '_rawReqIds_integrity')).toBe(true)
   })
 
-  it('parsedReqs_integrity: parsedReqs id referencing a ticket node → error', () => {
+  it('_rawReqIds_integrity: _rawReqIds entry referencing a ticket node → error', () => {
     const B = node('B') // ticket, not parsed
-    const A = node('A', { parsedReqs: ['B'], prereqIds: ['B'] })
+    const A = node('A', { _rawReqIds: ['B'], prereqIds: ['B'] })
     const result = validateGraph({ nodes: [A, B], edges: [] })
-    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+    expect(result.errors.some(e => e.type === '_rawReqIds_integrity')).toBe(true)
   })
 
-  it('parsedReqs_integrity: parsed-req edge with no matching parsedReqs entry on target → error', () => {
-    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'parsed-nodes' }
-    const A = node('A', { parsedReqs: [] })
+  it('_rawReqIds_integrity: parsed-req edge with no matching _rawReqIds entry on target → error', () => {
+    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'text-parser' }
+    const A = node('A', { _rawReqIds: [] })
     const result = validateGraph({
       nodes: [A, P1],
       edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' as const }],
     })
-    expect(result.errors.some(e => e.type === 'parsedReqs_integrity')).toBe(true)
+    expect(result.errors.some(e => e.type === '_rawReqIds_integrity')).toBe(true)
   })
 
-  it('parsedReqs_integrity: well-formed parsed graph → no integrity errors', () => {
-    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'parsed-nodes' }
-    const A = node('A', { parsedReqs: ['P1'], prereqIds: ['P1'] })
+  it('_rawReqIds_integrity: well-formed parsed graph → no integrity errors', () => {
+    const P1 = { ...node('P1'), nodeType: 'parsed' as const, nodeOrigin: 'text-parser' }
+    const A = node('A', { _rawReqIds: ['P1'], prereqIds: ['P1'] })
     const result = validateGraph({
       nodes: [A, P1],
       edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' as const }],
     })
     const relevant = result.errors.filter(
-      e => e.type === 'parsedReqs_integrity' || e.type === 'prereqs_consistency',
+      e => e.type === '_rawReqIds_integrity' || e.type === 'prereqs_consistency',
     )
     expect(relevant).toHaveLength(0)
   })

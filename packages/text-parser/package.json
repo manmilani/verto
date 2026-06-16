@@ -1,5 +1,5 @@
 {
-  "name": "@verto/parsed-nodes",
+  "name": "@verto/text-parser",
   "version": "0.0.1",
   "type": "module",
   "exports": {

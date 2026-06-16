@@ -17,9 +17,9 @@ importers:
       '@verto/config':
         specifier: workspace:*
         version: link:packages/config
-      '@verto/parsed-nodes':
+      '@verto/text-parser':
         specifier: workspace:*
-        version: link:packages/parsed-nodes
+        version: link:packages/text-parser
       '@vitest/coverage-v8':
         specifier: ^4.1.8
         version: 4.1.8(vitest@4.1.8)
@@ -96,7 +96,7 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
-  packages/parsed-nodes:
+  packages/text-parser:
     dependencies:
       '@verto/core':
         specifier: workspace:*

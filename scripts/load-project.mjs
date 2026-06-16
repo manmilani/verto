@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { parseVertoConfig, readVertoConfigFile, mergeConfigs } from '@verto/config'
 import { GitHubAdapter } from '@verto/adapter-github'
-import { runHostPipeline } from '@verto/parsed-nodes'
+import { runHostPipeline } from '@verto/text-parser'
 
 const TOKEN = process.env.GITHUB_TOKEN ?? process.env.GITHUB_PERSONAL_ACCESS_TOKEN
 if (!TOKEN) {

@@ -13,7 +13,7 @@
 | 0 | [Repository & tooling scaffold](#phase-0--repository--tooling-scaffold) | Buildable, testable monorepo with all packages scaffolded | Complete |
 | 1 | [`@verto/core` — algorithms](#phase-1--vertocore--algorithms) | Fully tested, host-agnostic graph algorithm library | Complete |
 | 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns graph from GitHub *(bundle via host pipeline after Phase 2.5)* | Complete |
-| 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/parsed-nodes`, canonical schema, portfolio config, shared pipeline | |
+| 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | |
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Priority editor, implementation order, leverage viz, full theming | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
@@ -186,29 +186,30 @@ prior two-column / display-only body / `REQ:` markers design.
 
 | File | Purpose |
 |---|---|
-| `packages/core/src/types.ts` | Promote to canonical root: `status`, `nodeType` (`'ticket' \| 'parsed'`), `nodeOrigin`, `personas: string[]`, `parsedReqs: string[]`; `ticketUrl: string` (**required**, not optional); `VertoEdge.reason`: closed union `'parent-child' \| 'blocking' \| 'parsed-req'`; update `CANONICAL_VERTO_NODE_KEYS` |
+| `packages/core/src/types.ts` | Promote to canonical root: `status`, `nodeType` (`'ticket' \| 'parsed'`), `nodeOrigin`, `personas: string[]`, `_rawReqIds: string[]`, `_note?: string`, `_outcome?: string`; `ticketUrl: string` (**required**, not optional); `VertoEdge.reason`: closed union `'parent-child' \| 'blocking' \| 'parsed-req'`; update `CANONICAL_VERTO_NODE_KEYS` |
 | `packages/core/src/adapter.ts` | **`loadProject()` return type → `Promise<VertoGraph>`** (breaking change from Phase 1–2) |
-| `packages/core/src/validation.ts` | `prereqIds` consistency check (§4.6.8 formula); parsed node id / `parsedReqs` consistency; **`ticketUrl` missing → error** (align with §4.6.5) |
+| `packages/core/src/validation.ts` | `prereqIds` consistency check (§4.6.8 formula); parsed node id / `_rawReqIds` consistency (`_rawReqIds_integrity`); **`ticketUrl` missing → error** (align with §4.6.5) |
 
 ### Deliverables — GitHub adapter (mapper + adapter refactor)
 
 | File | Purpose |
 |---|---|
-| `packages/adapters/github/mapper.ts` | Stamp `nodeType: 'ticket'`, `nodeOrigin: 'github'`, `parsedReqs: []`; map `status` to canonical root via `fieldMappings`; **`personas`:** extract from labels `persona:<value>` unless `fieldMappings.personas` override is present |
+| `packages/adapters/github/mapper.ts` | Stamp `nodeType: 'ticket'`, `nodeOrigin: 'github'`, `_rawReqIds: []`; map `status` to canonical root via `fieldMappings`; **`personas`:** extract from labels `persona:<value>` unless `fieldMappings.personas` override is present |
 | `packages/adapters/github/adapter.ts` | Return **`VertoGraph` only** — remove `buildDeliveryMapBundle()` / post-map validation that assumed bundle output |
 
-### Deliverables — `@verto/parsed-nodes`
+### Deliverables — `@verto/text-parser`
 
 | File | Purpose |
 |---|---|
-| `packages/parsed-nodes/package.json` | New workspace package (not a tracker adapter) |
-| `packages/parsed-nodes/src/parseRawReqBlock.ts` | Parse `RAW_REQ:BEGIN` / `RAW_REQ:END`; name/note patterns; `[ ]` / `[x]` → `raw`/`done` + `isDone` |
-| `packages/parsed-nodes/src/parseDescBlock.ts` | Extract `DESC:BEGIN` / `DESC:END` text for pipeline notes and slice outcome |
-| `packages/parsed-nodes/src/materialize.ts` | `materializeParsedRequirements(graph): VertoGraph` |
-| `packages/parsed-nodes/src/filter.ts` | `filterParsedNodes(graph): VertoGraph` |
-| `packages/parsed-nodes/src/runHostPipeline.ts` | Shared: `runHostPipeline(graph, opts?: { parsedEnabled?: boolean }): DeliveryMapBundle` — materialize → filter? → validate → bundle (single implementation used by CLI + extension) |
-| `packages/parsed-nodes/src/index.ts` | Public exports |
-| `packages/parsed-nodes/src/__tests__/` | Parsing, materialize + filter, `prereqIds` validation cases |
+| `packages/text-parser/package.json` | New workspace package (not a tracker adapter) |
+| `packages/text-parser/src/parseRawReqBlock.ts` | Parse `RAW_REQ:BEGIN` / `RAW_REQ:END`; name/note patterns; `[ ]` / `[x]` → `raw`/`done` + `isDone` |
+| `packages/text-parser/src/parseDescBlock.ts` | Low-level helper: extract first paragraph of `DESC:BEGIN` / `DESC:END` block (strip HTML comments, split on blank line) |
+| `packages/text-parser/src/materialize.ts` | `materializeParsedRequirements(graph): VertoGraph` — creates parsed nodes; sets `_rawReqIds` on parents; sets `_note` on parsed nodes |
+| `packages/text-parser/src/computeBodyFields.ts` | `computeBodyFields(graph): VertoGraph` — sets `_note` + `_outcome` on ticket nodes from first DESC paragraph; run after `materializeParsedRequirements` |
+| `packages/text-parser/src/filter.ts` | `filterParsedNodes(graph): VertoGraph` |
+| `packages/text-parser/src/runHostPipeline.ts` | Shared: `runHostPipeline(graph, opts?: { parsedEnabled?: boolean }): DeliveryMapBundle` — materialize → computeBodyFields → filter? → validate → bundle |
+| `packages/text-parser/src/index.ts` | Public exports |
+| `packages/text-parser/src/__tests__/` | Parsing, materialize + filter, computeBodyFields, `prereqIds` validation cases |
 
 ### Deliverables — `@verto/config`
 
@@ -228,13 +229,13 @@ prior two-column / display-only body / `REQ:` markers design.
 ### Decisions (resolved)
 
 - **Orchestration (Option A):** `adapter.loadProject()` → **`VertoGraph`** only.
-  **`runHostPipeline`** (in `@verto/parsed-nodes`) owns materialize → filter →
+  **`runHostPipeline`** (in `@verto/text-parser`) owns materialize → filter →
   validate → bundle. Adapters never call `materializeParsedRequirements` or
   `buildDeliveryMapBundle()`.
 
 - **Terminology:** `RAW_REQ:BEGIN` / `RAW_REQ:END`; heading **Raw Requirements**; unchecked status **`raw`** (not “black box” / “missing”).
 - **Requirement union:** single pipeline column — children first, then raw lines; concat only; no dedupe; no linking.
-- **Parsed nodes in NCN:** participate in closure, readiness, leverage, order when toggle **on**; `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'parsed-nodes'`.
+- **Parsed nodes in NCN:** participate in closure, readiness, leverage, order when toggle **on**; `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'text-parser'`.
 - **Toggle:** **Enable Parsed Requirements** — global, all lenses, default **on**, `workspaceState`; always materialize in pipeline, `filterParsedNodes` when off; `--no-parsed` for CLI.
 - **`status`:** canonical root via `fieldMappings`; optional (`undefined` if unmapped).
 - **`nodeType` / `nodeOrigin`:** stamped by `mapper.ts` (`'ticket'` / `'github'`); not `fieldMappings` entries.
@@ -265,21 +266,23 @@ stretch goal — it is not required to dogfood the extension.
 
 | File | Purpose |
 |---|---|
+| `packages/adapters/github/src/defaults.ts` | Export `githubAdapterDefaults` as a typed JS object — mirrors `defaults.verto.config.jsonc`; imported by `configLoader.ts`; esbuild inlines it at build time |
+| `packages/extension/src/shared/protocol.ts` | Typed `HostToWebviewMessage` (`'update'`) and `WebviewToHostMessage` (`'ready'`, `'setParsedEnabled'`, `'persistState'`) unions; `PersistedPanelState`; `Lens` type — imported by both host and webview build targets (see DESIGN.md §4.8) |
 | `packages/extension/src/extension.ts` | `activate()`: register open-panel command; wire GitHub auth; register refresh command |
-| `packages/extension/src/host/configLoader.ts` | Load + deep-merge `defaults.verto.config.jsonc` and `.vscode/verto.config.jsonc`; workspace config wins |
+| `packages/extension/src/host/configLoader.ts` | Import `githubAdapterDefaults` from `@verto/adapter-github`; load `.vscode/verto.config.jsonc` via `@verto/config`; deep-merge (workspace wins) |
 | `packages/extension/src/host/adapterRegistry.ts` | Adapter selection by `config.adapter` using the shared `VertoAdapter` interface from `@verto/core`; initially only `"github"` |
 | `packages/extension/src/host/authProvider.ts` | VS Code built-in GitHub auth provider; injects token into `client.ts` |
-| `packages/extension/src/host/loadPipeline.ts` | Calls `adapter.loadProject()` then `runHostPipeline()` from `@verto/parsed-nodes`; reads **Enable Parsed Requirements** from `workspaceState`; rebuilds on toggle change |
-| `packages/extension/src/host/panelManager.ts` | `WebviewPanel` lifecycle (editor tab); sends `DeliveryMapBundle` via `postMessage` on load and on refresh; persists lens, focus, **Enable Parsed Requirements** to `workspaceState` |
+| `packages/extension/src/host/loadPipeline.ts` | Calls `adapter.loadProject()` then `runHostPipeline()` from `@verto/text-parser`; reads **Enable Parsed Requirements** from `workspaceState`; rebuilds on toggle change |
+| `packages/extension/src/host/panelManager.ts` | `WebviewPanel` lifecycle (editor tab); waits for webview `'ready'` then **strips `ticketFields.body`** from all nodes (body already parsed into `_note`/`_outcome`), then sends `'update'` (`bundle`, `portfolioColumns`, `parsedEnabled`, `restoredState`); handles `'setParsedEnabled'` (update `workspaceState` + rebuild) and `'persistState'` from webview |
 | Extension host build | **esbuild** bundles `packages/extension/src/` → `dist/extension.js` |
 
 ### Deliverables — webview (React)
 
 | File | Purpose |
 |---|---|
-| `packages/extension/src/webview/App.tsx` | Root component: receives bundle via `postMessage`; restores lens + focus from persisted state; lens switcher |
+| `packages/extension/src/webview/App.tsx` | Root component: receives `'update'` via `postMessage`; restores lens + focus from `restoredState`; lens switcher; global **Enable Parsed Requirements** toggle (checkbox in toolbar) that sends `'setParsedEnabled'` to host |
 | `packages/extension/src/webview/hooks/useVertoState.ts` | Thin `postMessage` ↔ host bridge for bundle updates and UI state persistence (selected lens, focused node); replaces canvas `useCanvasState` |
-| `packages/extension/src/webview/lenses/DeliveryMap.tsx` | Delivery Map lens: pill selector; persona/outcome header; **single pipeline**; child **note** and slice **outcome** via `parseDescBlock` from `@verto/parsed-nodes`; portfolio table, UsageBar, gap callouts (done-bucket rules §4.6.3) |
+| `packages/extension/src/webview/lenses/DeliveryMap.tsx` | Delivery Map lens: pill selector; persona/outcome header; **single pipeline**; child **note** from `node._note` and slice **outcome** from `node._outcome` (pre-computed by host pipeline, §4.6.8); portfolio table, UsageBar, gap callouts (done-bucket rules §4.6.3) |
 | `packages/extension/src/webview/lenses/NcnGraph.tsx` | NCN graph lens: `@xyflow/react` + ELK layout; ready/not-done coloring; leverage badges; **no pan/zoom** (Phase 3) |
 | `packages/extension/src/webview/theme.ts` | Status color palette mapped to VS Code CSS variables — no hard-coded hex |
 | Vite config | Webview bundle: CSP-safe, no inline scripts, tree-shaken; bundles `@xyflow/react` + `elkjs` |
@@ -295,7 +298,7 @@ stretch goal — it is not required to dogfood the extension.
   - **Pipeline:** single column — children first, then raw lines; no dedupe; no linking.
   - **Child ordering:** `implementationOrder` → `createdAt` (oldest first) → issue `id` (alphanumeric ascending).
   - **Raw ordering:** document order within `RAW_REQ:BEGIN` / `RAW_REQ:END`; ignore `1.`, `2.`, … prefixes.
-  - **Parsing:** `@verto/parsed-nodes` (Phase 2.5); not extension `bodyParser`.
+  - **Parsing:** `@verto/text-parser` (Phase 2.5); not extension `bodyParser`.
   - **Slice picker:** pills (deprecated canvas pattern).
   - **Empty states:** no children and toggle off / no raw lines → empty pipeline; no delivery slices → empty screen.
   - **Status:** children show canonical `status`; parsed rows show `raw` / `done`; slice completeness per-row in pipeline.
@@ -306,6 +309,10 @@ stretch goal — it is not required to dogfood the extension.
 - **Bundlers** — host: **esbuild**; webview: **Vite**.
 - **UI port fidelity** (§5.4) — Delivery Map canvas components required (§3.7); NCN pan/zoom Phase 4.
 - **NCN interaction** — React Flow pan/zoom **out** for Phase 3 (Phase 4).
+- **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` carries `'update'` (`bundle`, `portfolioColumns`, `parsedEnabled`, `restoredState?`); `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`; host waits for `'ready'` before sending first `'update'`.
+- **`portfolioColumns` in webview payload** (§4.6.3) — sent in `'update'` message alongside `bundle`; not part of `DeliveryMapBundle`; keeps `@verto/core` free of config concerns.
+- **Enable Parsed Requirements toggle UI** (§5.2) — webview toolbar checkbox; sends `'setParsedEnabled'` to host; host updates `workspaceState`, rebuilds bundle, and sends new `'update'`.
+- **Adapter defaults export** (§4.6.3) — `@verto/adapter-github` exports `githubAdapterDefaults` from `src/defaults.ts` (re-exported via `src/index.ts`); `configLoader.ts` imports it directly; no filesystem reads at runtime.
 
 **Unlocks:** Phase 4 (UI features are layered on top of this working foundation).
 
@@ -402,7 +409,7 @@ Each is linked to the phase where it blocks progress.
 | Personas source (GitHub `persona:` labels) | Resolved Phase 2.5 | §4.6.7, §5.3 |
 | `VertoEdge.reason` closed union + `prereqIds` validation | Resolved Phase 2.5 | §4.6.8, §5.1 |
 | Required-field fallback (Phase 2.5 fields) | Resolved Phase 2.5 | §4.6.5, §5.3 |
-| Canonical schema — `status`, `nodeType`, `nodeOrigin`, `personas`, `parsedReqs` | Resolved Phase 2.5 | §4.4, `types.ts` |
+| Canonical schema — `status`, `nodeType`, `nodeOrigin`, `personas`, `_rawReqIds`, `_note`, `_outcome` | Resolved Phase 2.5 | §4.4, `types.ts` |
 | Extension identifiers — `manmilani.verto`, publisher `manmilani`, `@verto/*` monorepo-only | Resolved Phase 3 | §5.5 |
 | Extension display name — **Verto** | Resolved Phase 3 | §4.8 |
 | Distribution — private `.vsix` | Resolved Phase 3 | §5.5 |

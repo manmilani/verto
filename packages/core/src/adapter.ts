@@ -8,7 +8,7 @@ import type { VertoGraph } from './types.js'
  * @verto/config; the config type lives there, not here.
  *
  * Read path:  loadProject(config) → VertoGraph
- *   Adapters return the raw graph only; the host pipeline (@verto/parsed-nodes
+ *   Adapters return the raw graph only; the host pipeline (@verto/text-parser
  *   runHostPipeline) owns materialize → filter → validate → bundle.
  * Write path: writeBack(changes)  → void  (optional; Phase 5)
  */

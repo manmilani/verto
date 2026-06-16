@@ -32,7 +32,8 @@ export type Priority = number;
 export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
   'id', 'title', 'isDone', 'isDeliverySlice',
   'priority', 'prereqIds', 'childIds', 'ticketUrl',
-  'status', 'nodeType', 'nodeOrigin', 'personas', 'parsedReqs',   // Phase 2.5
+  'status', 'nodeType', 'nodeOrigin', 'personas',
+  '_rawReqIds', '_note', '_outcome',               // @verto/text-parser outputs (Phase 2.5)
 ]);
 
 export interface VertoNode {
@@ -101,12 +102,12 @@ export interface VertoNode {
 
   /**
    * Whether this node originated from a tracker adapter ('ticket') or was materialized
-   * from a RAW_REQ block by @verto/parsed-nodes ('parsed').
+   * from a RAW_REQ block by @verto/text-parser ('parsed').
    */
   nodeType: 'ticket' | 'parsed';
 
   /**
-   * Provenance of this node — e.g. 'github', 'parsed-nodes'.
+   * Provenance of this node — e.g. 'github', 'text-parser'.
    * Stamped by mapper.ts for ticket nodes; by materializeParsedRequirements for parsed nodes.
    */
   nodeOrigin: string;
@@ -123,10 +124,28 @@ export interface VertoNode {
 
   /**
    * IDs of parsed-requirement child nodes created from this ticket's RAW_REQ block.
-   * Set to [] on all ticket nodes by the adapter; populated by materializeParsedRequirements.
-   * Always [] on parsed nodes themselves.
+   * Set to [] on all ticket nodes by the adapter; populated by materializeParsedRequirements
+   * in @verto/text-parser. Always [] on parsed nodes themselves.
    */
-  parsedReqs: string[];
+  _rawReqIds: string[];
+
+  /**
+   * Display note for this node in the pipeline.
+   * Ticket nodes: first paragraph of the DESC:BEGIN/END block in ticketFields.body,
+   *   computed by computeBodyFields() in @verto/text-parser.
+   * Parsed nodes: note extracted from the raw requirement line (set by materializeParsedRequirements).
+   * Undefined when no DESC block or no note is present.
+   */
+  _note?: string;
+
+  /**
+   * Outcome text for a delivery-slice node's header.
+   * Ticket nodes: first paragraph of the DESC:BEGIN/END block in ticketFields.body,
+   *   computed by computeBodyFields() in @verto/text-parser (same value as _note).
+   * Parsed nodes: always undefined (parsed nodes are not delivery slices).
+   * Undefined when no DESC block is present.
+   */
+  _outcome?: string;
 
   /**
    * Ticket fields that do not map to a canonical VertoNode property.
@@ -134,8 +153,9 @@ export interface VertoNode {
    * CANONICAL_VERTO_NODE_KEYS. Values are type-coerced by the mapper using the
    * field's declared `type` hint in config. Not used by @verto/core algorithms.
    *
-   *   body?: string           — long-form description / markdown (used by @verto/parsed-nodes)
-   *   note?: string           — display note for parsed-req rows (set by materializeParsedRequirements)
+   *   body?: string           — long-form description / markdown; consumed by @verto/text-parser
+   *                             (computeBodyFields) to populate _note/_outcome on the node root.
+   *                             Stripped by panelManager.ts before sending to the webview.
    *   type?: string           — issue type (Epic, Story, Task, Bug, etc.)
    *   assignee?: string       — assigned user
    *   labels?: string[]       — labels or tags

@@ -2,5 +2,5 @@ packages:
   - 'packages/core'
   - 'packages/config'
   - 'packages/adapters/*'
-  - 'packages/parsed-nodes'
+  - 'packages/text-parser'
   - 'packages/extension'

@@ -35,8 +35,18 @@ describe('parseDescBlock', () => {
     expect(parseDescBlock(body)).toBeUndefined()
   })
 
-  it('multi-line content is captured', () => {
+  it('multi-line content within a single paragraph is captured', () => {
     const body = 'DESC:BEGIN\nLine one\nLine two\nDESC:END'
     expect(parseDescBlock(body)).toBe('Line one\nLine two')
+  })
+
+  it('only the first paragraph is returned when a blank line separates paragraphs', () => {
+    const body = 'DESC:BEGIN\nFirst paragraph.\n\nSecond paragraph — excluded.\nDESC:END'
+    expect(parseDescBlock(body)).toBe('First paragraph.')
+  })
+
+  it('blank lines between paragraphs with whitespace are treated as paragraph breaks', () => {
+    const body = 'DESC:BEGIN\nFirst para.\n   \nSecond para — excluded.\nDESC:END'
+    expect(parseDescBlock(body)).toBe('First para.')
   })
 })

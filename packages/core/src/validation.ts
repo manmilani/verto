@@ -8,7 +8,7 @@ export type ValidationErrorType =
   | 'child_not_in_prereqs'
   | 'missing_ticket_url'
   | 'prereqs_consistency'
-  | 'parsedReqs_integrity'
+  | '_rawReqIds_integrity'
 
 export interface ValidationIssue {
   type: ValidationErrorType
@@ -32,9 +32,9 @@ export interface ValidationResult {
  *   - dangling_child: childId references a non-existent node
  *   - invalid_priority: priority is not an integer in [1, 9]
  *   - child_not_in_prereqs: childIds is not a subset of prereqIds (specific subset of prereqs_consistency)
- *   - prereqs_consistency: prereqIds does not equal dedupe(childIds ∪ parsedReqs ∪ blocking-edge sources)
- *   - parsedReqs_integrity: parsedReqs ids point at missing/non-parsed nodes, or parsed-req edges
- *     lack a matching parsedReqs entry on the target node
+ *   - prereqs_consistency: prereqIds does not equal dedupe(childIds ∪ _rawReqIds ∪ blocking-edge sources)
+ *   - _rawReqIds_integrity: _rawReqIds ids point at missing/non-parsed nodes, or parsed-req edges
+ *     lack a matching _rawReqIds entry on the target node
  *
  * Warnings (degrade gracefully but worth surfacing):
  *   - missing_ticket_url: ticketUrl is absent on a ticket node (error); absent on a parsed node (warning)
@@ -104,9 +104,9 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
     }
   }
 
-  // prereqs_consistency: prereqIds must equal dedupe(childIds ∪ parsedReqs ∪ blocking-edge sources)
+  // prereqs_consistency: prereqIds must equal dedupe(childIds ∪ _rawReqIds ∪ blocking-edge sources)
   // Build map of blocking-edge sources per node (reason === 'blocking' only).
-  // parent-child edges are captured by childIds; parsed-req edges by parsedReqs.
+  // parent-child edges are captured by childIds; parsed-req edges by _rawReqIds.
   const blockingSources = new Map<string, Set<string>>()
   for (const node of graph.nodes) blockingSources.set(node.id, new Set())
   for (const edge of graph.edges) {
@@ -118,7 +118,7 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
   for (const node of graph.nodes) {
     const expected = new Set([
       ...node.childIds,
-      ...node.parsedReqs,
+      ...node._rawReqIds,
       ...(blockingSources.get(node.id) ?? []),
     ])
     const actual = new Set(node.prereqIds)
@@ -129,7 +129,7 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
       if (inExpectedNotActual.length > 0)
         parts.push(`missing from prereqIds: ${inExpectedNotActual.map(id => `"${id}"`).join(', ')}`)
       if (inActualNotExpected.length > 0)
-        parts.push(`extra in prereqIds not in childIds/parsedReqs/blocking-edges: ${inActualNotExpected.map(id => `"${id}"`).join(', ')}`)
+        parts.push(`extra in prereqIds not in childIds/_rawReqIds/blocking-edges: ${inActualNotExpected.map(id => `"${id}"`).join(', ')}`)
       errors.push({
         type: 'prereqs_consistency',
         nodeId: node.id,
@@ -138,36 +138,36 @@ export function validateGraph(graph: VertoGraph): ValidationResult {
     }
   }
 
-  // parsedReqs_integrity check 1: every id in parsedReqs must reference a nodeType:'parsed' node
+  // _rawReqIds_integrity check 1: every id in _rawReqIds must reference a nodeType:'parsed' node
   for (const node of graph.nodes) {
-    for (const parsedId of node.parsedReqs) {
+    for (const parsedId of node._rawReqIds) {
       const target = nodeById.get(parsedId)
       if (!target) {
         errors.push({
-          type: 'parsedReqs_integrity',
+          type: '_rawReqIds_integrity',
           nodeId: node.id,
-          message: `parsedReqs id "${parsedId}" on node "${node.id}" references a non-existent node`,
+          message: `_rawReqIds id "${parsedId}" on node "${node.id}" references a non-existent node`,
         })
       } else if (target.nodeType !== 'parsed') {
         errors.push({
-          type: 'parsedReqs_integrity',
+          type: '_rawReqIds_integrity',
           nodeId: node.id,
-          message: `parsedReqs id "${parsedId}" on node "${node.id}" references a ticket node, not a parsed node`,
+          message: `_rawReqIds id "${parsedId}" on node "${node.id}" references a ticket node, not a parsed node`,
         })
       }
     }
   }
 
-  // parsedReqs_integrity check 2: every parsed-req edge must have a matching parsedReqs entry on target
+  // _rawReqIds_integrity check 2: every parsed-req edge must have a matching _rawReqIds entry on target
   for (const edge of graph.edges) {
     if (edge.reason !== 'parsed-req') continue
     const targetNode = nodeById.get(edge.to)
     if (!targetNode) continue // dangling_prereq already covers this
-    if (!targetNode.parsedReqs.includes(edge.from)) {
+    if (!targetNode._rawReqIds.includes(edge.from)) {
       errors.push({
-        type: 'parsedReqs_integrity',
+        type: '_rawReqIds_integrity',
         nodeId: edge.to,
-        message: `parsed-req edge from "${edge.from}" to "${edge.to}" has no matching parsedReqs entry on the target node`,
+        message: `parsed-req edge from "${edge.from}" to "${edge.to}" has no matching _rawReqIds entry on the target node`,
       })
     }
   }

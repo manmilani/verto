@@ -137,12 +137,12 @@ describe('mapIssuesToGraph', () => {
     expect(pNode.childIds).toEqual(['X'])
   })
 
-  it('stamps nodeType: ticket, nodeOrigin: github, parsedReqs: [] on all nodes', () => {
+  it('stamps nodeType: ticket, nodeOrigin: github, _rawReqIds: [] on all nodes', () => {
     const graph = mapIssuesToGraph([makeIssue('A')], new Map(), baseConfig)
     const n = graph.nodes[0]
     expect(n.nodeType).toBe('ticket')
     expect(n.nodeOrigin).toBe('github')
-    expect(n.parsedReqs).toEqual([])
+    expect(n._rawReqIds).toEqual([])
   })
 
   it('extracts personas from persona: labels when no fieldMappings.personas', () => {

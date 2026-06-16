@@ -13,7 +13,7 @@ export function node(
     priority: 5,
     prereqIds: [],
     childIds: [],
-    parsedReqs: [],
+    _rawReqIds: [],
     personas: [],
     nodeType: 'ticket',
     nodeOrigin: 'test',

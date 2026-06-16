@@ -6,7 +6,7 @@ function dedupeIds(ids: string[]): string[] {
 
 /**
  * Removes all `nodeType: 'parsed'` nodes and `reason: 'parsed-req'` edges from the graph.
- * Clears `parsedReqs` on remaining nodes and recomputes `prereqIds`.
+ * Clears `_rawReqIds` on remaining nodes and recomputes `prereqIds`.
  *
  * Never mutates the input graph — always returns new node/edge objects, even when no-op.
  */
@@ -31,7 +31,7 @@ export function filterParsedNodes(graph: VertoGraph): VertoGraph {
       ])
       return {
         ...node,
-        parsedReqs: [],
+        _rawReqIds: [],
         prereqIds: newPrereqIds,
       }
     })

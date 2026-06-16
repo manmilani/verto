@@ -10,7 +10,7 @@ function node(overrides: Partial<VertoNode> & { id: string; title: string }): Ve
     priority: 5,
     prereqIds: [],
     childIds: [],
-    parsedReqs: [],
+    _rawReqIds: [],
     personas: [],
     nodeType: 'ticket',
     nodeOrigin: 'test',
@@ -77,13 +77,13 @@ describe('materializeParsedRequirements', () => {
     expect(parsedEdges[1]).toEqual({ from: 'A#raw-req-2', to: 'A', reason: 'parsed-req' })
   })
 
-  it('updates parent parsedReqs', () => {
+  it('updates parent _rawReqIds', () => {
     const n = ticketWithBody('A', SIMPLE_BODY)
     const graph: VertoGraph = { nodes: [n], edges: [] }
     const result = materializeParsedRequirements(graph)
 
     const parent = result.nodes.find(nd => nd.id === 'A')!
-    expect(parent.parsedReqs).toEqual(['A#raw-req-1', 'A#raw-req-2'])
+    expect(parent._rawReqIds).toEqual(['A#raw-req-1', 'A#raw-req-2'])
   })
 
   it('recomputes prereqIds for parent', () => {
@@ -121,11 +121,11 @@ describe('materializeParsedRequirements', () => {
 
     const parsedNode = result.nodes.find(nd => nd.id === 'A#raw-req-1')!
     expect(parsedNode.priority).toBe(5)
-    expect(parsedNode.nodeOrigin).toBe('parsed-nodes')
+    expect(parsedNode.nodeOrigin).toBe('text-parser')
     expect(parsedNode.nodeType).toBe('parsed')
     expect(parsedNode.prereqIds).toEqual([])
     expect(parsedNode.childIds).toEqual([])
-    expect(parsedNode.parsedReqs).toEqual([])
+    expect(parsedNode._rawReqIds).toEqual([])
     expect(parsedNode.personas).toEqual([])
     expect(parsedNode.isDeliverySlice).toBe(false)
   })
@@ -140,24 +140,24 @@ describe('materializeParsedRequirements', () => {
     expect(parsedNode.ticketUrl).toBe('https://github.com/owner/repo/issues/42#raw-req-1')
   })
 
-  it('ticketFields.note set when note is present (Pattern A)', () => {
+  it('_note set when note is present (Pattern A)', () => {
     const body = 'RAW_REQ:BEGIN\n- [ ] "Name": my note\nRAW_REQ:END'
     const n = ticketWithBody('A', body)
     const graph: VertoGraph = { nodes: [n], edges: [] }
     const result = materializeParsedRequirements(graph)
 
     const parsedNode = result.nodes.find(nd => nd.id === 'A#raw-req-1')!
-    expect(parsedNode.ticketFields?.['note']).toBe('my note')
+    expect(parsedNode._note).toBe('my note')
   })
 
-  it('ticketFields.note set when Pattern B (name === note)', () => {
+  it('_note set when Pattern B (name === note)', () => {
     const body = 'RAW_REQ:BEGIN\n- [ ] plain text\nRAW_REQ:END'
     const n = ticketWithBody('A', body)
     const graph: VertoGraph = { nodes: [n], edges: [] }
     const result = materializeParsedRequirements(graph)
 
     const parsedNode = result.nodes.find(nd => nd.id === 'A#raw-req-1')!
-    expect(parsedNode.ticketFields?.['note']).toBe('plain text')
+    expect(parsedNode._note).toBe('plain text')
   })
 
   it('two parents have independent id namespaces', () => {
@@ -173,13 +173,13 @@ describe('materializeParsedRequirements', () => {
     expect(ids).toHaveLength(2)
   })
 
-  it('validateGraph on materialized result has no prereqs_consistency or parsedReqs_integrity errors', () => {
+  it('validateGraph on materialized result has no prereqs_consistency or _rawReqIds_integrity errors', () => {
     const n = ticketWithBody('A', SIMPLE_BODY)
     const graph: VertoGraph = { nodes: [n], edges: [] }
     const result = materializeParsedRequirements(graph)
     const validation = validateGraph(result)
     const relevantErrors = validation.errors.filter(
-      e => e.type === 'prereqs_consistency' || e.type === 'parsedReqs_integrity',
+      e => e.type === 'prereqs_consistency' || e.type === '_rawReqIds_integrity',
     )
     expect(relevantErrors).toHaveLength(0)
   })

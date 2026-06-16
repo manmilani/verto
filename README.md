@@ -21,6 +21,6 @@ All paths below are relative to this folder (the **Verto project root**).
 | [graphql/hmans_beans_graphql.agent_prompt.md](./graphql/hmans_beans_graphql.agent_prompt.md) | hmans/beans GraphQL reference for the beans adapter |
 | [deprecated_original_canvas/](./deprecated_original_canvas/) | Deprecated Rustybu canvas + chat archive — **initial migration aid only**; see [deprecated_original_canvas/README.md](./deprecated_original_canvas/README.md) |
 
-**Status:** Phases 0–2 complete (monorepo scaffold, `@verto/core`, GitHub adapter). Next: **Phase 2.5** (parsed requirements & Delivery Map model), then Phase 3 (VS Code extension).
+**Status:** Phases 0–2.5 complete (monorepo scaffold, `@verto/core`, GitHub adapter, `@verto/text-parser`, canonical schema, host pipeline). Next: **Phase 3** (VS Code extension — read-only Delivery Map + NCN graph panel).
 
 **First shell:** Verto for VS Code (and Cursor) — extension **Verto** (`manmilani.verto`), distributed as private `.vsix`. Core library: `@verto/core` (monorepo-only).

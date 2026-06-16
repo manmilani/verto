@@ -8,7 +8,7 @@ import { deliveryCompleteness } from './algorithms/completeness.js'
 
 /**
  * Runs all @verto/core algorithms over a VertoGraph and assembles the complete
- * DeliveryMapBundle. Called by runHostPipeline() in @verto/parsed-nodes after
+ * DeliveryMapBundle. Called by runHostPipeline() in @verto/text-parser after
  * graph materialization and validation. Adapters return VertoGraph; the host
  * pipeline owns bundling.
  *

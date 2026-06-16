@@ -12,8 +12,8 @@
       "@verto/config/*": ["packages/config/src/*"],
       "@verto/adapter-github": ["packages/adapters/github/src/index.ts"],
       "@verto/adapter-github/*": ["packages/adapters/github/src/*"],
-      "@verto/parsed-nodes": ["packages/parsed-nodes/src/index.ts"],
-      "@verto/parsed-nodes/*": ["packages/parsed-nodes/src/*"]
+      "@verto/text-parser": ["packages/text-parser/src/index.ts"],
+      "@verto/text-parser/*": ["packages/text-parser/src/*"]
     },
     "declaration": true,
     "declarationMap": true,

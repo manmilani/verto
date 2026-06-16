@@ -9,7 +9,7 @@ function node(overrides: Partial<VertoNode> & { id: string; title: string }): Ve
     priority: 5,
     prereqIds: [],
     childIds: [],
-    parsedReqs: [],
+    _rawReqIds: [],
     personas: [],
     nodeType: 'ticket',
     nodeOrigin: 'test',
@@ -64,14 +64,14 @@ describe('runHostPipeline', () => {
       priority: 5,
       prereqIds: [],
       childIds: [],
-      parsedReqs: [],
+      _rawReqIds: [],
       personas: [],
       nodeType: 'parsed',
-      nodeOrigin: 'parsed-nodes',
+      nodeOrigin: 'text-parser',
       status: 'raw',
       ticketUrl: '',  // missing → warning, not error
     }
-    const parent = node({ id: 'A', title: 'A', parsedReqs: ['P1'], prereqIds: ['P1'] })
+    const parent = node({ id: 'A', title: 'A', _rawReqIds: ['P1'], prereqIds: ['P1'] })
     const graph: VertoGraph = {
       nodes: [parent, parsedNode],
       edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' }],
@@ -80,5 +80,32 @@ describe('runHostPipeline', () => {
     expect(warnSpy).toHaveBeenCalledWith('[verto]', expect.stringContaining('P1'))
     expect(bundle).toHaveProperty('graph')
     warnSpy.mockRestore()
+  })
+
+  it('computeBodyFields populates _note and _outcome from DESC block', () => {
+    const body = [
+      'Some intro text.',
+      '',
+      'DESC:BEGIN',
+      'First paragraph of outcome.',
+      '',
+      'Second paragraph — should be excluded.',
+      'DESC:END',
+    ].join('\n')
+    const n = node({ id: 'A', title: 'A', ticketFields: { body } })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const bundle = runHostPipeline(graph)
+    const resultNode = bundle.graph.nodes.find(nd => nd.id === 'A')!
+    expect(resultNode._note).toBe('First paragraph of outcome.')
+    expect(resultNode._outcome).toBe('First paragraph of outcome.')
+  })
+
+  it('_note and _outcome are undefined when no DESC block present', () => {
+    const n = node({ id: 'A', title: 'A', ticketFields: { body: 'No desc block here.' } })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const bundle = runHostPipeline(graph)
+    const resultNode = bundle.graph.nodes.find(nd => nd.id === 'A')!
+    expect(resultNode._note).toBeUndefined()
+    expect(resultNode._outcome).toBeUndefined()
   })
 })
