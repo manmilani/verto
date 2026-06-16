@@ -12,6 +12,8 @@ export default defineConfig({
     outDir: '../../dist/webview',
     emptyOutDir: true,
     target: 'es2022',
+    // Webview assets load from local disk; network-size thresholds don't apply.
+    chunkSizeWarningLimit: 2000,
     commonjsOptions: {
       include: [/node_modules/],
     },
