@@ -24,15 +24,31 @@
     ]
   },
   "scripts": {
-    "build": "echo 'Extension bundling added in Phase 3'",
-    "typecheck": "tsc --noEmit"
+    "build:host": "node esbuild.mjs",
+    "build:webview": "vite build",
+    "build": "pnpm build:host && pnpm build:webview",
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.webview.json --noEmit"
   },
   "dependencies": {
     "@verto/core": "workspace:*",
-    "@verto/config": "workspace:*"
+    "@verto/config": "workspace:*",
+    "@verto/adapter-github": "workspace:*",
+    "@verto/text-parser": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@xyflow/react": "^12.6.4",
+    "elkjs": "^0.10.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
     "@types/vscode": "^1.96.0",
-    "typescript": "^5.8.3"
+    "@types/vscode-webview": "^1.57.5",
+    "@vitejs/plugin-react": "^4.4.1",
+    "@vscode/vsce": "^3.4.2",
+    "esbuild": "^0.25.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.3.5"
   }
 }

@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "types": ["vscode-webview"],
+    "noEmit": true,
+    "paths": {
+      "@verto/core": ["packages/core/dist/index.d.ts"],
+      "@verto/core/*": ["packages/core/dist/*"],
+      "@verto/config": ["packages/config/dist/index.d.ts"],
+      "@verto/config/*": ["packages/config/dist/*"],
+      "@verto/adapter-github": ["packages/adapters/github/dist/index.d.ts"],
+      "@verto/text-parser": ["packages/text-parser/dist/index.d.ts"],
+      "@verto/text-parser/*": ["packages/text-parser/dist/*"]
+    }
+  },
+  "include": ["src/webview/**/*", "src/shared/**/*"],
+  "exclude": ["dist"]
+}

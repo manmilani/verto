@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "lib": ["ES2022"],
+    "types": ["vscode", "node"],
+    "noEmit": true
+  },
+  "include": ["src/extension.ts", "src/host/**/*", "src/shared/**/*"],
+  "exclude": ["dist"]
+}
