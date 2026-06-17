@@ -50,8 +50,9 @@ export function useVertoState() {
       if (msg.type === 'loading') {
         setState(s => ({
           ...s,
-          status: 'loading',
-          // Only an incremental refresh if we already have data; otherwise full loading state
+          // Keep status 'ready' during incremental refresh so existing content stays visible;
+          // only drop to 'loading' on the initial fetch when there's no data yet.
+          status: s.bundle !== undefined ? 'ready' : 'loading',
           isRefreshing: s.bundle !== undefined,
         }))
         return

@@ -61,6 +61,7 @@ export function ImplementationOrderTable({ bundle, displayStatusGroups, priority
                     style={{
                       cursor: 'pointer',
                       background: isFocused ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
+                      color: isFocused ? 'var(--vscode-list-activeSelectionForeground)' : undefined,
                     }}
                   >
                     <td style={tdStyle}>{leverage}</td>
@@ -122,6 +123,7 @@ export function ImplementationOrderTable({ bundle, displayStatusGroups, priority
                   style={{
                     cursor: 'pointer',
                     background: isFocused ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
+                    color: isFocused ? 'var(--vscode-list-activeSelectionForeground)' : undefined,
                   }}
                 >
                   <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>{priority}</td>
@@ -181,7 +183,6 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: '4px 8px',
   borderBottom: '1px solid var(--vscode-panel-border)',
-  color: 'var(--vscode-foreground)',
   verticalAlign: 'middle',
 }
 
