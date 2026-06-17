@@ -1,6 +1,10 @@
 import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
 
+export type PillTone = 'success' | 'warning' | 'info' | 'neutral' | 'deleted' | 'danger'
+export type TextTone = 'primary' | 'secondary' | 'tertiary' | 'quaternary'
+export type StatTone = 'success' | 'warning' | 'info' | 'danger'
+
 export const OTHER_DISPLAY_STATUS_GROUP = 'Other'
 
 /** Configured group labels plus the implicit Other bucket (single source of truth for table/bar headers). */
@@ -58,4 +62,39 @@ export function isGap(
   return !groups
     .filter(isDoneBucket)
     .some(g => resolveDisplayStatusGroup(row, [g]) === g.label)
+}
+
+/** Comma-separated prose list of configured display groups for page descriptions. */
+export function formatDisplayGroupsProse(groups: DisplayStatusGroup[]): string {
+  const labels = [...groups.map(g => g.label), OTHER_DISPLAY_STATUS_GROUP]
+  if (labels.length === 0) return 'in a configured delivery state'
+  if (labels.length === 1) return labels[0]
+  return `${labels.slice(0, -1).join(', ')}, or ${labels[labels.length - 1]}`
+}
+
+/** Maps a node to a canvas-style pill tone for tables and graph pills. */
+export function pillToneForNode(
+  node: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
+  groups: DisplayStatusGroup[],
+): PillTone {
+  if (node.isDone) return 'success'
+  if (isGap(node, groups)) return 'deleted'
+  const idx = resolveDisplayStatusGroupIndex(node, groups)
+  if (idx <= 0) return 'info'
+  if (idx === 1) return 'warning'
+  return 'info'
+}
+
+/** Weight 0–1 for row tone colouring (mirrors canvas STATUS weights). */
+export function nodeStatusWeight(
+  node: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
+  groups: DisplayStatusGroup[],
+): number {
+  if (node.isDone) return 1
+  if (isGap(node, groups)) return 0
+  const idx = resolveDisplayStatusGroupIndex(node, groups)
+  if (idx < 0) return 0
+  if (idx === 0) return 0.5
+  if (idx === 1) return 0.15
+  return 0.15
 }

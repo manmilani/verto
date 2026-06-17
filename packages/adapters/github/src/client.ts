@@ -98,6 +98,23 @@ export class GitHubClient {
     return items
   }
 
+  async fetchProjectTitle(
+    owner: string,
+    projectNumber: number,
+    ownerType: 'user' | 'organization' = 'user',
+  ): Promise<string | undefined> {
+    const ownerField = ownerType === 'organization' ? 'organization' : 'user'
+    const query = `
+      query FetchProjectTitle($owner: String!, $number: Int!) {
+        ${ownerField}(login: $owner) {
+          projectV2(number: $number) { title }
+        }
+      }
+    `
+    const data = await this.request(query, { owner, number: projectNumber })
+    return data[ownerField]?.projectV2?.title as string | undefined
+  }
+
   async fetchIssuesByNodeIds(nodeIds: string[]): Promise<GitHubIssue[]> {
     const BATCH = 50
     const issues: GitHubIssue[] = []

@@ -2,6 +2,11 @@ import React from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
+import { pillToneForNode, resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
+import { statusGroupColor } from '../theme.js'
+import {
+  Stack, Row, Text, Pill, BorderedBox,
+} from '../components/ui.js'
 
 interface Props {
   node: VertoNode
@@ -13,6 +18,9 @@ interface Props {
 export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNode }: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
+  const groupIdx = resolveDisplayStatusGroupIndex(node, displayStatusGroups)
+  const barColor = statusGroupColor(groupIdx)
+  const isReady = bundle.readyIds?.includes(node.id) ?? false
 
   const prereqs = graph.edges
     .filter(e => e.to === node.id)
@@ -24,108 +32,92 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
     .map(e => nodeById.get(e.to))
     .filter((n): n is VertoNode => Boolean(n))
 
-  const servedSliceTitles = (bundle.servedBySliceIds?.[node.id] ?? [])
-    .map(sid => nodeById.get(sid)?.title ?? sid)
+  const servedSlices = (bundle.servedBySliceIds?.[node.id] ?? [])
+    .map(sid => nodeById.get(sid))
+    .filter((n): n is VertoNode => Boolean(n))
 
   return (
-    <div style={panelStyle}>
-      <div style={headerRowStyle}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={titleStyle}>
+    <BorderedBox style={{ borderColor: 'var(--vscode-focusBorder)' }}>
+      <Stack gap={10}>
+        <Row gap={10} wrap align="flex-start">
+          <div style={{ width: 5, height: 36, borderRadius: 2, background: barColor, flexShrink: 0 }} />
+          <Text weight="bold" style={{ fontSize: 17, flex: 1, minWidth: 200 }}>
             {node.ticketUrl
               ? <a href={node.ticketUrl} target="_blank" rel="noreferrer" style={linkStyle}>{node.title}</a>
               : node.title}
-          </div>
-          <div style={statusStyle}>
+          </Text>
+          <Pill size="sm" tone={pillToneForNode(node, displayStatusGroups)} active>
             {formatNodeStatus(node, displayStatusGroups)}
-          </div>
-        </div>
-        <button
-          onClick={() => onFocusNode(undefined)}
-          title="Dismiss"
-          style={dismissStyle}
-        >
-          ×
-        </button>
-      </div>
+          </Pill>
+          <Pill size="sm" tone={isReady ? 'success' : 'neutral'}>
+            {isReady ? 'Ready to start' : node.isDone ? 'Done' : 'Blocked'}
+          </Pill>
+          <button
+            type="button"
+            onClick={() => onFocusNode(undefined)}
+            title="Dismiss"
+            style={dismissStyle}
+          >
+            ×
+          </button>
+        </Row>
 
-      <div style={sectionRowStyle}>
-        {prereqs.length > 0 && (
-          <div style={sectionStyle}>
-            <div style={sectionLabelStyle}>Depends on</div>
-            <div style={pillRowStyle}>
-              {prereqs.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => onFocusNode(p.id)}
-                  title={p.title}
-                  style={pillStyle}
-                >
-                  {p.title}
-                </button>
-              ))}
-            </div>
-          </div>
+        {node._note && (
+          <Text tone="secondary">{node._note}</Text>
         )}
 
-        {dependents.length > 0 && (
-          <div style={sectionStyle}>
-            <div style={sectionLabelStyle}>Unlocks</div>
-            <div style={pillRowStyle}>
-              {dependents.map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => onFocusNode(d.id)}
-                  title={d.title}
-                  style={pillStyle}
-                >
-                  {d.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <Row gap={16} wrap align="flex-start">
+          <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
+            <Text size="small" weight="semibold" tone="tertiary">
+              Necessary conditions (must be done first)
+            </Text>
+            {prereqs.length === 0 ? (
+              <Text size="small" tone="quaternary">None — foundational work-item.</Text>
+            ) : (
+              <Row gap={6} wrap>
+                {prereqs.map(p => (
+                  <Pill
+                    key={p.id}
+                    size="sm"
+                    tone={p.isDone ? 'success' : 'deleted'}
+                    onClick={() => onFocusNode(p.id)}
+                  >
+                    {p.title}
+                  </Pill>
+                ))}
+              </Row>
+            )}
+          </Stack>
 
-        {servedSliceTitles.length > 0 && (
-          <div style={sectionStyle}>
-            <div style={sectionLabelStyle}>Serves</div>
-            <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)' }}>
-              {servedSliceTitles.join(', ')}
-            </div>
-          </div>
+          <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
+            <Text size="small" weight="semibold" tone="tertiary">
+              Unblocks directly ({dependents.length})
+            </Text>
+            {dependents.length === 0 ? (
+              <Text size="small" tone="quaternary">Nothing depends on this — it&apos;s a delivery leaf.</Text>
+            ) : (
+              <Row gap={6} wrap>
+                {dependents.map(d => (
+                  <Pill key={d.id} size="sm" tone="neutral" onClick={() => onFocusNode(d.id)}>
+                    {d.title}
+                  </Pill>
+                ))}
+              </Row>
+            )}
+          </Stack>
+        </Row>
+
+        {servedSlices.length > 0 && (
+          <Row gap={6} wrap align="center">
+            <Text size="small" tone="tertiary" weight="semibold">Serves:</Text>
+            {servedSlices.map(s => (
+              <Pill key={s.id} size="sm" tone="info">{s.title}</Pill>
+            ))}
+          </Row>
         )}
-      </div>
-    </div>
+      </Stack>
+    </BorderedBox>
   )
-}
-
-const panelStyle: React.CSSProperties = {
-  padding: '8px 12px',
-  borderTop: '1px solid var(--vscode-panel-border)',
-  background: 'var(--vscode-editor-background)',
-  flexShrink: 0,
-}
-
-const headerRowStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: 8,
-  marginBottom: 8,
-}
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: 'var(--vscode-foreground)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-}
-
-const statusStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: 'var(--vscode-descriptionForeground)',
-  marginTop: 2,
 }
 
 const dismissStyle: React.CSSProperties = {
@@ -133,49 +125,10 @@ const dismissStyle: React.CSSProperties = {
   border: 'none',
   color: 'var(--vscode-foreground)',
   cursor: 'pointer',
-  fontSize: 16,
+  fontSize: 18,
   padding: '0 4px',
   flexShrink: 0,
   lineHeight: 1,
-}
-
-const sectionRowStyle: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 12,
-}
-
-const sectionStyle: React.CSSProperties = {
-  minWidth: 120,
-}
-
-const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 600,
-  color: 'var(--vscode-descriptionForeground)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  marginBottom: 4,
-}
-
-const pillRowStyle: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 4,
-}
-
-const pillStyle: React.CSSProperties = {
-  fontSize: 11,
-  padding: '2px 8px',
-  borderRadius: 10,
-  border: '1px solid var(--vscode-panel-border)',
-  background: 'var(--vscode-editor-background)',
-  color: 'var(--vscode-foreground)',
-  cursor: 'pointer',
-  maxWidth: 160,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
 }
 
 const linkStyle: React.CSSProperties = {

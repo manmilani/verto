@@ -5,6 +5,9 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  Handle,
+  Position,
+  MarkerType,
   type Node,
   type Edge,
   type NodeMouseHandler,
@@ -15,15 +18,14 @@ import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
 
 const elk = new ELK()
+const GRAPH_HEIGHT = 720
 
 interface NcnGraphProps {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
-  priorityOverlayActive: boolean
   highlightedSliceId?: string
   focusedNcnNodeId?: string
   onFocusNode: (id: string | undefined) => void
-  onHighlightSlice: (id: string | undefined) => void
 }
 
 export function NcnGraph(props: NcnGraphProps) {
@@ -37,8 +39,8 @@ export function NcnGraph(props: NcnGraphProps) {
 function getFocusNeighbourhood(nodeId: string, edges: VertoEdge[]): Set<string> {
   const result = new Set<string>([nodeId])
   for (const e of edges) {
-    if (e.to === nodeId) result.add(e.from)   // direct prereq
-    if (e.from === nodeId) result.add(e.to)   // direct dependent
+    if (e.to === nodeId) result.add(e.from)
+    if (e.from === nodeId) result.add(e.to)
   }
   return result
 }
@@ -46,13 +48,11 @@ function getFocusNeighbourhood(nodeId: string, edges: VertoEdge[]): Set<string> 
 function NcnGraphInner({
   bundle, displayStatusGroups,
   highlightedSliceId, focusedNcnNodeId,
-  onFocusNode, onHighlightSlice,
+  onFocusNode,
 }: NcnGraphProps) {
   const { fitView } = useReactFlow()
   const { graph } = bundle
 
-  // Stable topology signature: ELK layout and fitView only run on structural graph changes,
-  // not on priority-only bundle updates.
   const topoKey = useMemo(() => {
     const nodeIds = graph.nodes.map(n => n.id).sort().join(',')
     const edgeIds = graph.edges.map(e => `${e.from}>${e.to}`).sort().join(',')
@@ -74,7 +74,7 @@ function NcnGraphInner({
         'elk.layered.spacing.nodeNodeBetweenLayers': '80',
         'elk.spacing.nodeNode': '20',
       },
-      children: graph.nodes.map(n => ({ id: n.id, width: 180, height: 60 })),
+      children: graph.nodes.map(n => ({ id: n.id, width: 200, height: 60 })),
       edges: graph.edges.map(e => ({
         id: `${e.from}->${e.to}`,
         sources: [e.from],
@@ -87,16 +87,12 @@ function NcnGraphInner({
       setElkPositions(
         new Map((layout.children ?? []).map(c => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }])),
       )
-      // fitView on every topology change (new graph, added nodes); not on data-only refreshes
-      setTimeout(() => { if (!cancelled) fitView() }, 0)
+      setTimeout(() => { if (!cancelled) fitView({ padding: 0.08 }) }, 0)
     })
 
     return () => { cancelled = true }
-  // Intentionally keyed on topology string, not full bundle — avoids ELK rerun on data-only updates
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topoKey, fitView])
-
-  const deliverySlices = graph.nodes.filter(n => n.isDeliverySlice)
 
   const { rfNodes, rfEdges } = useMemo(() => {
     if (elkPositions.size === 0) return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
@@ -120,11 +116,7 @@ function NcnGraphInner({
     }
 
     function isEdgeActive(e: VertoEdge): boolean {
-      // Focus mode: only edges directly incident to the focused node are "on".
-      // Edges between two neighbourhood members (prereq → sibling) stay dim,
-      // matching canvas edgeState "hi" semantics.
       if (focusSet) return e.from === focusedNcnNodeId || e.to === focusedNcnNodeId
-      // Highlight mode: both endpoints must be inside the highlighted closure
       if (highlightedSet) return highlightedSet.has(e.from) && highlightedSet.has(e.to)
       return true
     }
@@ -143,49 +135,64 @@ function NcnGraphInner({
       const isFocused = n.id === focusedNcnNodeId
 
       let border = '1px solid var(--vscode-panel-border)'
-      if (isReady) border = '1.5px solid var(--vscode-charts-green)'
+      if (isReady) border = '2px solid var(--vscode-focusBorder)'
       if (isFocused) border = '2px solid var(--vscode-focusBorder)'
 
       const baseOpacity = n.isDone ? 0.4 : 1
-      const opacity = dimmed ? baseOpacity * 0.25 : baseOpacity
+      const opacity = dimmed ? baseOpacity * 0.16 : baseOpacity
 
       return [{
         id: n.id,
         position: pos,
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
         data: {
           title: n.title,
           statusLabel: formatNodeStatus(n, displayStatusGroups),
-          isDone: n.isDone,
           groupColor,
           isReady,
-          isFocused,
           leverage,
         },
         style: {
-          width: 180,
+          width: 200,
           height: 60,
           border,
           opacity,
-          borderRadius: 4,
+          borderRadius: 8,
           background: 'var(--vscode-editor-background)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'row' as const,
           padding: 0,
+          cursor: 'pointer',
         },
         type: 'ncn',
       }]
     })
 
-    const rfEdges: Edge[] = graph.edges.map(e => ({
-      id: `${e.from}->${e.to}`,
-      source: e.from,
-      target: e.to,
-      style: {
-        stroke: 'var(--vscode-foreground)',
-        opacity: isEdgeActive(e) ? 0.5 : 0.08,
-      },
-    }))
+    const rfEdges: Edge[] = graph.edges.map(e => {
+      const active = isEdgeActive(e)
+      const stroke = active && focusSet
+        ? 'var(--vscode-focusBorder)'
+        : 'var(--vscode-foreground)'
+      return {
+        id: `${e.from}->${e.to}`,
+        source: e.from,
+        target: e.to,
+        type: 'smoothstep',
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 16,
+          height: 16,
+          color: stroke,
+        },
+        style: {
+          stroke,
+          strokeWidth: active && focusSet ? 2 : 1.5,
+          opacity: active ? 0.65 : 0.12,
+        },
+      }
+    })
 
     return { rfNodes, rfEdges }
   }, [elkPositions, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
@@ -194,73 +201,38 @@ function NcnGraphInner({
     onFocusNode(node.id === focusedNcnNodeId ? undefined : node.id)
   }
 
-  // Contextual status banner (canvas "Focused on X…" / "Highlighting closure for Y…")
-  const statusBanner = focusedNcnNodeId
-    ? `Focused on ${graph.nodes.find(n => n.id === focusedNcnNodeId)?.title ?? focusedNcnNodeId}`
-    : highlightedSliceId
-    ? `Highlighting closure for ${graph.nodes.find(n => n.id === highlightedSliceId)?.title ?? highlightedSliceId}`
-    : null
-
   if (graph.nodes.length === 0) {
-    return <div style={{ padding: 24, color: 'var(--vscode-descriptionForeground)' }}>No graph data.</div>
+    return (
+      <div style={{ padding: 24, color: 'var(--vscode-descriptionForeground)', height: GRAPH_HEIGHT }}>
+        No graph data.
+      </div>
+    )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 300 }}>
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: '1px solid var(--vscode-panel-border)', flexShrink: 0, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 12, color: 'var(--vscode-foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          Highlight journey:
-          <select
-            value={highlightedSliceId ?? ''}
-            onChange={e => onHighlightSlice(e.target.value || undefined)}
-            style={{
-              fontSize: 12,
-              background: 'var(--vscode-dropdown-background)',
-              color: 'var(--vscode-dropdown-foreground)',
-              border: '1px solid var(--vscode-dropdown-border)',
-              borderRadius: 3,
-              padding: '2px 4px',
-              marginLeft: 4,
-            }}
-          >
-            <option value="">— none —</option>
-            {deliverySlices.map(s => (
-              <option key={s.id} value={s.id}>{s.title}</option>
-            ))}
-          </select>
-        </label>
-        {focusedNcnNodeId && (
-          <button
-            onClick={() => onFocusNode(undefined)}
-            style={{
-              fontSize: 11, padding: '2px 8px', cursor: 'pointer',
-              background: 'var(--vscode-button-secondaryBackground)',
-              color: 'var(--vscode-button-secondaryForeground)',
-              border: 'none', borderRadius: 3,
-            }}
-          >
-            Clear focus
-          </button>
-        )}
-        {statusBanner && (
-          <span style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginLeft: 4, fontStyle: 'italic' }}>
-            {statusBanner}
-          </span>
-        )}
-      </div>
-
-      {/* ReactFlow graph canvas */}
-      <div style={{ flex: 1 }}>
-        <ReactFlow
-          nodes={rfNodes}
-          edges={rfEdges}
-          nodesDraggable={false}
-          preventScrolling={false}
-          nodeTypes={nodeTypes}
-          onNodeClick={handleNodeClick}
-        />
-      </div>
+    <div
+      style={{
+        position: 'relative',
+        border: '1px solid var(--vscode-panel-border)',
+        borderRadius: 10,
+        overflow: 'hidden',
+        height: GRAPH_HEIGHT,
+        background: 'var(--vscode-editor-background)',
+      }}
+    >
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnScroll
+        zoomOnScroll
+        preventScrolling={false}
+        nodeTypes={nodeTypes}
+        onNodeClick={handleNodeClick}
+        proOptions={{ hideAttribution: true }}
+      />
     </div>
   )
 }
@@ -270,45 +242,48 @@ function NcnNode({ data }: { data: any }) {
   const { title, statusLabel, groupColor, isReady, leverage } = data as {
     title: string
     statusLabel: string
-    isDone: boolean
     groupColor: string
     isReady: boolean
-    isFocused: boolean
     leverage: number
   }
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-      <div style={{ width: 4, flexShrink: 0, background: groupColor }} />
-      <div style={{ flex: 1, padding: '4px 6px', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <div style={{
-          fontSize: 11,
-          color: 'var(--vscode-foreground)',
-          overflow: 'hidden',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical' as const,
-        }}>
-          {title}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-          <span style={{ fontSize: 9, color: 'var(--vscode-descriptionForeground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {statusLabel}
-          </span>
-          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-            {isReady && (
-              <span style={{ fontSize: 9, color: 'var(--vscode-charts-green)', marginLeft: 4 }}>ready</span>
-            )}
-            {leverage > 0 && (
-              <span style={{ fontSize: 9, color: 'var(--vscode-charts-orange)', marginLeft: 4 }}>
-                ↑{leverage}
-              </span>
-            )}
+    <>
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
+      <div className="ncn-node-body" style={{ display: 'flex', width: '100%', height: '100%', cursor: 'pointer' }}>
+        <div style={{ width: 5, flexShrink: 0, background: groupColor }} />
+        <div style={{ flex: 1, padding: '6px 8px', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--vscode-foreground)',
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical' as const,
+            lineHeight: 1.15,
+          }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: 'var(--vscode-descriptionForeground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {statusLabel}
+            </span>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+              {isReady && (
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--vscode-focusBorder)' }}>ready</span>
+              )}
+              {leverage > 0 && (
+                <span style={{ fontSize: 10, color: 'var(--vscode-charts-orange)' }}>
+                  · unlocks {leverage}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+    </>
   )
 }
 
-// Defined outside component so ReactFlow doesn't remount nodes on every render
 const nodeTypes = { ncn: NcnNode }

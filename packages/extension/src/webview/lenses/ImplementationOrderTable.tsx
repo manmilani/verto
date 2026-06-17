@@ -1,7 +1,18 @@
 import React from 'react'
-import type { DeliveryMapBundle } from '@verto/core'
+import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus, formatPriority } from '../nodeStatusFormat.js'
+import {
+  pillToneForNode, resolveDisplayStatusGroupIndex,
+} from '../displayStatusGroup.js'
+import { statusGroupColor } from '../theme.js'
+import { countDirectDependents } from '../bundleMetrics.js'
+import {
+  H2, Text, Stack, Pill,
+  DataTableFrame, dataTableStyle, dataTableThStyle, dataTableThCompactStyle,
+  dataTableTdStyle, dataTableTdCompactStyle, dataTableTdWorkItemStyle, dataTableTdWrapStyle,
+  dataTableRowStyle, StatusDot, dataTableColWidthForHeader,
+} from '../components/ui.js'
 
 interface Props {
   bundle: DeliveryMapBundle
@@ -11,7 +22,59 @@ interface Props {
   onFocusNode: (id: string | undefined) => void
 }
 
-export function ImplementationOrderTable({ bundle, displayStatusGroups, priorityOverlayActive, focusedNodeId, onFocusNode }: Props) {
+function StatusGroupDot({
+  node, displayStatusGroups,
+}: {
+  node: VertoNode
+  displayStatusGroups: DisplayStatusGroup[]
+}) {
+  const groupIdx = resolveDisplayStatusGroupIndex(node, displayStatusGroups)
+  return <StatusDot color={statusGroupColor(groupIdx)} />
+}
+
+function RowIndex({
+  index, node, displayStatusGroups,
+}: {
+  index: number
+  node: VertoNode
+  displayStatusGroups: DisplayStatusGroup[]
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+      <StatusGroupDot node={node} displayStatusGroups={displayStatusGroups} />
+      <Text weight="semibold" tone="secondary">{index + 1}</Text>
+    </div>
+  )
+}
+
+function rowStyle(isFocused: boolean): React.CSSProperties {
+  return dataTableRowStyle(isFocused)
+}
+
+function WorkItemPill({
+  node, displayStatusGroups, isFocused, onFocus,
+}: {
+  node: VertoNode
+  displayStatusGroups: DisplayStatusGroup[]
+  isFocused: boolean
+  onFocus: () => void
+}) {
+  return (
+    <Pill
+      multiline
+      tone={pillToneForNode(node, displayStatusGroups)}
+      active={isFocused}
+      title={node.title}
+      onClick={e => { e.stopPropagation(); onFocus() }}
+    >
+      {node.title}
+    </Pill>
+  )
+}
+
+export function ImplementationOrderTable({
+  bundle, displayStatusGroups, priorityOverlayActive, focusedNodeId, onFocusNode,
+}: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
 
@@ -20,173 +83,205 @@ export function ImplementationOrderTable({ bundle, displayStatusGroups, priority
   }
 
   if (!priorityOverlayActive) {
-    // Mode 1 — no overlay: "ready to start now" sorted by leverage
     const readyIds = [...(bundle.readyIds ?? [])].sort(
       (a, b) => (bundle.leverageScore?.[b] ?? 0) - (bundle.leverageScore?.[a] ?? 0),
     )
 
     return (
-      <div style={containerStyle}>
-        <div style={titleStyle}>Ready to start now — ranked by leverage</div>
+      <Stack gap={8}>
+        <H2>Ready to start now — ranked by leverage</H2>
+        <Text size="small" tone="tertiary">
+          Work-items whose every necessary condition is already <Text as="span" weight="semibold">Implemented</Text>,
+          so work can begin immediately. Ranked by how many other work-items they ultimately unlock (transitive
+          downstream count). Add a journey priority above to turn this into a delivery execution order. Click a row
+          to focus it in the graph.
+        </Text>
         {readyIds.length === 0 ? (
-          <div style={emptyStyle}>No ready items.</div>
+          <Text size="small" tone="tertiary">No ready items.</Text>
         ) : (
-          <table style={tableStyle}>
+          <DataTableFrame>
+            <table style={dataTableStyle}>
+              <colgroup>
+                <col />
+                <col style={dataTableColWidthForHeader('Current status')} />
+                <col style={dataTableColWidthForHeader('Unlocks (downstream)')} />
+                <col style={dataTableColWidthForHeader('Direct dependents')} />
+                <col style={{ width: '26%' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  {['Work-item', 'Current status', 'Unlocks (downstream)', 'Direct dependents', 'Serves'].map((h, i) => (
+                    <th
+                      key={h}
+                      style={{
+                        ...dataTableThStyle,
+                        ...(i > 0 ? dataTableThCompactStyle : undefined),
+                        ...(i === 3 ? { textAlign: 'right' } : undefined),
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {readyIds.map(id => {
+                  const node = nodeById.get(id)
+                  if (!node) return null
+                  const unlocks = bundle.leverageScore?.[id] ?? 0
+                  const deps = countDirectDependents(bundle, id)
+                  const serves = (bundle.servedBySliceIds?.[id] ?? [])
+                    .map(sid => nodeTitle(sid))
+                    .join(', ')
+                  const isFocused = id === focusedNodeId
+                  return (
+                    <tr
+                      key={id}
+                      onClick={() => onFocusNode(id)}
+                      style={rowStyle(isFocused)}
+                    >
+                      <td style={dataTableTdWorkItemStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <StatusGroupDot node={node} displayStatusGroups={displayStatusGroups} />
+                          <WorkItemPill
+                            node={node}
+                            displayStatusGroups={displayStatusGroups}
+                            isFocused={isFocused}
+                            onFocus={() => onFocusNode(id)}
+                          />
+                        </div>
+                      </td>
+                      <td style={dataTableTdStyle}>
+                        <Text size="small" tone="secondary">{formatNodeStatus(node, displayStatusGroups)}</Text>
+                      </td>
+                      <td style={dataTableTdCompactStyle}>
+                        <Text weight="semibold">{String(unlocks)}</Text>
+                      </td>
+                      <td style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>{String(deps)}</td>
+                      <td style={dataTableTdWrapStyle}>
+                        <Text size="small" tone="tertiary">{serves || '—'}</Text>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </DataTableFrame>
+        )}
+      </Stack>
+    )
+  }
+
+  const orderIds = (bundle.implementationOrder ?? []).filter(
+    id => !nodeById.get(id)?.isDone,
+  )
+
+  const liftedCount = orderIds.filter(id => {
+    const r = bundle.globalPriorityRanking?.[id]
+    return r !== undefined && r < Infinity
+  }).length
+
+  return (
+    <Stack gap={8}>
+      <H2>Implementation order — to deliver your prioritised journeys fastest</H2>
+      <Text size="small" tone="tertiary">
+        Every not-yet-built work-item your prioritised journeys depend on ({liftedCount} in total), in an order where
+        each item&apos;s prerequisites come before it. Build top-to-bottom and each journey is delivered as early as its
+        priority allows. The <Text as="span" weight="semibold">Priority</Text> column shows which prioritised journey
+        lifted each item. Other currently-ready items follow at the end.
+      </Text>
+      {orderIds.length === 0 ? (
+        <Text size="small" tone="tertiary">Nothing left to do.</Text>
+      ) : (
+        <DataTableFrame>
+          <table style={dataTableStyle}>
+            <colgroup>
+              <col style={{ width: '2.75rem' }} />
+              <col style={dataTableColWidthForHeader('Priority')} />
+              <col />
+              <col style={dataTableColWidthForHeader('Ready now')} />
+              <col style={dataTableColWidthForHeader('Status', 11)} />
+              <col style={dataTableColWidthForHeader('Unlocks')} />
+              <col style={{ width: '24%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={thStyle}>Leverage</th>
-                <th style={thStyle}>Title</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Unlocks</th>
-                <th style={thStyle}>Serves</th>
+                {['#', 'Priority', 'Work-item', 'Ready now', 'Status', 'Unlocks', 'Serves'].map((h, i) => (
+                  <th
+                    key={h}
+                    style={{
+                      ...dataTableThStyle,
+                      ...(i !== 2 && i !== 6 ? dataTableThCompactStyle : undefined),
+                      ...(i === 0 ? { textAlign: 'right' } : undefined),
+                      ...(i === 5 ? { textAlign: 'center' } : undefined),
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {readyIds.map(id => {
+              {orderIds.map((id, i) => {
                 const node = nodeById.get(id)
                 if (!node) return null
-                const leverage = bundle.leverageScore?.[id] ?? 0
-                const unlocks = graph.edges
-                  .filter(e => e.from === id)
-                  .map(e => nodeTitle(e.to))
-                  .join(', ')
+                const priority = formatPriority(bundle.globalPriorityRanking?.[id])
+                const unlocks = bundle.leverageScore?.[id] ?? 0
                 const serves = (bundle.servedBySliceIds?.[id] ?? [])
                   .map(sid => nodeTitle(sid))
                   .join(', ')
+                const isReady = bundle.readyIds?.includes(id) ?? false
                 const isFocused = id === focusedNodeId
+                const hasPriority = priority !== '—'
                 return (
                   <tr
                     key={id}
                     onClick={() => onFocusNode(id)}
-                    style={{
-                      cursor: 'pointer',
-                      background: isFocused ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
-                      color: isFocused ? 'var(--vscode-list-activeSelectionForeground)' : undefined,
-                    }}
+                    style={rowStyle(isFocused)}
                   >
-                    <td style={tdStyle}>{leverage}</td>
-                    <td style={tdStyle}>
-                      {node.ticketUrl
-                        ? <a href={node.ticketUrl} target="_blank" rel="noreferrer" style={linkStyle} onClick={e => e.stopPropagation()}>{node.title}</a>
-                        : node.title}
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>
+                      <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} />
                     </td>
-                    <td style={tdStyle}>{formatNodeStatus(node, displayStatusGroups)}</td>
-                    <td style={{ ...tdStyle, color: 'var(--vscode-descriptionForeground)', fontSize: 11 }}>{unlocks || '—'}</td>
-                    <td style={{ ...tdStyle, color: 'var(--vscode-descriptionForeground)', fontSize: 11 }}>{serves || '—'}</td>
+                    <td style={dataTableTdCompactStyle}>
+                      {hasPriority ? (
+                        <Pill size="sm" tone="warning" active title={`Priority rank ${priority}`}>
+                          P{priority}
+                        </Pill>
+                      ) : (
+                        <Text size="small" tone="quaternary">—</Text>
+                      )}
+                    </td>
+                    <td style={dataTableTdWorkItemStyle}>
+                      <WorkItemPill
+                        node={node}
+                        displayStatusGroups={displayStatusGroups}
+                        isFocused={isFocused}
+                        onFocus={() => onFocusNode(id)}
+                      />
+                    </td>
+                    <td style={dataTableTdCompactStyle}>
+                      {isReady ? (
+                        <Pill size="sm" tone="success" active>Ready</Pill>
+                      ) : (
+                        <Pill size="sm" tone="neutral">Blocked</Pill>
+                      )}
+                    </td>
+                    <td style={dataTableTdCompactStyle}>
+                      <Text size="small" tone="secondary">{formatNodeStatus(node, displayStatusGroups)}</Text>
+                    </td>
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>
+                      <Text weight="semibold">{String(unlocks)}</Text>
+                    </td>
+                    <td style={{ ...dataTableTdWrapStyle, verticalAlign: 'middle' }}>
+                      <Text size="small" tone="tertiary">{serves || '—'}</Text>
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        )}
-      </div>
-    )
-  }
-
-  // Mode 2 — overlay active: full implementation order, not-done only
-  const orderIds = (bundle.implementationOrder ?? []).filter(
-    id => !nodeById.get(id)?.isDone,
-  )
-
-  return (
-    <div style={containerStyle}>
-      <div style={titleStyle}>Implementation order</div>
-      {orderIds.length === 0 ? (
-        <div style={emptyStyle}>Nothing left to do.</div>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Priority</th>
-              <th style={thStyle}>Title</th>
-              <th style={thStyle}>Status</th>
-              <th style={thStyle}>Leverage</th>
-              <th style={thStyle}>Serves</th>
-              <th style={thStyle}>Ready?</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orderIds.map(id => {
-              const node = nodeById.get(id)
-              if (!node) return null
-              const priority = formatPriority(bundle.globalPriorityRanking?.[id])
-              const leverage = bundle.leverageScore?.[id] ?? 0
-              const serves = (bundle.servedBySliceIds?.[id] ?? [])
-                .map(sid => nodeTitle(sid))
-                .join(', ')
-              const isReady = bundle.readyIds?.includes(id) ?? false
-              const isFocused = id === focusedNodeId
-              return (
-                <tr
-                  key={id}
-                  onClick={() => onFocusNode(id)}
-                  style={{
-                    cursor: 'pointer',
-                    background: isFocused ? 'var(--vscode-list-activeSelectionBackground)' : undefined,
-                    color: isFocused ? 'var(--vscode-list-activeSelectionForeground)' : undefined,
-                  }}
-                >
-                  <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>{priority}</td>
-                  <td style={tdStyle}>
-                    {node.ticketUrl
-                      ? <a href={node.ticketUrl} target="_blank" rel="noreferrer" style={linkStyle} onClick={e => e.stopPropagation()}>{node.title}</a>
-                      : node.title}
-                  </td>
-                  <td style={tdStyle}>{formatNodeStatus(node, displayStatusGroups)}</td>
-                  <td style={tdStyle}>{leverage}</td>
-                  <td style={{ ...tdStyle, color: 'var(--vscode-descriptionForeground)', fontSize: 11 }}>{serves || '—'}</td>
-                  <td style={{ ...tdStyle, color: isReady ? 'var(--vscode-charts-green)' : 'var(--vscode-descriptionForeground)' }}>
-                    {isReady ? 'Ready' : 'Blocked'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        </DataTableFrame>
       )}
-    </div>
+    </Stack>
   )
-}
-
-const containerStyle: React.CSSProperties = {
-  padding: '8px 12px',
-}
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--vscode-foreground)',
-  marginBottom: 8,
-}
-
-const emptyStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: 'var(--vscode-descriptionForeground)',
-  padding: '4px 0',
-}
-
-const tableStyle: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  fontSize: 12,
-}
-
-const thStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  textAlign: 'left',
-  color: 'var(--vscode-descriptionForeground)',
-  fontWeight: 600,
-  borderBottom: '1px solid var(--vscode-panel-border)',
-  whiteSpace: 'nowrap',
-}
-
-const tdStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  borderBottom: '1px solid var(--vscode-panel-border)',
-  verticalAlign: 'middle',
-}
-
-const linkStyle: React.CSSProperties = {
-  color: 'var(--vscode-textLink-foreground)',
-  textDecoration: 'none',
 }

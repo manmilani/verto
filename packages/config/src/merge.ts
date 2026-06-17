@@ -13,11 +13,8 @@ export function mergeUi(
 
   const merged: UiConfig = { ...defaultsUi }
   if (workspaceUi) {
-    for (const key of Object.keys(workspaceUi) as (keyof UiConfig)[]) {
-      const value = workspaceUi[key]
-      if (value !== undefined) {
-        merged[key] = value
-      }
+    if (workspaceUi.displayStatusGroups !== undefined) {
+      merged.displayStatusGroups = workspaceUi.displayStatusGroups
     }
   }
 

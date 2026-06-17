@@ -27,6 +27,7 @@ interface VertoState {
   displayStatusGroups: DisplayStatusGroup[]
   parsedEnabled: boolean
   priorityOverlayActive: boolean
+  projectName: string
   lens: Lens
   focusedNode?: string
   ncnHighlightedSliceId?: string
@@ -41,6 +42,7 @@ export function useVertoState() {
     displayStatusGroups: [],
     parsedEnabled: true,
     priorityOverlayActive: false,
+    projectName: 'Verto',
     lens: 'deliveryMap',
   })
 
@@ -111,6 +113,7 @@ export function useVertoState() {
             displayStatusGroups: msg.displayStatusGroups,
             parsedEnabled: msg.parsedEnabled,
             priorityOverlayActive: msg.priorityOverlayActive,
+            projectName: msg.projectName,
             lens,
             focusedNode,
             ncnHighlightedSliceId,

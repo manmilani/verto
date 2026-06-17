@@ -1,25 +1,36 @@
 import React, { useMemo } from 'react'
-import type { DeliveryMapBundle } from '@verto/core'
+import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import { nodeWeight } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
 import {
   resolveDisplayStatusGroup, resolveDisplayStatusGroupIndex,
   isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP,
+  pillToneForNode, formatDisplayGroupsProse,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
+import { deliveryMapStats } from '../bundleMetrics.js'
+import {
+  H1, H2, Text, Stack, Row, Grid, Stat, Divider, Callout, BorderedBox,
+  StatusLegend, Spacer, Pill, buildTone, pct, rowToneFor,
+  DataTableFrame, dataTableStyle, dataTableThStyle, dataTableThCompactStyle,
+  dataTableTdStyle, dataTableTdCompactStyle, dataTableTdWorkItemStyle, dataTableTdWrapStyle,
+  dataTableRowStyle, StatusDot, completionDotColor, dataTableColWidthForHeader,
+} from '../components/ui.js'
 
 interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
+  projectName: string
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
-  /** When a slice pill is clicked, also update the NCN journey highlight. */
   onHighlightSlice?: (sliceId: string | undefined) => void
 }
 
-export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocusedNode, onHighlightSlice }: Props) {
+export function DeliveryMap({
+  bundle, displayStatusGroups, projectName, focusedNode, setFocusedNode, onHighlightSlice,
+}: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
   const allGroups = useMemo(
@@ -33,123 +44,178 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
       (bundle.deliveryCompleteness?.[a.id] ?? 0),
   )
 
+  const dmStats = deliveryMapStats(bundle, displayStatusGroups)
+
   if (slices.length === 0) {
     return (
-      <div style={emptyStyle}>No delivery slices found.</div>
+      <div style={{ padding: 24, color: 'var(--vscode-descriptionForeground)' }}>
+        No delivery slices found.
+      </div>
     )
   }
 
   const slice = graph.nodes.find(n => n.id === focusedNode) ?? slices[0]
   const pipeline = buildPipelineForSlice(slice.id, graph, implOrder)
+  const scomp = bundle.deliveryCompleteness?.[slice.id] ?? 0
+  const gaps = pipeline.filter(row => isGap(row, displayStatusGroups))
+
+  const sc = countPipeline(pipeline, displayStatusGroups)
+
+  const solidSlices = slices.filter(s => (bundle.deliveryCompleteness?.[s.id] ?? 0) >= 0.7)
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Slice pill selector */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {slices.map(s => {
-          const active = s.id === slice.id
-          const groupIdx = resolveDisplayStatusGroupIndex(s, displayStatusGroups)
-          const accentColor = statusGroupColor(groupIdx)
-          const pct = bundle.deliveryCompleteness?.[s.id] ?? 0
-          return (
-            <button
-              key={s.id}
-              onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
-              style={{
-                ...slicePillStyle,
-                background: active ? accentColor : 'var(--vscode-editor-background)',
-                color: active ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)',
-                borderColor: active ? 'transparent' : `${accentColor}4d`,
-              }}
+    <Stack gap={20} style={{ padding: 24, maxWidth: 1180, margin: '0 auto' }}>
+      <Stack gap={6}>
+        <H1>{projectName} — Vertical Delivery Map</H1>
+        <Text tone="secondary">
+          Vertical user journeys for {projectName}, realised through a stack of subsystems; the colour of every step
+          shows whether it is {formatDisplayGroupsProse(displayStatusGroups)}. Pick a journey to walk its
+          delivery pipeline and see exactly what is missing.
+        </Text>
+      </Stack>
+
+      <Grid columns={4} gap={16}>
+        <Stat value={String(dmStats.sliceCount)} label="Vertical journeys mapped" />
+        <Stat
+          value={pct(dmStats.overall)}
+          label="Weighted build coverage"
+          tone={dmStats.overall >= 0.5 ? 'success' : 'warning'}
+        />
+        <Stat
+          value={`${dmStats.built70}/${dmStats.sliceCount}`}
+          label="Journeys ≥70% built"
+          tone="info"
+        />
+        <Stat value={String(dmStats.gapCount)} label="Black-box steps (unbuilt)" tone="danger" />
+      </Grid>
+
+      <Row
+        gap={20}
+        wrap
+        style={{
+          padding: '10px 14px',
+          border: '1px solid var(--vscode-panel-border)',
+          borderRadius: 8,
+        }}
+      >
+        <Text size="small" weight="semibold" tone="secondary">Legend</Text>
+        <StatusLegend displayStatusGroups={displayStatusGroups} />
+        <Spacer />
+        <Text size="small" tone="quaternary">Live data from your tracker</Text>
+      </Row>
+
+      <Stack gap={8}>
+        <H2>Explore a vertical delivery</H2>
+        <Row gap={8} wrap>
+          {slices.map(s => {
+            const c = bundle.deliveryCompleteness?.[s.id] ?? 0
+            return (
+              <Pill
+                key={s.id}
+                active={s.id === slice.id}
+                tone={buildTone(c)}
+                onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
+                title={`${pct(c)} built`}
+              >
+                {s.title}
+              </Pill>
+            )
+          })}
+        </Row>
+      </Stack>
+
+      <BorderedBox>
+        <Stack gap={12}>
+          <Row gap={12} wrap align="flex-start">
+            <Stack gap={2} style={{ flex: 1, minWidth: 240 }}>
+              <Text weight="bold" style={{ fontSize: 18 }}>{slice.title}</Text>
+              {slice.personas && slice.personas.length > 0 && (
+                <Text size="small" tone="tertiary">{slice.personas.join(', ')}</Text>
+              )}
+            </Stack>
+            <Stat
+              value={pct(scomp)}
+              label="Journey build"
+              tone={rowToneFor(scomp) === 'danger' ? 'danger' : rowToneFor(scomp)}
+            />
+          </Row>
+
+          {slice._outcome && (
+            <Text italic tone="secondary">{slice._outcome}</Text>
+          )}
+
+          <UsageBar pipeline={pipeline} allGroups={allGroups} displayStatusGroups={displayStatusGroups} />
+
+          <Divider />
+
+          <Text size="small" tone="secondary" weight="semibold">
+            Delivery pipeline — how this journey is (or would be) realised, top to bottom
+          </Text>
+          <Stack gap={0}>
+            {pipeline.length === 0 ? (
+              <Text size="small" tone="tertiary">No pipeline items.</Text>
+            ) : (
+              pipeline.map((row, i) => (
+                <PipelineStep
+                  key={row.id}
+                  row={row}
+                  index={i}
+                  last={i === pipeline.length - 1}
+                  displayStatusGroups={displayStatusGroups}
+                />
+              ))
+            )}
+          </Stack>
+
+          {gaps.length > 0 && (
+            <Callout
+              tone={sc.gap > 0 ? 'danger' : 'warning'}
+              title={`What's missing to fully deliver "${slice.title}" (${gaps.length} of ${pipeline.length} steps)`}
             >
-              <span>{s.title}</span>
-              {/* Completion bar */}
-              <div style={{ width: '100%', height: 3, marginTop: 3, background: 'var(--vscode-editorWidget-border)', borderRadius: 2 }}>
-                <div style={{ width: `${pct * 100}%`, height: '100%', background: 'var(--vscode-charts-green)', borderRadius: 2 }} />
-              </div>
-            </button>
-          )
-        })}
-      </div>
+              <Stack gap={4}>
+                {gaps.map(g => (
+                  <Text key={g.id} size="small">
+                    <Text as="span" weight="semibold">{formatNodeStatus(g, displayStatusGroups)}:</Text>{' '}
+                    {g.title}
+                  </Text>
+                ))}
+              </Stack>
+            </Callout>
+          )}
+        </Stack>
+      </BorderedBox>
 
-      {/* Slice header */}
-      <div>
-        {slice.personas && slice.personas.length > 0 && (
-          <div style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)', marginBottom: 4 }}>
-            {slice.personas.join(', ')}
-          </div>
-        )}
-        <h2 style={{ margin: 0, fontSize: 16, color: 'var(--vscode-foreground)' }}>
-          {slice.title}
-        </h2>
-        {slice._outcome && (
-          <div style={{ marginTop: 6, fontSize: 13, color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' }}>
-            {slice._outcome}
-          </div>
-        )}
-      </div>
+      <Divider />
 
-      {/* UsageBar — focused slice */}
-      <UsageBar pipeline={pipeline} allGroups={allGroups} displayStatusGroups={displayStatusGroups} />
-
-      {/* Gap callouts — focused slice */}
-      <GapCallouts pipeline={pipeline} displayStatusGroups={displayStatusGroups} />
-
-      {/* Pipeline */}
-      <section>
-        <h3 style={sectionHeadingStyle}>Pipeline</h3>
-        {pipeline.length === 0 ? (
-          <div style={emptyStyle}>No pipeline items.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {pipeline.map(row => {
-              const pct = row.nodeType === 'parsed'
-                ? (row.isDone ? 100 : 0)
-                : Math.round((bundle.deliveryCompleteness?.[row.id] ?? 0) * 100)
-              const groupIdx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
-              const dotColor = statusGroupColor(groupIdx)
-              return (
-                <div key={row.id} style={pipelineRowStyle}>
-                  <span
-                    style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: dotColor,
-                      flexShrink: 0, marginTop: 2,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: 'var(--vscode-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.title}
-                    </div>
-                    {row._note && (
-                      <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginTop: 1 }}>
-                        {row._note}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', whiteSpace: 'nowrap' }}>
-                    {formatNodeStatus(row, displayStatusGroups)}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', whiteSpace: 'nowrap', minWidth: 32, textAlign: 'right' }}>
-                    {pct}%
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Portfolio table — all slices */}
-      <section>
-        <h3 style={sectionHeadingStyle}>Portfolio</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <Stack gap={8}>
+        <H2>Full portfolio at a glance</H2>
+        <Text size="small" tone="tertiary">
+          All vertical deliveries ranked by build coverage. Click a journey to open its pipeline above. Counts are
+          subsystem steps per status.
+        </Text>
+        <DataTableFrame>
+          <table style={dataTableStyle}>
+            <colgroup>
+              <col />
+              <col style={dataTableColWidthForHeader('Primary user', 8)} />
+              <col style={dataTableColWidthForHeader('Build')} />
+              {allGroups.map(col => (
+                <col key={col} style={dataTableColWidthForHeader(col)} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th style={thStyle}>Slice</th>
-                {allGroups.map(col => (
-                  <th key={col} style={{ ...thStyle, textAlign: 'right' }}>{col}</th>
+                {['Vertical delivery', 'Primary user', 'Build', ...allGroups].map((h, i) => (
+                  <th
+                    key={h}
+                    style={{
+                      ...dataTableThStyle,
+                      ...(i > 1 ? dataTableThCompactStyle : undefined),
+                      ...(i > 1 ? { textAlign: 'right' } : undefined),
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -162,19 +228,39 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
                   const col = resolveDisplayStatusGroup(row, displayStatusGroups)
                   counts[col] = (counts[col] ?? 0) + 1
                 }
-                const active = s.id === slice.id
+                const comp = bundle.deliveryCompleteness?.[s.id] ?? 0
+                const isSelected = s.id === slice.id
+                const primaryUser = s.personas.length > 0 ? s.personas.join(' / ') : '—'
                 return (
-                  <tr key={s.id} style={{ background: active ? 'var(--vscode-list-activeSelectionBackground)' : undefined }}>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => setFocusedNode(s.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--vscode-foreground)', cursor: 'pointer', fontSize: 12, padding: 0, textAlign: 'left' }}
-                      >
-                        {s.title}
-                      </button>
+                  <tr
+                    key={s.id}
+                    onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
+                    style={dataTableRowStyle(isSelected)}
+                  >
+                    <td style={dataTableTdWorkItemStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <StatusDot color={completionDotColor(comp)} />
+                        <Pill
+                          active={isSelected}
+                          tone={buildTone(comp)}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setFocusedNode(s.id)
+                            onHighlightSlice?.(s.id)
+                          }}
+                        >
+                          {s.title}
+                        </Pill>
+                      </div>
+                    </td>
+                    <td style={dataTableTdWrapStyle}>
+                      <Text size="small" tone="secondary">{primaryUser}</Text>
+                    </td>
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>
+                      <Text weight="semibold">{pct(comp)}</Text>
                     </td>
                     {allGroups.map(col => (
-                      <td key={col} style={{ ...tdStyle, textAlign: 'right' }}>
+                      <td key={col} style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>
                         {counts[col] ?? 0}
                       </td>
                     ))}
@@ -183,14 +269,113 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
               })}
             </tbody>
           </table>
+        </DataTableFrame>
+      </Stack>
+
+      {solidSlices.length > 0 && (
+        <Callout tone="success" title="What is genuinely solid today">
+          <Stack gap={4}>
+            {solidSlices.map(s => (
+              <Text key={s.id} size="small">
+                <Text as="span" weight="semibold">{s.title}</Text> — {pct(bundle.deliveryCompleteness?.[s.id] ?? 0)} built
+              </Text>
+            ))}
+          </Stack>
+        </Callout>
+      )}
+    </Stack>
+  )
+}
+
+function countPipeline(
+  pipeline: VertoNode[],
+  displayStatusGroups: DisplayStatusGroup[],
+): { done: number; partial: number; designed: number; gap: number } {
+  const c = { done: 0, partial: 0, designed: 0, gap: 0 }
+  for (const row of pipeline) {
+    if (row.isDone) { c.done++; continue }
+    if (isGap(row, displayStatusGroups)) { c.gap++; continue }
+    const idx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
+    if (idx === 1) c.partial++
+    else c.designed++
+  }
+  return c
+}
+
+function PipelineStep({
+  row, index, last, displayStatusGroups,
+}: {
+  row: VertoNode
+  index: number
+  last: boolean
+  displayStatusGroups: DisplayStatusGroup[]
+}) {
+  const groupIdx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
+  const dotColor = statusGroupColor(groupIdx)
+  const isMissing = isGap(row, displayStatusGroups)
+
+  return (
+    <Row gap={12} align="stretch">
+      <div style={{ position: 'relative', width: 26, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+        {!last && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 18,
+              bottom: -14,
+              width: 2,
+              background: 'var(--vscode-panel-border)',
+            }}
+          />
+        )}
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            marginTop: 8,
+            width: 20,
+            height: 20,
+            borderRadius: 999,
+            background: dotColor,
+            color: 'var(--vscode-editor-background)',
+            fontSize: 11,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '2px solid var(--vscode-editor-background)',
+          }}
+        >
+          {index + 1}
         </div>
-      </section>
-    </div>
+      </div>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          border: '1px solid var(--vscode-panel-border)',
+          borderRadius: 8,
+          padding: '8px 12px',
+          marginBottom: 6,
+          background: isMissing ? 'var(--vscode-input-background)' : 'transparent',
+        }}
+      >
+        <Row gap={8} align="center">
+          <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{row.title}</Text>
+          <Pill size="sm" tone={pillToneForNode(row, displayStatusGroups)} active>
+            {formatNodeStatus(row, displayStatusGroups)}
+          </Pill>
+        </Row>
+        {row._note && (
+          <Text size="small" tone="tertiary" style={{ marginTop: 2 }}>{row._note}</Text>
+        )}
+      </div>
+    </Row>
   )
 }
 
 function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
-  pipeline: ReturnType<typeof buildPipelineForSlice>
+  pipeline: VertoNode[]
   allGroups: string[]
   displayStatusGroups: DisplayStatusGroup[]
 }) {
@@ -203,9 +388,16 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
   const total = Object.values(weights).reduce((a, b) => a + b, 0)
   if (total === 0) return null
 
+  const counts = countPipeline(pipeline, displayStatusGroups)
+
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginBottom: 4 }}>Usage</div>
+      <Row gap={8} style={{ marginBottom: 4 }}>
+        <Text size="small" tone="secondary" weight="semibold" style={{ flex: 1 }}>Subsystem build mix</Text>
+        <Text size="small" tone="tertiary">
+          {counts.done} built · {counts.partial} partial · {counts.designed} spec&apos;d · {counts.gap} black box
+        </Text>
+      </Row>
       <div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
         {allGroups.map(col => {
           const w = weights[col] ?? 0
@@ -217,16 +409,12 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
             <div
               key={col}
               title={`${col}: ${w}`}
-              style={{
-                flex: w / total,
-                background: statusGroupColor(groupIdx),
-                minWidth: 2,
-              }}
+              style={{ flex: w / total, background: statusGroupColor(groupIdx), minWidth: 2 }}
             />
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+      <Row gap={12} wrap style={{ marginTop: 4 }}>
         {allGroups.map(col => {
           const w = weights[col] ?? 0
           if (w === 0) return null
@@ -234,80 +422,13 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
             ? -1
             : displayStatusGroups.findIndex(g => g.label === col)
           return (
-            <span key={col} style={{ fontSize: 10, color: 'var(--vscode-descriptionForeground)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: statusGroupColor(groupIdx), display: 'inline-block' }} />
-              {col}
-            </span>
+            <Row key={col} gap={4}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: statusGroupColor(groupIdx) }} />
+              <Text size="small" tone="tertiary">{col}</Text>
+            </Row>
           )
         })}
-      </div>
+      </Row>
     </div>
   )
-}
-
-function GapCallouts({ pipeline, displayStatusGroups }: { pipeline: ReturnType<typeof buildPipelineForSlice>, displayStatusGroups: DisplayStatusGroup[] }) {
-  const gaps = pipeline.filter(row => isGap(row, displayStatusGroups))
-  if (gaps.length === 0) return null
-  return (
-    <div style={{ borderLeft: '3px solid var(--vscode-charts-yellow)', paddingLeft: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vscode-foreground)', marginBottom: 6 }}>
-        Gaps ({gaps.length})
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {gaps.map(row => (
-          <div key={row.id} style={{ fontSize: 12, color: 'var(--vscode-descriptionForeground)' }}>
-            {row.title}{row._note ? ` — ${row._note}` : ''}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const emptyStyle: React.CSSProperties = {
-  color: 'var(--vscode-descriptionForeground)',
-  fontSize: 13,
-  padding: 12,
-}
-
-const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: 'var(--vscode-foreground)',
-  margin: '0 0 8px 0',
-}
-
-const slicePillStyle: React.CSSProperties = {
-  border: '1px solid',
-  borderRadius: 14,
-  padding: '4px 14px',
-  cursor: 'pointer',
-  fontSize: 12,
-  display: 'inline-flex',
-  flexDirection: 'column',
-  alignItems: 'stretch',
-  minWidth: 80,
-}
-
-const pipelineRowStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: 8,
-  padding: '6px 8px',
-  borderRadius: 4,
-  background: 'var(--vscode-editor-background)',
-}
-
-const thStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  textAlign: 'left',
-  color: 'var(--vscode-descriptionForeground)',
-  fontWeight: 600,
-  borderBottom: '1px solid var(--vscode-panel-border)',
-}
-
-const tdStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  borderBottom: '1px solid var(--vscode-panel-border)',
-  color: 'var(--vscode-foreground)',
 }
