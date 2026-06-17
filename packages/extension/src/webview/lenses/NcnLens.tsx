@@ -1,6 +1,6 @@
 import React from 'react'
 import type { DeliveryMapBundle } from '@verto/core'
-import type { DisplayStatusGroup } from '@verto/config'
+import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 import type { NcnTableView } from '../../shared/protocol.js'
 import { NcnGraph } from './NcnGraph.js'
 import { ImplementationOrderTable } from './ImplementationOrderTable.js'
@@ -17,6 +17,8 @@ interface Props {
   displayStatusGroups: DisplayStatusGroup[]
   projectName: string
   priorityOverlayActive: boolean
+  journeyPriorityOverlay: Record<string, number>
+  priorityOptionHints: PriorityOptionHints
   tableView: NcnTableView
   onTableViewChange: (view: NcnTableView) => void
   highlightedSliceId?: string
@@ -28,6 +30,7 @@ interface Props {
 
 export function NcnLens({
   bundle, displayStatusGroups, projectName, priorityOverlayActive,
+  journeyPriorityOverlay, priorityOptionHints,
   tableView, onTableViewChange,
   highlightedSliceId, focusedNcnNodeId,
   onFocusNode, onHighlightSlice, onSetPriority,
@@ -175,6 +178,8 @@ export function NcnLens({
             <PriorityEditor
               bundle={bundle}
               priorityOverlayActive={priorityOverlayActive}
+              journeyPriorityOverlay={journeyPriorityOverlay}
+              priorityOptionHints={priorityOptionHints}
               onSetPriority={onSetPriority}
             />
 

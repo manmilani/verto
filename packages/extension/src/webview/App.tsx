@@ -9,7 +9,8 @@ export default function App() {
     status, isRefreshing, bundle, displayStatusGroups, parsedEnabled,
     projectName,
     lens, focusedNode, errorMessage,
-    ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive, ncnTableView,
+    ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive,
+    journeyPriorityOverlay, priorityOptionHints, ncnTableView,
     setLens, setFocusedNode, setParsedEnabled,
     setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
@@ -90,6 +91,8 @@ export default function App() {
             displayStatusGroups={displayStatusGroups}
             projectName={projectName}
             priorityOverlayActive={priorityOverlayActive}
+            journeyPriorityOverlay={journeyPriorityOverlay}
+            priorityOptionHints={priorityOptionHints}
             tableView={ncnTableView}
             onTableViewChange={setNcnTableView}
             highlightedSliceId={ncnHighlightedSliceId}

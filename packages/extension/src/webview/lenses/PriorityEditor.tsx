@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useMemo, useState, useRef, useEffect } from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
+import type { PriorityOptionHints } from '@verto/config/priority-hints'
+import {
+  allPriorityLevels,
+  formatPriorityLevelCode,
+  formatPriorityOptionHint,
+  formatPriorityOptionLabel,
+} from '@verto/config/priority-hints'
 import {
   Stack, Row, Text, BorderedBox,
 } from '../components/ui.js'
@@ -7,18 +14,30 @@ import {
 interface Props {
   bundle: DeliveryMapBundle
   priorityOverlayActive: boolean
+  journeyPriorityOverlay: Record<string, number>
+  priorityOptionHints: PriorityOptionHints
   onSetPriority: (sliceId: string, priority: number | null) => void
 }
 
-function compareSlicePriority(a: VertoNode, b: VertoNode): number {
+function compareSlicePriority(
+  a: VertoNode,
+  b: VertoNode,
+  overlay: Record<string, number>,
+): number {
+  const pa = overlay[a.id] ?? Infinity
+  const pb = overlay[b.id] ?? Infinity
+  if (pa !== pb) return pa - pb
   if (a.priority !== b.priority) return a.priority - b.priority
   return a.title.localeCompare(b.title)
 }
 
-export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }: Props) {
+export function PriorityEditor({
+  bundle, priorityOverlayActive, journeyPriorityOverlay, priorityOptionHints, onSetPriority,
+}: Props) {
   const slices = useMemo(
-    () => [...bundle.graph.nodes.filter(n => n.isDeliverySlice)].sort(compareSlicePriority),
-    [bundle],
+    () => [...bundle.graph.nodes.filter(n => n.isDeliverySlice)]
+      .sort((a, b) => compareSlicePriority(a, b, journeyPriorityOverlay)),
+    [bundle, journeyPriorityOverlay],
   )
 
   if (slices.length === 0) return null
@@ -41,7 +60,7 @@ export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }:
 
         {!priorityOverlayActive ? (
           <Text size="small" tone="quaternary">
-            No custom priorities set — every journey is weighted equally. Enter a priority (1–9, lower = more important)
+            No custom priorities set — every journey is weighted equally. Select a priority (1–9, lower = more important)
             for any journey to lift its closure.
           </Text>
         ) : (
@@ -54,15 +73,21 @@ export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }:
           {slices.map(s => (
             <Row
               key={s.id}
-              gap={8}
+              gap={10}
+              align="center"
               style={{
                 padding: '6px 10px',
                 border: '1px solid var(--vscode-panel-border)',
                 borderRadius: 8,
               }}
             >
+              <PrioritySelect
+                sliceId={s.id}
+                overlayValue={journeyPriorityOverlay[s.id]}
+                priorityOptionHints={priorityOptionHints}
+                onSetPriority={onSetPriority}
+              />
               <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{s.title}</Text>
-              <PriorityInput slice={s} onSetPriority={onSetPriority} />
             </Row>
           ))}
         </Stack>
@@ -71,75 +96,158 @@ export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }:
   )
 }
 
-function PriorityInput({
-  slice,
-  onSetPriority,
+function PriorityOptionLabel({
+  level,
+  priorityOptionHints,
 }: {
-  slice: VertoNode
-  onSetPriority: (sliceId: string, priority: number | null) => void
+  level: number | null
+  priorityOptionHints: PriorityOptionHints
 }) {
-  const [localValue, setLocalValue] = useState(String(slice.priority))
-  const inputRef = useRef<HTMLInputElement>(null)
-  const hoveredRef = useRef(false)
-
-  useEffect(() => {
-    setLocalValue(String(slice.priority))
-  }, [slice.priority])
-
-  useEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-
-    const onWheel = (e: WheelEvent) => {
-      if (document.activeElement !== el || !hoveredRef.current) return
-      e.preventDefault()
-      e.stopPropagation()
-
-      const raw = el.value.trim()
-      const current = raw === '' ? NaN : parseInt(raw, 10)
-      const base = Number.isNaN(current) ? 5 : current
-      const next = Math.min(9, Math.max(1, base + (e.deltaY < 0 ? -1 : 1)))
-      setLocalValue(String(next))
-      onSetPriority(slice.id, next)
-    }
-
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [slice.id, onSetPriority])
-
+  if (level === null) {
+    return <Text as="span" tone="quaternary">—</Text>
+  }
+  const hint = formatPriorityOptionHint(level, priorityOptionHints)
   return (
-    <input
-      ref={inputRef}
-      type="number"
-      min={1}
-      max={9}
-      placeholder="—"
-      title="Priority 1–9 (lower = more important); scroll to adjust when focused"
-      value={localValue}
-      style={inputStyle}
-      onMouseEnter={() => { hoveredRef.current = true }}
-      onMouseLeave={() => { hoveredRef.current = false }}
-      onChange={e => setLocalValue(e.target.value)}
-      onBlur={e => {
-        const raw = e.target.value.trim()
-        if (raw === '') {
-          onSetPriority(slice.id, null)
-        } else {
-          const parsed = parseInt(raw, 10)
-          onSetPriority(slice.id, Number.isNaN(parsed) ? null : parsed)
-        }
-      }}
-    />
+    <>
+      <Text as="span">{formatPriorityLevelCode(level)}</Text>
+      {hint !== undefined && (
+        <Text as="span" tone="quaternary"> ({hint})</Text>
+      )}
+    </>
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  width: 48,
+function PrioritySelect({
+  sliceId,
+  overlayValue,
+  priorityOptionHints,
+  onSetPriority,
+}: {
+  sliceId: string
+  overlayValue?: number
+  priorityOptionHints: PriorityOptionHints
+  onSetPriority: (sliceId: string, priority: number | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [hoveredOption, setHoveredOption] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setHoveredOption(null)
+      return
+    }
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
+
+  function choose(value: number | null) {
+    onSetPriority(sliceId, value)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', flexShrink: 0, minWidth: 168 }}>
+      <button
+        type="button"
+        title="Priority 1–9 (lower = more important); — = not prioritised"
+        style={triggerStyle}
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <PriorityOptionLabel
+          level={overlayValue ?? null}
+          priorityOptionHints={priorityOptionHints}
+        />
+        <span style={{ marginLeft: 8, opacity: 0.6 }} aria-hidden>▾</span>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          style={menuStyle}
+          onMouseLeave={() => setHoveredOption(null)}
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={overlayValue === undefined}
+            style={optionStyle(overlayValue === undefined, hoveredOption === 'none')}
+            onMouseEnter={() => setHoveredOption('none')}
+            onClick={() => choose(null)}
+          >
+            <Text as="span" tone="quaternary">—</Text>
+          </button>
+          {allPriorityLevels().map(level => {
+            const key = String(level)
+            return (
+              <button
+                key={level}
+                type="button"
+                role="option"
+                aria-selected={overlayValue === level}
+                style={optionStyle(overlayValue === level, hoveredOption === key)}
+                onMouseEnter={() => setHoveredOption(key)}
+                onClick={() => choose(level)}
+                title={formatPriorityOptionLabel(level, priorityOptionHints)}
+              >
+                <PriorityOptionLabel level={level} priorityOptionHints={priorityOptionHints} />
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const triggerStyle: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
   fontSize: 12,
-  padding: '4px 6px',
-  background: 'var(--vscode-input-background)',
-  color: 'var(--vscode-input-foreground)',
-  border: '1px solid var(--vscode-input-border)',
+  padding: '4px 8px',
+  background: 'var(--vscode-dropdown-background)',
+  color: 'var(--vscode-dropdown-foreground)',
+  border: '1px solid var(--vscode-dropdown-border)',
   borderRadius: 4,
-  flexShrink: 0,
+  cursor: 'pointer',
+  textAlign: 'left',
+}
+
+const menuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 2px)',
+  left: 0,
+  zIndex: 20,
+  minWidth: '100%',
+  maxHeight: 280,
+  overflowY: 'auto',
+  background: 'var(--vscode-dropdown-background)',
+  border: '1px solid var(--vscode-dropdown-border)',
+  borderRadius: 4,
+  boxShadow: '0 4px 12px color-mix(in srgb, var(--vscode-widget-shadow) 40%, transparent)',
+}
+
+function optionStyle(isSelected: boolean, isHovered: boolean): React.CSSProperties {
+  return {
+    display: 'block',
+    width: '100%',
+    padding: '6px 10px',
+    fontSize: 12,
+    textAlign: 'left',
+    border: 'none',
+    background: isHovered
+      ? 'var(--vscode-list-hoverBackground)'
+      : isSelected
+        ? 'color-mix(in srgb, var(--vscode-list-activeSelectionBackground) 28%, var(--vscode-editor-background))'
+        : 'transparent',
+    color: 'var(--vscode-dropdown-foreground)',
+    cursor: 'pointer',
+  }
 }

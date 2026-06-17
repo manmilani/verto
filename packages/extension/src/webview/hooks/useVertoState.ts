@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { DeliveryMapBundle } from '@verto/core'
-import type { DisplayStatusGroup } from '@verto/config'
+import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 import type {
   HostToWebviewMessage,
   WebviewToHostMessage,
@@ -28,6 +28,8 @@ interface VertoState {
   displayStatusGroups: DisplayStatusGroup[]
   parsedEnabled: boolean
   priorityOverlayActive: boolean
+  journeyPriorityOverlay: Record<string, number>
+  priorityOptionHints: PriorityOptionHints
   projectName: string
   lens: Lens
   focusedNode?: string
@@ -44,6 +46,8 @@ export function useVertoState() {
     displayStatusGroups: [],
     parsedEnabled: true,
     priorityOverlayActive: false,
+    journeyPriorityOverlay: {},
+    priorityOptionHints: {},
     projectName: 'Verto',
     lens: 'deliveryMap',
     ncnTableView: 'leverage',
@@ -122,6 +126,8 @@ export function useVertoState() {
             displayStatusGroups: msg.displayStatusGroups,
             parsedEnabled: msg.parsedEnabled,
             priorityOverlayActive: msg.priorityOverlayActive,
+            journeyPriorityOverlay: msg.journeyPriorityOverlay,
+            priorityOptionHints: msg.priorityOptionHints,
             projectName: msg.projectName,
             lens,
             focusedNode,

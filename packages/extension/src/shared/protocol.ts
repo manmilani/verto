@@ -1,5 +1,5 @@
 import type { DeliveryMapBundle } from '@verto/core'
-import type { DisplayStatusGroup } from '@verto/config'
+import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 
 export type Lens = 'deliveryMap' | 'ncnGraph'
 
@@ -17,6 +17,8 @@ export interface PersistedPanelState {
 export type HostToWebviewMessage =
   | { type: 'update'; bundle: DeliveryMapBundle; displayStatusGroups: DisplayStatusGroup[];
       parsedEnabled: boolean; priorityOverlayActive: boolean; projectName: string;
+      journeyPriorityOverlay: Record<string, number>;
+      priorityOptionHints: PriorityOptionHints;
       restoredState?: PersistedPanelState }
   | { type: 'loading' }
   | { type: 'error'; message: string }

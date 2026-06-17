@@ -197,7 +197,7 @@ export function ImplementationOrderTable({
         <DataTableFrame>
           <table style={dataTableStyle}>
             <colgroup>
-              <col style={{ width: '2.75rem' }} />
+              <col style={indexColWidth} />
               <col style={dataTableColWidthForHeader('Priority')} />
               <col />
               <col style={dataTableColWidthForHeader('Ready now')} />
@@ -213,7 +213,7 @@ export function ImplementationOrderTable({
                     style={{
                       ...dataTableThStyle,
                       ...(i !== 2 && i !== 6 ? dataTableThCompactStyle : undefined),
-                      ...(i === 0 ? { textAlign: 'right' } : undefined),
+                      ...(i === 0 ? { textAlign: 'right', ...indexColPadding } : undefined),
                       ...(i === 5 ? { textAlign: 'center' } : undefined),
                     }}
                   >
@@ -240,7 +240,7 @@ export function ImplementationOrderTable({
                     onClick={() => onFocusNode(id)}
                     style={rowStyle(isFocused)}
                   >
-                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right', ...indexColPadding }}>
                       <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} />
                     </td>
                     <td style={dataTableTdCompactStyle}>
@@ -286,3 +286,7 @@ export function ImplementationOrderTable({
     </Stack>
   )
 }
+
+/** Dot + up to three-digit index; extra left padding keeps content off the table edge. */
+const indexColWidth: React.CSSProperties = { width: '3.5rem' }
+const indexColPadding: React.CSSProperties = { paddingLeft: 8 }

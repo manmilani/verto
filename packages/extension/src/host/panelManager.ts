@@ -123,13 +123,16 @@ export class PanelManager {
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, displayStatusGroups, projectName } = await runPipeline(config, token, parsedEnabled, this.overlay)
+      const { bundle, displayStatusGroups, projectName, priorityOptionHints } = await runPipeline(config, token, parsedEnabled, this.overlay)
       if (seq !== this.fetchSeq) return
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
       }
       const restoredState = this.context.workspaceState.get<PersistedPanelState>(STATE_KEY_PANEL)
       const priorityOverlayActive = Object.values(this.overlay).some(v => v !== null)
+      const journeyPriorityOverlay = Object.fromEntries(
+        Object.entries(this.overlay).filter((entry): entry is [string, number] => entry[1] !== null),
+      )
       this.send({
         type: 'update',
         bundle,
@@ -137,6 +140,8 @@ export class PanelManager {
         parsedEnabled,
         priorityOverlayActive,
         projectName,
+        journeyPriorityOverlay,
+        priorityOptionHints,
         restoredState,
       })
     } catch (err) {
