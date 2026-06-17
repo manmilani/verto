@@ -55,33 +55,41 @@ const githubConfigSchema = {
   else: { required: ['repository'] },
 }
 
-const portfolioColumnSourceRuleSchema = {
+const displayStatusGroupSourceRuleSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     isDone: { type: 'boolean' },
-    statuses: { type: 'array', items: { type: 'string' } },
+    statuses: { type: 'array', items: { type: 'string', minLength: 1 } },
   },
 }
 
-const portfolioColumnsSchema = {
+const displayStatusGroupsSchema = {
   type: 'array',
   items: {
     type: 'object',
     required: ['label', 'sources'],
     additionalProperties: false,
     properties: {
-      label: { type: 'string' },
+      label: { type: 'string', minLength: 1 },
       sources: {
         type: 'object',
         minProperties: 1,
         additionalProperties: false,
         properties: {
-          ticket: portfolioColumnSourceRuleSchema,
-          parsed: portfolioColumnSourceRuleSchema,
+          ticket: displayStatusGroupSourceRuleSchema,
+          parsed: displayStatusGroupSourceRuleSchema,
         },
       },
     },
+  },
+}
+
+const uiConfigSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    displayStatusGroups: displayStatusGroupsSchema,
   },
 }
 
@@ -92,7 +100,7 @@ const vertoConfigSchema = {
   properties: {
     adapter: { type: 'string' },
     github: githubConfigSchema,
-    portfolioColumns: portfolioColumnsSchema,
+    ui: uiConfigSchema,
   },
 }
 
@@ -100,8 +108,10 @@ const validate = ajv.compile(vertoConfigSchema)
 
 export function validateVertoConfig(raw: unknown): VertoConfig {
   if (!validate(raw)) {
-    const errors = validate.errors?.map(e => `${e.instancePath} ${e.message}`).join('; ')
-    throw new Error(`Invalid VertoConfig: ${errors}`)
+    const msg =
+      validate.errors?.map(e => `${e.instancePath} ${e.message}`.trim()).join('; ') ?? 'unknown'
+    throw new Error(`Invalid VertoConfig: ${msg}`)
   }
+
   return raw as unknown as VertoConfig
 }

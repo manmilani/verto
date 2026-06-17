@@ -4,10 +4,11 @@ export type {
   GitHubIssueFilter,
   GitHubConfig,
   VertoConfig,
-  PortfolioColumnSourceRule,
-  PortfolioColumn,
+  UiConfig,
+  DisplayStatusGroupSourceRule,
+  DisplayStatusGroup,
 } from './types.js'
 
 export { validateVertoConfig } from './schema.js'
-export { mergeConfigs } from './merge.js'
+export { mergeConfigs, mergeUi } from './merge.js'
 export { parseVertoConfig, readVertoConfigFile } from './parse.js'

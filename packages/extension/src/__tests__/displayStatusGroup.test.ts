@@ -1,87 +1,103 @@
 import { describe, it, expect } from 'vitest'
-import { assignPortfolioColumn, isDoneBucket, isGap } from '../webview/portfolioMatch.js'
-import type { PortfolioColumn } from '@verto/config'
+import { resolveDisplayStatusGroup, isDoneBucket, isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP } from '../webview/displayStatusGroup.js'
+import type { DisplayStatusGroup } from '@verto/config'
 
-// Default columns from defaults.verto.config.jsonc
-const defaultColumns: PortfolioColumn[] = [
+// Default groups from defaults.verto.config.jsonc
+const defaultGroups: DisplayStatusGroup[] = [
   { label: 'Done',        sources: { ticket: { isDone: true },  parsed: { isDone: true } } },
   { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
   { label: 'Raw',         sources: { parsed:  { isDone: false, statuses: ['raw'] } } },
 ]
 
 describe('isDoneBucket', () => {
-  it('identifies Done column as done-bucket', () => {
-    expect(isDoneBucket(defaultColumns[0])).toBe(true)
+  it('identifies Done group as done-bucket', () => {
+    expect(isDoneBucket(defaultGroups[0])).toBe(true)
   })
   it('identifies In Progress as non-done-bucket', () => {
-    expect(isDoneBucket(defaultColumns[1])).toBe(false)
+    expect(isDoneBucket(defaultGroups[1])).toBe(false)
   })
   it('identifies Raw as non-done-bucket', () => {
-    expect(isDoneBucket(defaultColumns[2])).toBe(false)
+    expect(isDoneBucket(defaultGroups[2])).toBe(false)
   })
 })
 
-describe('assignPortfolioColumn', () => {
+describe('resolveDisplayStatusGroup', () => {
   it('done ticket → Done', () => {
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: true, status: 'Done' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('Done')
   })
 
   it('done parsed → Done', () => {
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'parsed', isDone: true, status: 'done' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('Done')
   })
 
   it('in-progress ticket with matching status → In Progress', () => {
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: 'In Progress' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('In Progress')
   })
 
   it('open ticket with non-matching status → In Progress (isDone:false predicate)', () => {
-    // The isDone:false predicate on In Progress matches ANY open ticket, not just those
-    // with status "In Progress". This is the OR semantics — confirm it's correct on dogfood.
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: 'Todo' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('In Progress')
   })
 
   it('open ticket with undefined status → In Progress', () => {
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: undefined },
-      defaultColumns,
+      defaultGroups,
     )).toBe('In Progress')
   })
 
   it('undone parsed with status raw → Raw', () => {
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'parsed', isDone: false, status: 'raw' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('Raw')
   })
 
-  it('ticket with no matching column → Other (custom columns)', () => {
-    const custom: PortfolioColumn[] = [
+  it('ticket with no matching group → Other (custom groups)', () => {
+    const custom: DisplayStatusGroup[] = [
       { label: 'Done', sources: { ticket: { isDone: true } } },
     ]
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: 'Review' },
       custom,
-    )).toBe('Other')
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
   })
 
   it('does not match status in non-done bucket for isDone:true row', () => {
-    // Row is done but In Progress is not a done-bucket — statusMatch must not fire
-    expect(assignPortfolioColumn(
+    expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: true, status: 'In Progress' },
-      defaultColumns,
+      defaultGroups,
     )).toBe('Done')
+  })
+
+  it('undefined status does not match statuses-only rule with empty string', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'EmptyStatus', sources: { ticket: { statuses: [''] } } },
+      { label: 'Done', sources: { ticket: { isDone: true } } },
+    ]
+    expect(resolveDisplayStatusGroup(
+      { nodeType: 'ticket', isDone: false, status: undefined },
+      groups,
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
+  })
+})
+
+describe('groupLabelsWithOther', () => {
+  it('appends Other after configured labels', () => {
+    expect(groupLabelsWithOther(defaultGroups)).toEqual([
+      'Done', 'In Progress', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
+    ])
   })
 })
 
@@ -89,28 +105,28 @@ describe('isGap', () => {
   it('open ticket → gap (In Progress is not a done-bucket)', () => {
     expect(isGap(
       { nodeType: 'ticket', isDone: false, status: 'In Progress' },
-      defaultColumns,
+      defaultGroups,
     )).toBe(true)
   })
 
   it('done ticket → not a gap', () => {
     expect(isGap(
       { nodeType: 'ticket', isDone: true, status: 'Done' },
-      defaultColumns,
+      defaultGroups,
     )).toBe(false)
   })
 
   it('done parsed → not a gap', () => {
     expect(isGap(
       { nodeType: 'parsed', isDone: true, status: 'done' },
-      defaultColumns,
+      defaultGroups,
     )).toBe(false)
   })
 
   it('undone raw parsed → gap', () => {
     expect(isGap(
       { nodeType: 'parsed', isDone: false, status: 'raw' },
-      defaultColumns,
+      defaultGroups,
     )).toBe(true)
   })
 })

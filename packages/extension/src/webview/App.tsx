@@ -6,7 +6,7 @@ import { vscode } from './vscodeApi.js'
 
 export default function App() {
   const {
-    status, bundle, portfolioColumns, parsedEnabled,
+    status, bundle, displayStatusGroups, parsedEnabled,
     lens, focusedNode, errorMessage,
     setLens, setFocusedNode, setParsedEnabled,
   } = useVertoState()
@@ -69,7 +69,7 @@ export default function App() {
         {lens === 'deliveryMap' ? (
           <DeliveryMap
             bundle={bundle}
-            portfolioColumns={portfolioColumns}
+            displayStatusGroups={displayStatusGroups}
             focusedNode={focusedNode}
             setFocusedNode={setFocusedNode}
           />

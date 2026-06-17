@@ -1,5 +1,5 @@
 import type { DeliveryMapBundle } from '@verto/core'
-import type { PortfolioColumn } from '@verto/config'
+import type { DisplayStatusGroup } from '@verto/config'
 
 export type Lens = 'deliveryMap' | 'ncnGraph'
 
@@ -9,7 +9,7 @@ export interface PersistedPanelState {
 }
 
 export type HostToWebviewMessage =
-  | { type: 'update'; bundle: DeliveryMapBundle; portfolioColumns: PortfolioColumn[];
+  | { type: 'update'; bundle: DeliveryMapBundle; displayStatusGroups: DisplayStatusGroup[];
       parsedEnabled: boolean; restoredState?: PersistedPanelState }
   | { type: 'loading' }
   | { type: 'error'; message: string }

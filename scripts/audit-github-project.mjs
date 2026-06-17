@@ -86,11 +86,11 @@ async function auditProjectScope(config) {
     console.warn('[audit] No Priority field found — nodes will default to priority 5')
   }
 
-  // Seed portfolioColumns from discovered Status options.
+  // Seed ui.displayStatusGroups from discovered Status options.
   // Done bucket uses isDone:true (no statuses) since option names are project-specific.
   // Each discovered status option gets its own in-progress ticket bucket.
   // Raw bucket catches undone parsed nodes.
-  const portfolioColumns = [
+  const displayStatusGroups = [
     { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
     ...statusOptions.map(name => ({
       label: name,
@@ -101,7 +101,7 @@ async function auditProjectScope(config) {
 
   const discovered = {
     adapter: 'github',
-    portfolioColumns,
+    ui: { displayStatusGroups },
     github: {
       scope: 'project',
       owner: config.github.owner,

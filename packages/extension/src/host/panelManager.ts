@@ -108,7 +108,7 @@ export class PanelManager {
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, portfolioColumns } = await runPipeline(config, token, parsedEnabled)
+      const { bundle, displayStatusGroups } = await runPipeline(config, token, parsedEnabled)
       if (seq !== this.fetchSeq) return
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
@@ -117,7 +117,7 @@ export class PanelManager {
       this.send({
         type: 'update',
         bundle,
-        portfolioColumns,
+        displayStatusGroups,
         parsedEnabled,
         restoredState,
       })

@@ -26,47 +26,66 @@ describe('parseVertoConfig', () => {
     expect(() => parseVertoConfig('{ broken json')).toThrow()
   })
 
-  it('parses valid portfolioColumns at config root', () => {
+  it('parses valid ui.displayStatusGroups', () => {
     const jsonc = JSON.stringify({
       adapter: 'github',
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
-      portfolioColumns: [
-        { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
-        { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
-        { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
-      ],
+      ui: {
+        displayStatusGroups: [
+          { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+          { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
+          { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+        ],
+      },
     })
     const config = parseVertoConfig(jsonc)
-    expect(config.portfolioColumns).toHaveLength(3)
-    expect(config.portfolioColumns![0].label).toBe('Done')
-    expect(config.portfolioColumns![0].sources.ticket?.isDone).toBe(true)
-    expect(config.portfolioColumns![2].sources.parsed?.statuses).toEqual(['raw'])
+    expect(config.ui?.displayStatusGroups).toHaveLength(3)
+    expect(config.ui?.displayStatusGroups![0].label).toBe('Done')
+    expect(config.ui?.displayStatusGroups![0].sources.ticket?.isDone).toBe(true)
+    expect(config.ui?.displayStatusGroups![2].sources.parsed?.statuses).toEqual(['raw'])
   })
 
-  it('throws on invalid portfolioColumns shape (missing label)', () => {
+  it('throws on invalid displayStatusGroups shape (missing label)', () => {
     const jsonc = JSON.stringify({
       adapter: 'github',
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
-      portfolioColumns: [{ sources: { ticket: { isDone: true } } }],
+      ui: {
+        displayStatusGroups: [{ sources: { ticket: { isDone: true } } }],
+      },
     })
     expect(() => parseVertoConfig(jsonc)).toThrow(/label/)
   })
 
-  it('throws on portfolioColumns column with empty sources object', () => {
+  it('throws on displayStatusGroups column with empty sources object', () => {
     const jsonc = JSON.stringify({
       adapter: 'github',
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
-      portfolioColumns: [{ label: 'Empty', sources: {} }],
+      ui: {
+        displayStatusGroups: [{ label: 'Empty', sources: {} }],
+      },
     })
     expect(() => parseVertoConfig(jsonc)).toThrow()
   })
 
-  it('config without portfolioColumns is valid (optional field)', () => {
+  it('config without ui is valid (optional field)', () => {
     const jsonc = JSON.stringify({
       adapter: 'github',
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
     })
     const config = parseVertoConfig(jsonc)
-    expect(config.portfolioColumns).toBeUndefined()
+    expect(config.ui).toBeUndefined()
+  })
+
+  it('rejects empty string in statuses list', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: { scope: 'project', owner: 'owner', projectNumber: 1 },
+      ui: {
+        displayStatusGroups: [
+          { label: 'Bad', sources: { ticket: { statuses: [''] } } },
+        ],
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).toThrow()
   })
 })

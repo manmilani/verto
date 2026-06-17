@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { DeliveryMapBundle } from '@verto/core'
-import type { PortfolioColumn } from '@verto/config'
+import type { DisplayStatusGroup } from '@verto/config'
 import type {
   HostToWebviewMessage,
   WebviewToHostMessage,
@@ -22,7 +22,7 @@ function defaultFocusedNode(bundle: DeliveryMapBundle): string | undefined {
 interface VertoState {
   status: 'loading' | 'ready' | 'error'
   bundle?: DeliveryMapBundle
-  portfolioColumns: PortfolioColumn[]
+  displayStatusGroups: DisplayStatusGroup[]
   parsedEnabled: boolean
   lens: Lens
   focusedNode?: string
@@ -32,7 +32,7 @@ interface VertoState {
 export function useVertoState() {
   const [state, setState] = useState<VertoState>({
     status: 'loading',
-    portfolioColumns: [],
+    displayStatusGroups: [],
     parsedEnabled: true,
     lens: 'deliveryMap',
   })
@@ -70,7 +70,7 @@ export function useVertoState() {
             ...s,
             status: 'ready',
             bundle: msg.bundle,
-            portfolioColumns: msg.portfolioColumns,
+            displayStatusGroups: msg.displayStatusGroups,
             parsedEnabled: msg.parsedEnabled,
             lens,
             focusedNode,

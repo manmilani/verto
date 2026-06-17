@@ -1,21 +1,25 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import type { DeliveryMapBundle } from '@verto/core'
 import { nodeWeight } from '@verto/core'
-import type { PortfolioColumn } from '@verto/config'
+import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
-import { assignPortfolioColumn, isGap } from '../portfolioMatch.js'
+import { resolveDisplayStatusGroup, isGap, groupLabelsWithOther } from '../displayStatusGroup.js'
 import { statusColor, statusLabel, CHART_COLORS } from '../theme.js'
 
 interface Props {
   bundle: DeliveryMapBundle
-  portfolioColumns: PortfolioColumn[]
+  displayStatusGroups: DisplayStatusGroup[]
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
 }
 
-export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedNode }: Props) {
+export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocusedNode }: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
+  const allGroups = useMemo(
+    () => groupLabelsWithOther(displayStatusGroups),
+    [displayStatusGroups],
+  )
 
   const slices = [...graph.nodes.filter(n => n.isDeliverySlice)].sort(
     (a, b) =>
@@ -31,7 +35,6 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
 
   const slice = graph.nodes.find(n => n.id === focusedNode) ?? slices[0]
   const pipeline = buildPipelineForSlice(slice.id, graph, implOrder)
-  const allColumns = [...portfolioColumns.map(c => c.label), 'Other']
 
   return (
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -74,10 +77,10 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
       </div>
 
       {/* UsageBar — focused slice */}
-      <UsageBar pipeline={pipeline} portfolioColumns={portfolioColumns} />
+      <UsageBar pipeline={pipeline} allGroups={allGroups} displayStatusGroups={displayStatusGroups} />
 
       {/* Gap callouts — focused slice */}
-      <GapCallouts pipeline={pipeline} portfolioColumns={portfolioColumns} />
+      <GapCallouts pipeline={pipeline} displayStatusGroups={displayStatusGroups} />
 
       {/* Pipeline */}
       <section>
@@ -130,7 +133,7 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
             <thead>
               <tr>
                 <th style={thStyle}>Slice</th>
-                {allColumns.map(col => (
+                {allGroups.map(col => (
                   <th key={col} style={{ ...thStyle, textAlign: 'right' }}>{col}</th>
                 ))}
               </tr>
@@ -139,9 +142,9 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
               {slices.map(s => {
                 const rows = buildPipelineForSlice(s.id, graph, implOrder)
                 const counts: Record<string, number> = {}
-                for (const col of allColumns) counts[col] = 0
+                for (const col of allGroups) counts[col] = 0
                 for (const row of rows) {
-                  const col = assignPortfolioColumn(row, portfolioColumns)
+                  const col = resolveDisplayStatusGroup(row, displayStatusGroups)
                   counts[col] = (counts[col] ?? 0) + 1
                 }
                 const active = s.id === slice.id
@@ -155,7 +158,7 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
                         {s.title}
                       </button>
                     </td>
-                    {allColumns.map(col => (
+                    {allGroups.map(col => (
                       <td key={col} style={{ ...tdStyle, textAlign: 'right' }}>
                         {counts[col] ?? 0}
                       </td>
@@ -171,12 +174,15 @@ export function DeliveryMap({ bundle, portfolioColumns, focusedNode, setFocusedN
   )
 }
 
-function UsageBar({ pipeline, portfolioColumns }: { pipeline: ReturnType<typeof buildPipelineForSlice>, portfolioColumns: PortfolioColumn[] }) {
-  const allColumns = [...portfolioColumns.map(c => c.label), 'Other']
+function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
+  pipeline: ReturnType<typeof buildPipelineForSlice>
+  allGroups: string[]
+  displayStatusGroups: DisplayStatusGroup[]
+}) {
   const weights: Record<string, number> = {}
-  for (const col of allColumns) weights[col] = 0
+  for (const col of allGroups) weights[col] = 0
   for (const row of pipeline) {
-    const col = assignPortfolioColumn(row, portfolioColumns)
+    const col = resolveDisplayStatusGroup(row, displayStatusGroups)
     weights[col] = (weights[col] ?? 0) + nodeWeight(row)
   }
   const total = Object.values(weights).reduce((a, b) => a + b, 0)
@@ -186,7 +192,7 @@ function UsageBar({ pipeline, portfolioColumns }: { pipeline: ReturnType<typeof 
     <div>
       <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginBottom: 4 }}>Usage</div>
       <div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
-        {allColumns.map((col, i) => {
+        {allGroups.map((col, i) => {
           const w = weights[col] ?? 0
           if (w === 0) return null
           return (
@@ -203,7 +209,7 @@ function UsageBar({ pipeline, portfolioColumns }: { pipeline: ReturnType<typeof 
         })}
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-        {allColumns.map((col, i) => {
+        {allGroups.map((col, i) => {
           const w = weights[col] ?? 0
           if (w === 0) return null
           return (
@@ -218,8 +224,8 @@ function UsageBar({ pipeline, portfolioColumns }: { pipeline: ReturnType<typeof 
   )
 }
 
-function GapCallouts({ pipeline, portfolioColumns }: { pipeline: ReturnType<typeof buildPipelineForSlice>, portfolioColumns: PortfolioColumn[] }) {
-  const gaps = pipeline.filter(row => isGap(row, portfolioColumns))
+function GapCallouts({ pipeline, displayStatusGroups }: { pipeline: ReturnType<typeof buildPipelineForSlice>, displayStatusGroups: DisplayStatusGroup[] }) {
+  const gaps = pipeline.filter(row => isGap(row, displayStatusGroups))
   if (gaps.length === 0) return null
   return (
     <div style={{ borderLeft: '3px solid var(--vscode-charts-yellow)', paddingLeft: 12 }}>

@@ -111,15 +111,26 @@ The *concepts* are sound and reusable; the *implementation* is not.
 **Deprecated — initial migration aid only.** The copy in
 `deprecated_original_canvas/` explains how we arrived here and may help when
 porting concepts and UI behaviour into Verto. It is explicitly **not** the source
-of truth for the schema, the algorithms, or the UI of the system described in the
+of truth for the **canonical schema, algorithms, or data model** described in the
 rest of this document, and **will eventually be deleted**.
+
+**Exception — Phase 4 UI outcomes.** For Phase 4 “Full UI fidelity”, the deprecated
+canvas is the authoritative **behavioural** reference for **what the user
+experiences** (interaction flows, layout, tables, focus/highlight behaviour). See
+[IMPLEMENTATION.md — Phase 4](./IMPLEMENTATION.md#phase-4--full-ui-fidelity) for the
+fidelity rule and canvas → Verto mapping. Full UI fidelity does not mean to copy the canvas’s
+implementation (code structure, state mechanisms, inline data, Rustybu domain
+content).
 
 ### 1.6 How to read `deprecated_original_canvas/` (during early migration only)
 
-The deprecated original canvas is **not** a specification. While building the
-first Verto extension, you may consult it to understand proven **concepts and UI
-behaviour** — not Rustybu domain content or the target data shape. Do not treat
-it as a living reference beyond that migration phase.
+The deprecated original canvas is **not** a specification for schema or
+architecture. While building Verto, you may consult it to understand proven
+**concepts** and **user-visible UI behaviour** — not Rustybu domain content, the
+target data shape, or how the canvas implemented its solution internally. For
+Phase 4 NCN and planning UI, treat `GraphView` in the canvas as the outcome
+reference when design docs are silent (see IMPLEMENTATION.md Phase 4 fidelity
+rule).
 
 **Read for structure and behaviour:**
 
@@ -471,19 +482,19 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 
 **Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
 
-- **Portfolio** — per slice, bucket Requirements using `portfolioColumns` (§4.6.3).
+- **Portfolio** — per slice, bucket Requirements using `ui.displayStatusGroups` (§4.6.3).
   **Sort:** delivery slices by `deliveryCompleteness[sliceId]` descending (highest
-  completeness first). **Slice picker pills:** neutral tone in Phase 3 (completion-based
-  pill colouring deferred to Phase 4).
-- **UsageBar** — same buckets as portfolio columns plus an implicit **Other** bucket;
+  completeness first). **Slice picker pills:** neutral tone in Phase 3 (status/state-based
+  pill colouring for all nodes deferred to Phase 4 — see §4.8).
+- **UsageBar** — same display-status groups as the portfolio table plus an implicit **Other** bucket;
   segment value = **sum of `weight`** (default 1) of requirements in that bucket.
   With default weights this equals a count.
-- **Gaps** — requirements that do **not** match any **done bucket**. A portfolio
-  column is a **done bucket** when **any** of its `sources` entries has
-  `isDone: true` (for `ticket` and/or `parsed`). A requirement matches a column when
-  it satisfies that column's `sources` rules (§4.6.3). **Gaps** = pipeline rows that
-  match no done bucket. (A row with `isDone: true` but a non-Done workflow `status`
-  still counts as done if it matches a done bucket via `isDone: true`.)
+- **Gaps** — requirements that do **not** match any **satisfied group** (`isDoneBucket` —
+  §4.6.3). A display-status group is a satisfied group when **any** of its `sources`
+  entries has `isDone: true` (for `ticket` and/or `parsed`). A requirement matches a
+  group when it satisfies that group's `sources` rules (§4.6.3). **Gaps** = pipeline
+  rows that match no satisfied group. (A row with `isDone: true` but a non-Done
+  workflow `status` still counts as satisfied if it matches via `isDone: true`.)
 - **Removed:** deprecated canvas “The biggest black boxes” section. Term **black box**
   is not used in Verto; unchecked raw status is **`raw`**.
 
@@ -795,46 +806,60 @@ comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` b
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
 `@verto/config`; the config type lives in `@verto/config` only.
 
-**`portfolioColumns` (Phase 2.5).** Root-level config array that configures how
-Requirements (pipeline rows) bucket into portfolio table columns and UsageBar segments.
+**`ui.displayStatusGroups` (Phase 2.5; renamed from `portfolioColumns`).** UI-layer
+config under the root **`ui`** key. Defines how canonical node fields (`nodeType`,
+`isDone`, `status`) map to simplified **display group labels** for presentation —
+not canonical workflow status (that remains `node.status` from `fieldMappings`).
+Resolved in the webview via `resolveDisplayStatusGroup()`; not part of
+`DeliveryMapBundle`.
+
 Shape:
 
 ```jsonc
 {
-  "portfolioColumns": [
-    { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
-    { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
-    { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
-  ]
+  "ui": {
+    "displayStatusGroups": [
+      { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
+      { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
+      { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
+    ]
+  }
 }
 ```
 
-- Each column has a **`label`** and **`sources`** keyed by requirement source:
+- Each group has a **`label`** (display name) and **`sources`** keyed by node kind:
   **`ticket`** (child sub-issues) and/or **`parsed`** (raw requirement nodes).
-- **Done column:** matches `isDone: true` and/or listed workflow **`statuses`** (e.g.
-  map GitHub `Closed` → Done). Default seeds include first/last ProjectV2 Status
-  options from audit.
-- **Non-Done columns:** only requirements with **`!isDone`** whose `status` is in
-  the column's `statuses` list (parsed: `raw` / `done`).
-- **UsageBar** — same buckets as portfolio columns plus an implicit **Other** bucket;
-  segment value = **sum of `weight`** (default 1) of requirements in that bucket.
-  With default weights this equals a count.
-- **Done buckets (for gap callouts):** any column where `sources.ticket.isDone === true`
-  and/or `sources.parsed.isDone === true`. A requirement matches a column when it
-  satisfies that column's `sources` rules. **Gaps** = pipeline rows matching **no**
-  done bucket. Column label `"Done"` is conventional only — detection is structural.
-- **Column assignment (matching algorithm):** for each pipeline row, walk
-  `portfolioColumns` **in array order**; assign the row to the **first** column
-  whose `sources` entry for that row's `nodeType` (`ticket` or `parsed`) matches.
-  Skip columns with no rule for that source type. Rows matching **no** configured
-  column are assigned to an implicit **Other** bucket (not in config; used for
-  portfolio table counts and UsageBar only — not for gap detection).
-- **Within a `sources.<type>` block:** let `row` be the requirement node. Match if
-  **any** specified predicate holds: (`isDone` is present in config and
+- **Satisfied group (`isDoneBucket`):** any group where `sources.ticket.isDone === true`
+  and/or `sources.parsed.isDone === true`. Used for gap detection among other consumers.
+  Label `"Done"` is conventional only — detection is structural.
+- **Done group:** matches `isDone: true` and/or listed workflow **`statuses`** (e.g.
+  map GitHub `Closed` → Done). Default seeds include ProjectV2 Status options from audit.
+- **Non-done groups:** only nodes with **`!isDone`** whose `status` is in the group's
+  `statuses` list (parsed: `raw` / `done`).
+- **Consumers (Phase 3):** portfolio table headers/counts, UsageBar segments, gap
+  callouts. **Phase 4** adds NCN node colouring, pipeline status column,
+  implementation-order status column, slice/node pills — same matcher throughout.
+- **Phase 4 extension (planned):** optional per-group presentation fields inspired by
+  canvas `STATUS` — e.g. `tone`, `chartColor` (VS Code token), `weight` (row/pill
+  emphasis). Not in config schema yet.
+- **UsageBar** — same groups plus implicit **Other**; segment value = **sum of
+  `weight`** (default 1) of requirements in that group.
+- **Gaps** — pipeline rows matching **no** satisfied group (one consumer of
+  `isDoneBucket`).
+- **Group assignment (matching algorithm):** for each node, walk `displayStatusGroups`
+  **in array order**; assign the **first** group whose `sources` entry for that node's
+  `nodeType` (`ticket` or `parsed`) matches. Skip groups with no rule for that source
+  type. Unmatched nodes → implicit **Other** (portfolio table and UsageBar only — not
+  gap detection).
+- **Within a `sources.<type>` block:** let `row` be the node. Match if **any**
+  specified predicate holds: (`isDone` is present in config and
   `row.isDone === config.isDone`) **or** (`statuses` is present and
   `row.status` is in `statuses`). If only one predicate is present, that predicate
-  alone decides. **Non-Done columns** additionally require `row.isDone === false`
-  before evaluating `statuses` (see bullet above on non-Done columns).
+  alone decides. **Non-done groups** additionally require `row.isDone === false`
+  before evaluating `statuses`.
+- **Merge behaviour:** `mergeConfigs` shallow-merges `ui`; workspace `ui: {}` preserves
+  defaults' `displayStatusGroups`; an explicit workspace `ui.displayStatusGroups` array
+  fully replaces the defaults array.
 
 #### 4.6.4 Field mapping and the `FieldAccessor` contract
 
@@ -1253,7 +1278,8 @@ nodes. Parsed nodes inherit parent URL + anchor.
   authentication provider** for the GitHub adapter.
 - **Host responsibilities:** all I/O (adapter calls, GitHub GraphQL, file reads),
   auth, secrets, **host load pipeline** (`adapter.loadProject` → `@verto/text-parser`
-  → filter → validate → `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
+  → filter → validate → optional **priority overlay** (Phase 4) →
+  `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
   Requirements** toggle persistence, and UI state. Adapters do **not** materialize
   parsed nodes or build bundles.
 - **Webview responsibilities (Phase 3):** purely a view of the `DeliveryMapBundle`
@@ -1263,21 +1289,28 @@ nodes. Parsed nodes inherit parent URL + anchor.
   + host persistence. Theme via VS Code CSS variables instead of hard-coded hex.
 - **Parity target:** Phase 3 Delivery Map achieves **canvas fidelity** (persona/outcome,
   pipeline, portfolio table, UsageBar, gaps — §3.7). Phase 3 NCN graph is an MVP
-  (full graph, ready colouring, leverage badges; no pan/zoom). Phase 4 adds NCN
-  pan/zoom/focus, custom vertical priorities, implementation-order table, and
-  completion-based pill colouring — same core algorithms throughout.
+  (full graph, ready colouring, leverage badges; no pan/zoom). Phase 4 achieves
+  **full UI fidelity** with the deprecated canvas’s user-visible outcomes (see
+  [IMPLEMENTATION.md — Phase 4](./IMPLEMENTATION.md#phase-4--full-ui-fidelity)):
+  NCN pan/zoom, journey highlight + click-to-focus neighbourhood, slice priority
+  editor, two-mode implementation-order table, status/state-based node colouring
+  (all nodes), and remaining theming — same core algorithms throughout; Verto
+  architecture for implementation.
 
 **Host↔webview message protocol.** All communication between the extension host and
 the webview uses a typed `postMessage` contract defined in
 `packages/extension/src/shared/protocol.ts`, imported by both host and webview build
-targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?: string }`
-  (`focusedNode` = selected delivery-slice id in Delivery Map lens; NCN focus in Phase 4).
+targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?: string; … }`
+  (`focusedNode` = selected delivery-slice id in the Delivery Map lens). **Phase 4:**
+  NCN lens adds separate persisted state for journey highlight and click-to-focus
+  (canvas `GraphView` — not the same field as Delivery Map slice selection). Exact
+  protocol fields defined during Phase 4 implementation.
 
 *Host → webview:*
 
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
-| `'update'` | `bundle: DeliveryMapBundle`; `portfolioColumns: PortfolioColumn[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, or **Enable Parsed Requirements** toggle change |
+| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, or **Enable Parsed Requirements** toggle change |
 
 *Webview → host:*
 
@@ -1287,7 +1320,7 @@ targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedN
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch or focused-node change (debounced) |
 
-`portfolioColumns` travels in `'update'` alongside the bundle — **not** inside
+`displayStatusGroups` travels in `'update'` alongside the bundle — **not** inside
 `DeliveryMapBundle` — keeping `@verto/core` free of config concerns.
 
 **Adapter defaults programmatic export.** `configLoader.ts` imports adapter defaults
@@ -1351,7 +1384,8 @@ the body sections cited — this list is the index.
   `@verto/text-parser` owns materialize → filter → validate → bundle (§4.6.5, §4.6.8).
 - ~~**Status vocabulary.**~~ **Closed** — workflow `status` on canonical root (from
   tracker); graph math uses `isDone`. Parsed raw lines use `raw` / `done`. Slice-level
-  **partial** progress UI deferred to Phase 4 (`deliveryCompleteness` bar).
+  **partial** progress UI deferred to Phase 4 (`deliveryCompleteness` bar). Phase 4
+  status/state-based node colouring (all nodes) — palette detail TBD.
 - ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
 - ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
 - ~~**Black boxes.**~~ **Closed (removed)** — deprecated canvas section not ported;
@@ -1384,11 +1418,11 @@ the body sections cited — this list is the index.
   §4.6.8.
 - ~~**Enable Parsed Requirements toggle.**~~ **Closed (Phase 2.5)** — global,
   default on, `workspaceState`; filter graph when off — §3.7, §4.6.8.
-- ~~**Portfolio columns / UsageBar / gaps.**~~ **Closed (Phase 2.5)** —
-  `portfolioColumns` at config root — §4.6.3.
+- ~~**Portfolio columns / UsageBar / gaps.**~~ **Closed (Phase 2.5; renamed)** —
+  `ui.displayStatusGroups` — §4.6.3.
 - ~~**Portfolio column matching algorithm.**~~ **Closed (Phase 2.5)** — first matching
-  column in config order; per-source OR between `isDone` predicate and `statuses`
-  list; non-Done columns require `!isDone`; done buckets structural (not by label) —
+  group in config order; per-source OR between `isDone` predicate and `statuses`
+  list; non-done groups require `!isDone`; satisfied groups structural (`isDoneBucket`) —
   §4.6.3.
 - ~~**DESC blocks (outcome & child notes).**~~ **Closed (Phase 2.5)** —
   `computeBodyFields` in `@verto/text-parser` sets `_outcome` (first DESC paragraph) on
@@ -1472,9 +1506,11 @@ the body sections cited — this list is the index.
   **Vite** (§4.8).
 - ~~**NCN pan/zoom (Phase 3).**~~ **Closed (deferred to Phase 4)** — disabled in
   Phase 3 read-only panel.
-- **Theming.** Mapping the status palette onto VS Code theme variables.
-- **Large-graph performance.** Behaviour and possible simplification for big node
-  counts.
+- **Theming.** Mapping the status palette onto VS Code theme variables. Phase 4
+  targets full status/state-based node colouring (all nodes); detailed palette
+  rules to be specified before or during Phase 4 implementation.
+- **Large-graph performance.** Deferred — evaluate after Phase 4 when the
+  interactive graph can be dogfooded (see IMPLEMENTATION.md unplanned backlog).
 - ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**
   (`WebviewPanel`). Agent/chat workflow integration — deferred.
 - ~~**Setup UX (adapter config).**~~ **Closed (design)** — wizard asks adapter +
