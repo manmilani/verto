@@ -5,6 +5,7 @@ import type {
   HostToWebviewMessage,
   WebviewToHostMessage,
   Lens,
+  NcnTableView,
   PersistedPanelState,
 } from '../../shared/protocol.js'
 import { vscode } from '../vscodeApi.js'
@@ -32,6 +33,7 @@ interface VertoState {
   focusedNode?: string
   ncnHighlightedSliceId?: string
   ncnFocusedNodeId?: string
+  ncnTableView: NcnTableView
   errorMessage?: string
 }
 
@@ -44,6 +46,7 @@ export function useVertoState() {
     priorityOverlayActive: false,
     projectName: 'Verto',
     lens: 'deliveryMap',
+    ncnTableView: 'leverage',
   })
 
   useEffect(() => {
@@ -105,6 +108,12 @@ export function useVertoState() {
                 ? restoredFocused
                 : undefined
 
+          const ncnTableView: NcnTableView =
+            s.bundle !== undefined
+              ? s.ncnTableView
+              : (restored?.ncnTableView
+                ?? (msg.priorityOverlayActive ? 'implementationOrder' : 'leverage'))
+
           return {
             ...s,
             status: 'ready',
@@ -118,6 +127,7 @@ export function useVertoState() {
             focusedNode,
             ncnHighlightedSliceId,
             ncnFocusedNodeId,
+            ncnTableView,
           }
         })
       }
@@ -167,10 +177,18 @@ export function useVertoState() {
     })
   }
 
+  const setNcnTableView = (ncnTableView: NcnTableView) => {
+    setState(s => {
+      const next = { ...s, ncnTableView }
+      persistState(next)
+      return next
+    })
+  }
+
   return {
     ...state,
     setLens, setFocusedNode, setParsedEnabled,
-    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId,
+    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   }
 }
 
@@ -180,6 +198,7 @@ function persistState(s: VertoState) {
     focusedNode: s.focusedNode,
     ncnHighlightedSliceId: s.ncnHighlightedSliceId,
     ncnFocusedNodeId: s.ncnFocusedNodeId,
+    ncnTableView: s.ncnTableView,
   }
   vscode.postMessage({ type: 'persistState', state: ps } satisfies WebviewToHostMessage)
 }

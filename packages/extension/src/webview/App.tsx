@@ -9,9 +9,9 @@ export default function App() {
     status, isRefreshing, bundle, displayStatusGroups, parsedEnabled,
     projectName,
     lens, focusedNode, errorMessage,
-    ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive,
+    ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive, ncnTableView,
     setLens, setFocusedNode, setParsedEnabled,
-    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId,
+    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
 
   if (status === 'loading' && !bundle) {
@@ -90,6 +90,8 @@ export default function App() {
             displayStatusGroups={displayStatusGroups}
             projectName={projectName}
             priorityOverlayActive={priorityOverlayActive}
+            tableView={ncnTableView}
+            onTableViewChange={setNcnTableView}
             highlightedSliceId={ncnHighlightedSliceId}
             focusedNcnNodeId={ncnFocusedNodeId}
             onFocusNode={setNcnFocusedNodeId}

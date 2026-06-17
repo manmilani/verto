@@ -1,6 +1,7 @@
 import React from 'react'
 import type { DeliveryMapBundle } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
+import type { NcnTableView } from '../../shared/protocol.js'
 import { NcnGraph } from './NcnGraph.js'
 import { ImplementationOrderTable } from './ImplementationOrderTable.js'
 import { PriorityEditor } from './PriorityEditor.js'
@@ -16,6 +17,8 @@ interface Props {
   displayStatusGroups: DisplayStatusGroup[]
   projectName: string
   priorityOverlayActive: boolean
+  tableView: NcnTableView
+  onTableViewChange: (view: NcnTableView) => void
   highlightedSliceId?: string
   focusedNcnNodeId?: string
   onFocusNode: (id: string | undefined) => void
@@ -25,6 +28,7 @@ interface Props {
 
 export function NcnLens({
   bundle, displayStatusGroups, projectName, priorityOverlayActive,
+  tableView, onTableViewChange,
   highlightedSliceId, focusedNcnNodeId,
   onFocusNode, onHighlightSlice, onSetPriority,
 }: Props) {
@@ -147,19 +151,53 @@ export function NcnLens({
 
       <Divider />
 
-      <PriorityEditor
-        bundle={bundle}
-        priorityOverlayActive={priorityOverlayActive}
-        onSetPriority={onSetPriority}
-      />
+      <Stack gap={10}>
+        <Row gap={8} wrap>
+          <Text size="small" weight="semibold" tone="secondary">Table view</Text>
+          <button
+            type="button"
+            style={{ ...toggleBtnStyle, ...(tableView === 'implementationOrder' ? toggleBtnActiveStyle : {}) }}
+            onClick={() => onTableViewChange('implementationOrder')}
+          >
+            Implementation order
+          </button>
+          <button
+            type="button"
+            style={{ ...toggleBtnStyle, ...(tableView === 'leverage' ? toggleBtnActiveStyle : {}) }}
+            onClick={() => onTableViewChange('leverage')}
+          >
+            Leverage table
+          </button>
+        </Row>
 
-      <ImplementationOrderTable
-        bundle={bundle}
-        displayStatusGroups={displayStatusGroups}
-        priorityOverlayActive={priorityOverlayActive}
-        focusedNodeId={focusedNcnNodeId}
-        onFocusNode={onFocusNode}
-      />
+        {tableView === 'implementationOrder' && (
+          <>
+            <PriorityEditor
+              bundle={bundle}
+              priorityOverlayActive={priorityOverlayActive}
+              onSetPriority={onSetPriority}
+            />
+
+            <ImplementationOrderTable
+              bundle={bundle}
+              displayStatusGroups={displayStatusGroups}
+              view="implementationOrder"
+              focusedNodeId={focusedNcnNodeId}
+              onFocusNode={onFocusNode}
+            />
+          </>
+        )}
+
+        {tableView === 'leverage' && (
+          <ImplementationOrderTable
+            bundle={bundle}
+            displayStatusGroups={displayStatusGroups}
+            view="leverage"
+            focusedNodeId={focusedNcnNodeId}
+            onFocusNode={onFocusNode}
+          />
+        )}
+      </Stack>
 
       <Callout tone="info" title="How to use this for sequencing (Theory of Constraints)">
         Start from the <Text as="span" weight="semibold">Ready to start</Text> list and pick the highest-leverage items
@@ -169,4 +207,20 @@ export function NcnLens({
       </Callout>
     </Stack>
   )
+}
+
+const toggleBtnStyle: React.CSSProperties = {
+  background: 'transparent',
+  color: 'var(--vscode-foreground)',
+  border: '1px solid var(--vscode-panel-border)',
+  borderRadius: 12,
+  padding: '4px 12px',
+  cursor: 'pointer',
+  fontSize: 12,
+}
+
+const toggleBtnActiveStyle: React.CSSProperties = {
+  background: 'var(--vscode-button-background)',
+  color: 'var(--vscode-button-foreground)',
+  borderColor: 'transparent',
 }

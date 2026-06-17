@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import {
   Stack, Row, Text, BorderedBox,
@@ -10,8 +10,16 @@ interface Props {
   onSetPriority: (sliceId: string, priority: number | null) => void
 }
 
+function compareSlicePriority(a: VertoNode, b: VertoNode): number {
+  if (a.priority !== b.priority) return a.priority - b.priority
+  return a.title.localeCompare(b.title)
+}
+
 export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }: Props) {
-  const slices = bundle.graph.nodes.filter(n => n.isDeliverySlice)
+  const slices = useMemo(
+    () => [...bundle.graph.nodes.filter(n => n.isDeliverySlice)].sort(compareSlicePriority),
+    [bundle],
+  )
 
   if (slices.length === 0) return null
 
@@ -33,8 +41,8 @@ export function PriorityEditor({ bundle, priorityOverlayActive, onSetPriority }:
 
         {!priorityOverlayActive ? (
           <Text size="small" tone="quaternary">
-            No custom priorities set — every journey is weighted equally, so the table below ranks purely by leverage.
-            Enter a priority (1–9, lower = more important) for any journey to lift its closure.
+            No custom priorities set — every journey is weighted equally. Enter a priority (1–9, lower = more important)
+            for any journey to lift its closure.
           </Text>
         ) : (
           <Text size="small" tone="tertiary">
@@ -71,20 +79,46 @@ function PriorityInput({
   onSetPriority: (sliceId: string, priority: number | null) => void
 }) {
   const [localValue, setLocalValue] = useState(String(slice.priority))
+  const inputRef = useRef<HTMLInputElement>(null)
+  const hoveredRef = useRef(false)
 
   useEffect(() => {
     setLocalValue(String(slice.priority))
   }, [slice.priority])
 
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+
+    const onWheel = (e: WheelEvent) => {
+      if (document.activeElement !== el || !hoveredRef.current) return
+      e.preventDefault()
+      e.stopPropagation()
+
+      const raw = el.value.trim()
+      const current = raw === '' ? NaN : parseInt(raw, 10)
+      const base = Number.isNaN(current) ? 5 : current
+      const next = Math.min(9, Math.max(1, base + (e.deltaY < 0 ? -1 : 1)))
+      setLocalValue(String(next))
+      onSetPriority(slice.id, next)
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [slice.id, onSetPriority])
+
   return (
     <input
+      ref={inputRef}
       type="number"
       min={1}
       max={9}
       placeholder="—"
-      title="Priority 1–9 (lower = more important); clear to reset"
+      title="Priority 1–9 (lower = more important); scroll to adjust when focused"
       value={localValue}
       style={inputStyle}
+      onMouseEnter={() => { hoveredRef.current = true }}
+      onMouseLeave={() => { hoveredRef.current = false }}
       onChange={e => setLocalValue(e.target.value)}
       onBlur={e => {
         const raw = e.target.value.trim()
@@ -92,7 +126,7 @@ function PriorityInput({
           onSetPriority(slice.id, null)
         } else {
           const parsed = parseInt(raw, 10)
-          onSetPriority(slice.id, isNaN(parsed) ? null : parsed)
+          onSetPriority(slice.id, Number.isNaN(parsed) ? null : parsed)
         }
       }}
     />

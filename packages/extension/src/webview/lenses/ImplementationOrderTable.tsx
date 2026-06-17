@@ -1,6 +1,7 @@
 import React from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
+import type { NcnTableView } from '../../shared/protocol.js'
 import { formatNodeStatus, formatPriority } from '../nodeStatusFormat.js'
 import {
   pillToneForNode, resolveDisplayStatusGroupIndex,
@@ -17,7 +18,7 @@ import {
 interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
-  priorityOverlayActive: boolean
+  view: NcnTableView
   focusedNodeId?: string
   onFocusNode: (id: string | undefined) => void
 }
@@ -73,7 +74,7 @@ function WorkItemPill({
 }
 
 export function ImplementationOrderTable({
-  bundle, displayStatusGroups, priorityOverlayActive, focusedNodeId, onFocusNode,
+  bundle, displayStatusGroups, view, focusedNodeId, onFocusNode,
 }: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
@@ -82,7 +83,7 @@ export function ImplementationOrderTable({
     return nodeById.get(id)?.title ?? id
   }
 
-  if (!priorityOverlayActive) {
+  if (view === 'leverage') {
     const readyIds = [...(bundle.readyIds ?? [])].sort(
       (a, b) => (bundle.leverageScore?.[b] ?? 0) - (bundle.leverageScore?.[a] ?? 0),
     )
@@ -116,7 +117,7 @@ export function ImplementationOrderTable({
                       style={{
                         ...dataTableThStyle,
                         ...(i > 0 ? dataTableThCompactStyle : undefined),
-                        ...(i === 3 ? { textAlign: 'right' } : undefined),
+                        ...(i === 2 || i === 3 ? { textAlign: 'center' } : undefined),
                       }}
                     >
                       {h}
@@ -154,10 +155,10 @@ export function ImplementationOrderTable({
                       <td style={dataTableTdStyle}>
                         <Text size="small" tone="secondary">{formatNodeStatus(node, displayStatusGroups)}</Text>
                       </td>
-                      <td style={dataTableTdCompactStyle}>
+                      <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>
                         <Text weight="semibold">{String(unlocks)}</Text>
                       </td>
-                      <td style={{ ...dataTableTdCompactStyle, textAlign: 'right' }}>{String(deps)}</td>
+                      <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>{String(deps)}</td>
                       <td style={dataTableTdWrapStyle}>
                         <Text size="small" tone="tertiary">{serves || '—'}</Text>
                       </td>
