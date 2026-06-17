@@ -108,4 +108,39 @@ describe('runHostPipeline', () => {
     expect(resultNode._note).toBeUndefined()
     expect(resultNode._outcome).toBeUndefined()
   })
+
+  it('priorityOverlay: overridden slice priority is reflected in bundle', () => {
+    const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 5 })
+    const graph: VertoGraph = { nodes: [s], edges: [] }
+    const bundleDefault = runHostPipeline(graph)
+    const bundleOverlay = runHostPipeline(graph, { priorityOverlay: { S: 2 } })
+    // globalPriorityRanking is computed from priority, so the overlay-modified bundle should differ
+    expect(bundleOverlay.graph.nodes.find(n => n.id === 'S')!.priority).toBe(2)
+    expect(bundleOverlay.globalPriorityRanking!['S']).not.toBe(bundleDefault.globalPriorityRanking!['S'])
+  })
+
+  it('priorityOverlay: empty overlay is a no-op — same result as no overlay', () => {
+    const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 5 })
+    const graph: VertoGraph = { nodes: [s], edges: [] }
+    const bundleDefault = runHostPipeline(graph)
+    const bundleEmptyOverlay = runHostPipeline(graph, { priorityOverlay: {} })
+    expect(bundleEmptyOverlay.graph.nodes[0].priority)
+      .toBe(bundleDefault.graph.nodes[0].priority)
+    expect(bundleEmptyOverlay.globalPriorityRanking!['S'])
+      .toBe(bundleDefault.globalPriorityRanking!['S'])
+  })
+
+  it('priorityOverlay: null value in overlay leaves original priority unchanged', () => {
+    const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 3 })
+    const graph: VertoGraph = { nodes: [s], edges: [] }
+    const bundle = runHostPipeline(graph, { priorityOverlay: { S: null } })
+    expect(bundle.graph.nodes.find(n => n.id === 'S')!.priority).toBe(3)
+  })
+
+  it('priorityOverlay: non-slice nodes are not affected even if present in overlay', () => {
+    const t = node({ id: 'T', title: 'Task', isDeliverySlice: false, priority: 5 })
+    const graph: VertoGraph = { nodes: [t], edges: [] }
+    const bundle = runHostPipeline(graph, { priorityOverlay: { T: 1 } })
+    expect(bundle.graph.nodes.find(n => n.id === 'T')!.priority).toBe(5)
+  })
 })

@@ -5,6 +5,7 @@ import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage } 
 import { loadConfig } from './configLoader.js'
 import { getGitHubToken } from './authProvider.js'
 import { runPipeline } from './loadPipeline.js'
+import { loadOverlay, saveOverlay } from './priorityOverlay.js'
 
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
@@ -13,8 +14,11 @@ export class PanelManager {
   private panel: vscode.WebviewPanel | undefined
   private ready = false
   private fetchSeq = 0
+  private overlay: Record<string, number | null> = {}
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.overlay = loadOverlay(context)
+  }
 
   openOrReveal() {
     if (this.panel) {
@@ -70,6 +74,17 @@ export class PanelManager {
       case 'persistState':
         await this.context.workspaceState.update(STATE_KEY_PANEL, msg.state)
         break
+      case 'setPriority': {
+        if (msg.priority === null) {
+          delete this.overlay[msg.sliceId]
+        } else {
+          const clamped = Math.max(1, Math.min(9, Math.round(msg.priority)))
+          this.overlay[msg.sliceId] = clamped
+        }
+        await saveOverlay(this.context, this.overlay)
+        await this.fetch()
+        break
+      }
       case 'retry':
         await this.fetch()
         break
@@ -108,17 +123,19 @@ export class PanelManager {
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, displayStatusGroups } = await runPipeline(config, token, parsedEnabled)
+      const { bundle, displayStatusGroups } = await runPipeline(config, token, parsedEnabled, this.overlay)
       if (seq !== this.fetchSeq) return
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
       }
       const restoredState = this.context.workspaceState.get<PersistedPanelState>(STATE_KEY_PANEL)
+      const priorityOverlayActive = Object.values(this.overlay).some(v => v !== null)
       this.send({
         type: 'update',
         bundle,
         displayStatusGroups,
         parsedEnabled,
+        priorityOverlayActive,
         restoredState,
       })
     } catch (err) {

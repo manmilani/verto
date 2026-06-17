@@ -5,6 +5,20 @@ import { readyNodes } from './algorithms/readiness.js'
 import { globalPriorityRanking } from './algorithms/priority.js'
 import { implementationOrder } from './algorithms/order.js'
 import { deliveryCompletenessMap } from './algorithms/completeness.js'
+import { closureFor } from './algorithms/closure.js'
+
+function buildServedBySliceIds(graph: VertoGraph): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
+  for (const node of graph.nodes) {
+    if (!node.isDeliverySlice) continue
+    for (const memberId of closureFor(graph, node.id, nodeById)) {
+      if (!result[memberId]) result[memberId] = []
+      result[memberId].push(node.id)
+    }
+  }
+  return result
+}
 
 /**
  * Runs all @verto/core algorithms over a VertoGraph and assembles the complete
@@ -39,5 +53,6 @@ export function buildDeliveryMapBundle(
     leverageScore: leverage,
     globalPriorityRanking: rankings,
     deliveryCompleteness: completeness,
+    servedBySliceIds: buildServedBySliceIds(graph),
   }
 }

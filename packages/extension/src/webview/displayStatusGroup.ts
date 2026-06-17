@@ -37,6 +37,19 @@ export function resolveDisplayStatusGroup(
   return OTHER_DISPLAY_STATUS_GROUP
 }
 
+/**
+ * Returns the zero-based index of the display group that matches the given node row,
+ * or -1 when the node falls into the Other bucket. Useful for palette lookups.
+ */
+export function resolveDisplayStatusGroupIndex(
+  row: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
+  groups: DisplayStatusGroup[],
+): number {
+  const label = resolveDisplayStatusGroup(row, groups)
+  if (label === OTHER_DISPLAY_STATUS_GROUP) return -1
+  return groups.findIndex(g => g.label === label)
+}
+
 /** Gap callouts are one consumer of satisfied-group matching. */
 export function isGap(
   row: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,

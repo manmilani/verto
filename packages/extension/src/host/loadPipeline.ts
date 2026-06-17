@@ -7,10 +7,11 @@ export async function runPipeline(
   config: VertoConfig,
   token: string,
   parsedEnabled: boolean,
+  priorityOverlay?: Record<string, number | null>,
 ): Promise<{ bundle: DeliveryMapBundle; displayStatusGroups: DisplayStatusGroup[] }> {
   const adapter = getAdapter(config, token)
   const graph = await adapter.loadProject(config)
-  const bundle = runHostPipeline(graph, { parsedEnabled })
+  const bundle = runHostPipeline(graph, { parsedEnabled, priorityOverlay })
   const displayStatusGroups = config.ui?.displayStatusGroups ?? []
   return { bundle, displayStatusGroups }
 }

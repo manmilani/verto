@@ -3,17 +3,23 @@ import type { DeliveryMapBundle } from '@verto/core'
 import { nodeWeight } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
-import { resolveDisplayStatusGroup, isGap, groupLabelsWithOther } from '../displayStatusGroup.js'
-import { statusColor, statusLabel, CHART_COLORS } from '../theme.js'
+import {
+  resolveDisplayStatusGroup, resolveDisplayStatusGroupIndex,
+  isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP,
+} from '../displayStatusGroup.js'
+import { statusGroupColor } from '../theme.js'
+import { formatNodeStatus } from '../nodeStatusFormat.js'
 
 interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
+  /** When a slice pill is clicked, also update the NCN journey highlight. */
+  onHighlightSlice?: (sliceId: string | undefined) => void
 }
 
-export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocusedNode }: Props) {
+export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocusedNode, onHighlightSlice }: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
   const allGroups = useMemo(
@@ -42,18 +48,25 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {slices.map(s => {
           const active = s.id === slice.id
+          const groupIdx = resolveDisplayStatusGroupIndex(s, displayStatusGroups)
+          const accentColor = statusGroupColor(groupIdx)
+          const pct = bundle.deliveryCompleteness?.[s.id] ?? 0
           return (
             <button
               key={s.id}
-              onClick={() => setFocusedNode(s.id)}
+              onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
               style={{
                 ...slicePillStyle,
-                background: active ? 'var(--vscode-button-background)' : 'var(--vscode-editor-background)',
+                background: active ? accentColor : 'var(--vscode-editor-background)',
                 color: active ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)',
-                borderColor: active ? 'transparent' : 'var(--vscode-panel-border)',
+                borderColor: active ? 'transparent' : `${accentColor}4d`,
               }}
             >
-              {s.title}
+              <span>{s.title}</span>
+              {/* Completion bar */}
+              <div style={{ width: '100%', height: 3, marginTop: 3, background: 'var(--vscode-editorWidget-border)', borderRadius: 2 }}>
+                <div style={{ width: `${pct * 100}%`, height: '100%', background: 'var(--vscode-charts-green)', borderRadius: 2 }} />
+              </div>
             </button>
           )
         })}
@@ -93,12 +106,14 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
               const pct = row.nodeType === 'parsed'
                 ? (row.isDone ? 100 : 0)
                 : Math.round((bundle.deliveryCompleteness?.[row.id] ?? 0) * 100)
+              const groupIdx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
+              const dotColor = statusGroupColor(groupIdx)
               return (
                 <div key={row.id} style={pipelineRowStyle}>
                   <span
                     style={{
                       width: 8, height: 8, borderRadius: '50%',
-                      background: statusColor(row.status),
+                      background: dotColor,
                       flexShrink: 0, marginTop: 2,
                     }}
                   />
@@ -113,7 +128,7 @@ export function DeliveryMap({ bundle, displayStatusGroups, focusedNode, setFocus
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', whiteSpace: 'nowrap' }}>
-                    {statusLabel(row.status)}
+                    {formatNodeStatus(row, displayStatusGroups)}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', whiteSpace: 'nowrap', minWidth: 32, textAlign: 'right' }}>
                     {pct}%
@@ -192,16 +207,19 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
     <div>
       <div style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)', marginBottom: 4 }}>Usage</div>
       <div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
-        {allGroups.map((col, i) => {
+        {allGroups.map(col => {
           const w = weights[col] ?? 0
           if (w === 0) return null
+          const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
+            ? -1
+            : displayStatusGroups.findIndex(g => g.label === col)
           return (
             <div
               key={col}
               title={`${col}: ${w}`}
               style={{
                 flex: w / total,
-                background: CHART_COLORS[i % CHART_COLORS.length],
+                background: statusGroupColor(groupIdx),
                 minWidth: 2,
               }}
             />
@@ -209,12 +227,15 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
         })}
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-        {allGroups.map((col, i) => {
+        {allGroups.map(col => {
           const w = weights[col] ?? 0
           if (w === 0) return null
+          const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
+            ? -1
+            : displayStatusGroups.findIndex(g => g.label === col)
           return (
             <span key={col} style={{ fontSize: 10, color: 'var(--vscode-descriptionForeground)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], display: 'inline-block' }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: statusGroupColor(groupIdx), display: 'inline-block' }} />
               {col}
             </span>
           )
@@ -263,7 +284,9 @@ const slicePillStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 12,
   display: 'inline-flex',
-  alignItems: 'center',
+  flexDirection: 'column',
+  alignItems: 'stretch',
+  minWidth: 80,
 }
 
 const pipelineRowStyle: React.CSSProperties = {

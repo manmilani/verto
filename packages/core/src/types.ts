@@ -261,4 +261,11 @@ export interface DeliveryMapBundle {
    * `buildDeliveryMapBundle()`; not recomputed in the webview. See DESIGN.md §3.3.
    */
   deliveryCompleteness?: Record<string, number>;
+  /**
+   * Inverted delivery-slice closure map: maps node id → list of delivery-slice ids
+   * whose transitive prerequisite closure contains that node. Lets the webview do
+   * slice-highlight lookups (servedBySliceIds[id]?.includes(sliceId)) without
+   * importing @verto/core algorithms. Computed server-side by buildDeliveryMapBundle().
+   */
+  servedBySliceIds?: Record<string, string[]>;
 }

@@ -61,6 +61,43 @@ describe('buildDeliveryMapBundle', () => {
     expect(bundle.graph).toBe(g)
   })
 
+  it('servedBySliceIds — node in single slice closure', () => {
+    const g = graph(
+      [node('A'), node('S', { isDeliverySlice: true })],
+      [edge('A', 'S')],
+    )
+    const bundle = buildDeliveryMapBundle(g)
+    // A is in the closure of S (S depends on A); S is in its own closure
+    expect(bundle.servedBySliceIds!['A']).toContain('S')
+    expect(bundle.servedBySliceIds!['S']).toContain('S')
+  })
+
+  it('servedBySliceIds — node in two slice closures', () => {
+    const g = graph(
+      [node('A'), node('S1', { isDeliverySlice: true }), node('S2', { isDeliverySlice: true })],
+      [edge('A', 'S1'), edge('A', 'S2')],
+    )
+    const bundle = buildDeliveryMapBundle(g)
+    expect(bundle.servedBySliceIds!['A']).toContain('S1')
+    expect(bundle.servedBySliceIds!['A']).toContain('S2')
+    expect(bundle.servedBySliceIds!['A']).toHaveLength(2)
+  })
+
+  it('servedBySliceIds — node not in any slice closure is absent', () => {
+    const g = graph(
+      [node('A'), node('S', { isDeliverySlice: true }), node('B')],
+      [edge('A', 'S')],  // B is not a prereq of S
+    )
+    const bundle = buildDeliveryMapBundle(g)
+    expect(bundle.servedBySliceIds!['B']).toBeUndefined()
+  })
+
+  it('servedBySliceIds — empty graph returns empty map', () => {
+    const g = graph([])
+    const bundle = buildDeliveryMapBundle(g)
+    expect(bundle.servedBySliceIds).toEqual({})
+  })
+
   it('invalid graph (cycle) returns a best-effort bundle without throwing', () => {
     // buildDeliveryMapBundle does not validate — that is the caller's responsibility.
     // Algorithms apply cycle guards internally and return partial results.

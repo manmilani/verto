@@ -3,9 +3,11 @@ import { validateGraph, buildDeliveryMapBundle } from '@verto/core'
 import { materializeParsedRequirements } from './materialize.js'
 import { computeBodyFields } from './computeBodyFields.js'
 import { filterParsedNodes } from './filter.js'
+import { applyPriorityOverlay } from './applyPriorityOverlay.js'
 
 export interface HostPipelineOptions {
   parsedEnabled?: boolean
+  priorityOverlay?: Record<string, number | null>
 }
 
 export function runHostPipeline(
@@ -23,5 +25,6 @@ export function runHostPipeline(
     )
   }
   result.warnings.forEach(w => console.warn('[verto]', w.message))
+  if (opts?.priorityOverlay) g = applyPriorityOverlay(g, opts.priorityOverlay)
   return buildDeliveryMapBundle(g)
 }

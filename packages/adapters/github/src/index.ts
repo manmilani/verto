@@ -1,3 +1,5 @@
 export { GitHubAdapter } from './adapter.js'
 export { githubAdapterDefaults } from './defaults.js'
 export type { GitHubIssue, GitHubProjectV2Item, GitHubProjectV2FieldValue } from './system_types.js'
+export { auditProjectScope, auditRepositoryScope } from './audit.js'
+export type { AuditResult } from './audit.js'
