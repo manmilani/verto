@@ -839,9 +839,18 @@ Shape:
 - **Consumers (Phase 3):** portfolio table headers/counts, UsageBar segments, gap
   callouts. **Phase 4** adds NCN node colouring, pipeline status column,
   implementation-order status column, slice/node pills — same matcher throughout.
-- **Phase 4 extension (planned):** optional per-group presentation fields inspired by
-  canvas `STATUS` — e.g. `tone`, `chartColor` (VS Code token), `weight` (row/pill
-  emphasis). Not in config schema yet.
+- **Presentation fields (resolved, Phase 4):** `DisplayStatusGroup` has **no**
+  presentation fields. `tone`, `chartColor`, and `weight` are **not** added to the
+  config schema. `weight` is dropped from the concept entirely. Status-based colouring
+  is baked into the webview by group **array position** — the nth group maps to the
+  nth slot in a fixed VS Code theme variable palette in `theme.ts`. The config remains
+  purely semantic: `label` + `sources` only.
+- **Status display rule (resolved, Phase 4):** `displayStatusGroup` is the display
+  vocabulary used **everywhere** — column headers, legends, node colouring, pill tones,
+  UsageBar segment labels. When showing an individual node's status value (table cell,
+  node label): `"<displayStatusGroup> (<node.status>)"` when `node.status` is present;
+  `"<displayStatusGroup>"` when absent. If the node matches no group:
+  `"Other (<node.status>)"` when `node.status` is present, else `"Other"`.
 - **UsageBar** — same groups plus implicit **Other**; segment value = **sum of
   `weight`** (default 1) of requirements in that group.
 - **Gaps** — pipeline rows matching **no** satisfied group (one consumer of
@@ -1310,7 +1319,7 @@ targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedN
 
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
-| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, or **Enable Parsed Requirements** toggle change |
+| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, **Enable Parsed Requirements** toggle change, or **priority overlay** change (`setPriority`) |
 
 *Webview → host:*
 
@@ -1318,6 +1327,7 @@ targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedN
 |---|---|---|
 | `'ready'` | — | Webview mounted; host holds the first `'update'` until this arrives |
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
+| `'setPriority'` | `sliceId: string; priority: number \| null` (`null` clears the override) | User edits priority on a delivery slice; host updates overlay + rebuilds bundle |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch or focused-node change (debounced) |
 
 `displayStatusGroups` travels in `'update'` alongside the bundle — **not** inside
@@ -1506,9 +1516,9 @@ the body sections cited — this list is the index.
   **Vite** (§4.8).
 - ~~**NCN pan/zoom (Phase 3).**~~ **Closed (deferred to Phase 4)** — disabled in
   Phase 3 read-only panel.
-- **Theming.** Mapping the status palette onto VS Code theme variables. Phase 4
-  targets full status/state-based node colouring (all nodes); detailed palette
-  rules to be specified before or during Phase 4 implementation.
+- ~~**Theming.**~~ **Closed (Phase 4)** — Status-based colouring uses VS Code theme
+  variables throughout. Palette mapped by display-status-group **array position** in
+  `theme.ts` (not user-configurable; no config changes). See §4.6.3.
 - **Large-graph performance.** Deferred — evaluate after Phase 4 when the
   interactive graph can be dogfooded (see IMPLEMENTATION.md unplanned backlog).
 - ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**

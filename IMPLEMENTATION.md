@@ -359,7 +359,7 @@ docs win**.
 | `graphFocus` / click focus | NCN click-to-focus neighbourhood (prereqs + dependents); separate from Delivery Map slice selection |
 | Clear focus | Restore journey-highlight subgraph (not full graph unless no journey selected) |
 | `buildExecutionOrder` / ready table | Two-mode implementation-order UI (see below) |
-| `STATUS` / pill tones | Status/state-based colouring on **all** nodes (detailed palette TBD) |
+| `STATUS` / pill tones | Status/state-based colouring on **all** nodes via `resolveDisplayStatusGroup()`; palette baked into `theme.ts` by group array position — not config-driven |
 
 **Compute model for interactive priority editing:** the webview sends a `setPriority`
 message to the extension host on each change (exact protocol shape defined during
@@ -367,7 +367,7 @@ Phase 4 implementation). The host updates the priority overlay, rebuilds the bun
 and pushes a new `DeliveryMapBundle` via `postMessage`. The webview is a dumb view —
 it does **not** bundle `@verto/core` and does **not** recompute. The bundle already
 contains `globalPriorityRanking`, `implementationOrder`, `readyIds`, and
-`deliveryCompleteness` (Phase 1).
+`deliveryCompleteness` (Phase 1); `servedBySliceIds` is added in Phase 4.
 
 **Priority overlay integration.** `priorityOverlay.ts` stores per–delivery-slice
 priority overrides in `workspaceState` (cleared by Phase 5 write-back). Overrides are
@@ -392,23 +392,23 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 | Feature | Notes |
 |---|---|
 | `@verto/adapter-github` audit library | Extract GitHub audit/bootstrap from `scripts/audit-github-project.mjs` into importable `@verto/adapter-github` code; script becomes thin CLI (prerequisite for setup wizard) |
-| `packages/extension/src/host/priorityOverlay.ts` | `applyPriorityOverlay()`; load/save overlay from `workspaceState` |
+| `packages/core/src/bundle.ts` + `types.ts` | Add `servedBySliceIds: Record<string, string[]>` to `DeliveryMapBundle` — for each node, the list of delivery-slice ids whose closure contains it; computed in `buildDeliveryMapBundle()` |
+| `packages/extension/src/host/priorityOverlay.ts` | Load/save overlay from `workspaceState` only — **no** `applyPriorityOverlay()` here |
 | `packages/extension/src/host/loadPipeline.ts` | `runPipeline(..., priorityOverlay?)` — threads overlay into `runHostPipeline` |
-| `@verto/text-parser` `runHostPipeline` | Accept optional `priorityOverlay` in `HostPipelineOptions`; apply before `buildDeliveryMapBundle()` |
-| `packages/extension/src/shared/protocol.ts` | Add `setPriority` (and NCN state messages as needed) to `WebviewToHostMessage` |
+| `@verto/text-parser` `runHostPipeline` | Accept optional `priorityOverlay` in `HostPipelineOptions`; defines and exports `applyPriorityOverlay(graph, overlay): VertoGraph` (pure graph transform); applies overlay before `buildDeliveryMapBundle()` |
+| `packages/extension/src/shared/protocol.ts` | Add `setPriority: { sliceId: string; priority: number \| null }` (`null` clears the override) to `WebviewToHostMessage`; extend `PersistedPanelState` with NCN journey-highlight and click-to-focus fields (exact fields defined during implementation) |
 | Priority editor | Numeric input (1–9) **per delivery slice only** (`isDeliverySlice` nodes); sends `setPriority` → host updates overlay + recomputes bundle → webview re-renders |
-| Implementation order table | **Two modes** (canvas `GraphView`): (1) **No slice priorities in overlay** — “Ready to start now — ranked by leverage”: `readyIds` only, sorted by `leverageScore` desc; (2) **Slice priorities set** — full execution order: all not-done nodes in lifted scope, topologically ordered (`implementationOrder`), with Ready/Blocked column; canvas-equivalent columns (priority tier, title, status, leverage, serves slice, ticket link) |
+| Implementation order table | **Two modes** (canvas `GraphView`): (1) **No slice priorities in overlay** — “Ready to start now — ranked by leverage”: `readyIds` only, sorted by `leverageScore` desc; (2) **Slice priorities set** — full execution order: all not-done nodes topologically ordered (`implementationOrder`), with Ready/Blocked column. **Columns:** priority (strip trailing zeros from `globalPriorityRanking[id]` — e.g. `13000` → `”132”`; lower = higher priority), title (with ticket link), status (`”<displayStatusGroup> (<node.status>)”` or `”<displayStatusGroup>”` if status absent; `”Other [(<status>)]”` if no group match), leverage (`leverageScore[id]`), serves (`servedBySliceIds[id]` resolved to slice titles) |
 | Delivery completeness | Per-slice progress bar from `bundle.deliveryCompleteness[sliceId]` — slice-level “partial” visual treatment deferred from Phase 3 |
 | Leverage score in graph | Node size or badge proportional to `bundle.leverageScore`; visual emphasis on high-leverage blockers (canvas outcome) |
 | NCN pan, zoom, focus | Canvas `GraphView` fidelity: pan/zoom; **Highlight journey** subgraph; **click node** → focus neighbourhood (node + prereqs + dependents); **clear focus** → restore journey highlight; click row in implementation-order table → focus node in graph |
-| Status/state node colouring | Uses `ui.displayStatusGroups` via `resolveDisplayStatusGroup()` on **all** nodes. Optional per-group presentation fields (`tone`, `chartColor`, `weight`) to be added to config schema in Phase 4 — inspired by canvas `STATUS` |
+| Status/state node colouring | Uses `ui.displayStatusGroups` via `resolveDisplayStatusGroup()` on **all** nodes; palette baked into `theme.ts` by group array position — **no config schema changes** |
 | Full theming | Every status/state color uses VS Code theme variables; light + dark mode verified |
 
 **Pre–Phase 4 (completed):** `portfolioColumns` renamed to `ui.displayStatusGroups`
 with types `DisplayStatusGroup` / `UiConfig`; webview matcher
 `resolveDisplayStatusGroup()`; `isDoneBucket` is a structural predicate on a group
-entry (gap callouts are one consumer). Presentation fields on group entries are a
-Phase 4 deliverable.
+entry (gap callouts are one consumer).
 
 ### Decisions (resolved for planning)
 
@@ -421,6 +421,11 @@ Phase 4 deliverable.
   behaviour is the outcome reference.
 - **Priority overlay hook** — `runPipeline(..., priorityOverlay?)` →
   `runHostPipeline` → `applyPriorityOverlay` before bundle build.
+- **`applyPriorityOverlay` location** — pure function `applyPriorityOverlay(graph, overlay): VertoGraph` defined and exported from `@verto/text-parser` (alongside other graph transforms). Extension `priorityOverlay.ts` handles `workspaceState` persistence only; it does not define the transform.
+- **Priority column format** — `globalPriorityRanking[id]` displayed by stripping trailing zeros from the normalized integer (e.g. `13000` → `”132”`). No prefix, no dots. Lower = higher priority; more digits = deeper priority chain.
+- **Status display rule** — `displayStatusGroup` label is the display vocabulary everywhere (column headers, legends, node colours, pill tones, UsageBar segments). Per-node status values: `”<displayStatusGroup> (<node.status>)”` when `node.status` is present; `”<displayStatusGroup>”` when absent. No group match: `”Other (<node.status>)”` if status present, else `”Other”`.
+- **`DisplayStatusGroup` config schema** — no new fields added in Phase 4. `weight` dropped entirely from the concept. `tone`/`chartColor` not added. Schema remains `label` + `sources` only. Palette baked into `theme.ts` by group array position.
+- **`servedBySliceIds` in `DeliveryMapBundle`** — `Record<string, string[]>` added in Phase 4; computed in `buildDeliveryMapBundle()` in `@verto/core`. For each node, lists the delivery-slice ids whose transitive closure contains it. Used by the implementation-order table “Serves” column and the NCN focused-node detail panel.
 
 ---
 
@@ -506,11 +511,16 @@ Each is linked to the phase where it blocks progress.
 | Priority edit scope — delivery slices only (overlay) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Implementation order — two-mode canvas behaviour | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Priority overlay — `runPipeline` / `runHostPipeline` hook | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| `applyPriorityOverlay` location — in `@verto/text-parser`, not extension host | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Priority column format — strip trailing zeros, no prefix/dots | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Status display rule — `displayStatusGroup` everywhere; parenthetical for individual nodes | Resolved Phase 4 | §4.6.3, IMPLEMENTATION Phase 4 |
+| `DisplayStatusGroup` config schema — no new fields; `weight` dropped; palette by array position | Resolved Phase 4 | §4.6.3, §5.4 |
+| `servedBySliceIds` in `DeliveryMapBundle` — delivery-slice closure membership per node | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Status/state node colouring (all nodes) — palette detail | Resolved Phase 4 | §4.6.3, §4.8, §5.4 |
 | Requirements ↔ child ticket linking | Deferred | §5.2 |
 | Decomposition CTA (sub-issues from Requirements-only slice) | Deferred | §5.2 |
 | Auto-promote parents when no delivery slices | Deferred | §5.2 |
 | Slice-level "partial" / delivery completeness bar | Phase 4 | §5.2 |
-| Status/state node colouring (all nodes) — palette detail | Phase 4 (TBD) | §4.8, §5.4 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
 | Write-back conflict policy | Phase 5 | §5.3 |
 | Beans on-disk format + dep/priority conventions | Phase 6 | §5.3 |
