@@ -13,8 +13,8 @@
  * Falls back to the defaults file for scope and owner.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { parseVertoConfig, mergeConfigs } from '@verto/config'
+import { readFileSync, existsSync } from 'node:fs'
+import { parseVertoConfig, mergeConfigs, writeVertoConfigFile, mergeIntoJsoncFile, stringifyVertoConfig } from '@verto/config'
 import { auditProjectScope, auditRepositoryScope } from '@verto/adapter-github'
 
 const TOKEN = process.env.GITHUB_TOKEN ?? process.env.GITHUB_PERSONAL_ACCESS_TOKEN
@@ -34,11 +34,14 @@ const workspaceRaw = existsSync(workspacePath)
   : {}
 const config = mergeConfigs(defaultsRaw, workspaceRaw)
 
+const workspaceExists = existsSync(workspacePath)
+
 let result
+const auditOptions = { seedRepoDefaults: !workspaceExists }
 if (config.github.scope === 'project') {
-  result = await auditProjectScope(TOKEN, config)
+  result = await auditProjectScope(TOKEN, config, auditOptions)
 } else {
-  result = await auditRepositoryScope(TOKEN, config)
+  result = await auditRepositoryScope(TOKEN, config, auditOptions)
 }
 
 for (const w of result.warnings) {
@@ -46,17 +49,13 @@ for (const w of result.warnings) {
 }
 
 const merged = mergeConfigs(config, result.discovered)
-output(merged)
 
-function output(cfg) {
-  const json = JSON.stringify(cfg, null, 2)
-  if (dryRun) {
-    console.log(json)
-  } else {
-    if (existsSync(workspacePath)) {
-      console.warn(`[audit] Overwriting ${workspacePath} — any hand-edited comments will be lost. Use --dry-run to preview first.`)
-    }
-    writeFileSync(workspacePath, json, 'utf8')
-    console.log(`Written to ${workspacePath}`)
-  }
+if (dryRun) {
+  console.log(stringifyVertoConfig(merged))
+} else if (workspaceExists) {
+  await mergeIntoJsoncFile(workspacePath, merged)
+  console.log(`Merged audit into ${workspacePath}`)
+} else {
+  await writeVertoConfigFile(workspacePath, merged)
+  console.log(`Written to ${workspacePath}`)
 }

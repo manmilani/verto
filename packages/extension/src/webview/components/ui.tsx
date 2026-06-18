@@ -1,7 +1,7 @@
 import React from 'react'
 import type { DisplayStatusGroup } from '@verto/config'
 import { statusGroupColor } from '../theme.js'
-import type { PillTone, StatTone, TextTone } from '../displayStatusGroup.js'
+import { OTHER_DISPLAY_STATUS_GROUP, type PillTone, type StatTone, type TextTone } from '../displayStatusGroup.js'
 
 const TEXT_TONE: Record<TextTone, string> = {
   primary: 'var(--vscode-foreground)',
@@ -282,9 +282,11 @@ export function LegendDot({
 
 export function StatusLegend({
   displayStatusGroups,
+  showOther = false,
   showReadyBorder = false,
 }: {
   displayStatusGroups: DisplayStatusGroup[]
+  showOther?: boolean
   showReadyBorder?: boolean
 }) {
   return (
@@ -292,7 +294,7 @@ export function StatusLegend({
       {displayStatusGroups.map((g, i) => (
         <LegendDot key={g.label} label={g.label} color={statusGroupColor(i)} />
       ))}
-      <LegendDot label="Other" color={statusGroupColor(-1)} />
+      {showOther && <LegendDot label={OTHER_DISPLAY_STATUS_GROUP} color={statusGroupColor(-1)} />}
       {showReadyBorder && (
         <Row gap={6}>
           <div

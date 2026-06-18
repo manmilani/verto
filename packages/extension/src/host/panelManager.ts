@@ -3,21 +3,41 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage } from '../shared/protocol.js'
 import { loadConfig } from './configLoader.js'
+import { isSetupRequiredConfigError, shouldAutoStartSetupForConfigError } from './configErrors.js'
 import { getGitHubToken } from './authProvider.js'
 import { runPipeline } from './loadPipeline.js'
 import { loadOverlay, saveOverlay } from './priorityOverlay.js'
+import { runSetup } from './setupWizard.js'
 
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
+const WATCHER_DEBOUNCE_MS = 750
 
 export class PanelManager {
   private panel: vscode.WebviewPanel | undefined
   private ready = false
   private fetchSeq = 0
   private overlay: Record<string, number | null> = {}
+  private setupInProgress = false
+  private shouldAutoStartSetup = false
+  private watcherDebounce: ReturnType<typeof setTimeout> | undefined
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.overlay = loadOverlay(context)
+
+    const watcher = vscode.workspace.createFileSystemWatcher('**/.vscode/verto.config.jsonc')
+    const scheduleRefresh = () => {
+      if (this.setupInProgress || !this.panel) return
+      if (this.watcherDebounce) clearTimeout(this.watcherDebounce)
+      this.watcherDebounce = setTimeout(() => {
+        this.watcherDebounce = undefined
+        if (this.setupInProgress || !this.panel) return
+        void this.fetch()
+      }, WATCHER_DEBOUNCE_MS)
+    }
+    watcher.onDidCreate(scheduleRefresh)
+    watcher.onDidChange(scheduleRefresh)
+    context.subscriptions.push(watcher)
   }
 
   openOrReveal() {
@@ -25,6 +45,7 @@ export class PanelManager {
       this.panel.reveal()
       return
     }
+    this.shouldAutoStartSetup = true
     this.panel = vscode.window.createWebviewPanel(
       'vertoPanel',
       'Verto',
@@ -45,11 +66,17 @@ export class PanelManager {
       this.context.subscriptions,
     )
     this.panel.onDidDispose(
-      () => { this.panel = undefined; this.ready = false },
+      () => {
+        if (this.watcherDebounce) {
+          clearTimeout(this.watcherDebounce)
+          this.watcherDebounce = undefined
+        }
+        this.panel = undefined
+        this.ready = false
+      },
       undefined,
       this.context.subscriptions,
     )
-    // 'loading' will be sent by fetch() once the webview signals 'ready'
   }
 
   async refresh() {
@@ -58,6 +85,25 @@ export class PanelManager {
       return
     }
     await this.fetch()
+  }
+
+  async runSetupCommand() {
+    await this.invokeSetup({ prefillFromWorkspace: true })
+  }
+
+  private async invokeSetup(options?: { prefillFromWorkspace?: boolean }) {
+    if (this.setupInProgress) return
+    this.setupInProgress = true
+    this.send({ type: 'loading' })
+    let shouldRefresh = false
+    try {
+      shouldRefresh = await runSetup(this.context, options)
+    } finally {
+      this.setupInProgress = false
+    }
+    if (shouldRefresh) {
+      await this.fetch()
+    }
   }
 
   private async handleMessage(msg: WebviewToHostMessage) {
@@ -88,10 +134,18 @@ export class PanelManager {
       case 'retry':
         await this.fetch()
         break
+      case 'runSetup':
+        await this.invokeSetup({ prefillFromWorkspace: true })
+        break
     }
   }
 
   private async fetch() {
+    if (this.setupInProgress) {
+      this.send({ type: 'loading' })
+      return
+    }
+
     const seq = ++this.fetchSeq
     this.send({ type: 'loading' })
 
@@ -101,10 +155,20 @@ export class PanelManager {
     } catch (err) {
       if (seq !== this.fetchSeq) return
       const msg = err instanceof Error ? err.message : String(err)
-      vscode.window.showErrorMessage(msg)
-      this.send({ type: 'error', message: msg })
+      if (isSetupRequiredConfigError(err)) {
+        this.send({ type: 'error', message: msg, setupRequired: true })
+        if (this.shouldAutoStartSetup && shouldAutoStartSetupForConfigError(err)) {
+          this.shouldAutoStartSetup = false
+          await this.invokeSetup()
+        }
+      } else {
+        vscode.window.showErrorMessage(msg)
+        this.send({ type: 'error', message: msg })
+      }
       return
     }
+
+    this.shouldAutoStartSetup = false
 
     if (seq !== this.fetchSeq) return
 
@@ -162,13 +226,11 @@ export class PanelManager {
     const indexPath = path.join(webviewDistPath.fsPath, 'index.html')
     let html = fs.readFileSync(indexPath, 'utf8')
 
-    // Replace relative asset paths with webview URIs
     html = html.replace(/(href|src)="(\.\/[^"]+)"/g, (_match: string, attr: string, assetPath: string) => {
       const assetUri = vscode.Uri.joinPath(webviewDistPath, assetPath.slice(2))
       return `${attr}="${this.panel!.webview.asWebviewUri(assetUri)}"`
     })
 
-    // Inject CSP before </head>
     const csp = [
       `default-src 'none'`,
       `script-src ${this.panel!.webview.cspSource}`,

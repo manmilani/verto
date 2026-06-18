@@ -34,6 +34,7 @@ const githubConfigSchema = {
     scope: { type: 'string', enum: ['project', 'repository'] },
     owner: { type: 'string' },
     ownerType: { type: 'string', enum: ['user', 'organization'] },
+    includeClosedAncestors: { type: 'boolean' },
     fieldMappings: fieldMappingsSchema,
     // project scope
     projectNumber: { type: 'number' },

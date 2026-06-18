@@ -37,6 +37,7 @@ interface VertoState {
   ncnFocusedNodeId?: string
   ncnTableView: NcnTableView
   errorMessage?: string
+  setupRequired?: boolean
 }
 
 export function useVertoState() {
@@ -67,7 +68,13 @@ export function useVertoState() {
         return
       }
       if (msg.type === 'error') {
-        setState(s => ({ ...s, status: 'error', isRefreshing: false, errorMessage: msg.message }))
+        setState(s => ({
+          ...s,
+          status: 'error',
+          isRefreshing: false,
+          errorMessage: msg.message,
+          setupRequired: msg.setupRequired === true,
+        }))
         return
       }
       if (msg.type === 'update') {

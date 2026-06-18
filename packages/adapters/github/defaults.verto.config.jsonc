@@ -9,7 +9,8 @@
   //
   //   Repository scope (all issues in a repo):
   //     { "scope": "repository", "owner": "you", "repository": "your-repo",
-  //       "issueFilter": { "states": ["OPEN"] } }
+  //       "issueFilter": { "states": ["OPEN"] },
+  //       "includeClosedAncestors": true }
 
   "adapter": "github",
 

@@ -8,7 +8,7 @@ export default function App() {
   const {
     status, isRefreshing, bundle, displayStatusGroups, parsedEnabled,
     projectName,
-    lens, focusedNode, errorMessage,
+    lens, focusedNode, errorMessage, setupRequired,
     ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive,
     journeyPriorityOverlay, priorityOptionHints, ncnTableView,
     setLens, setFocusedNode, setParsedEnabled,
@@ -29,12 +29,22 @@ export default function App() {
         <div style={{ color: 'var(--vscode-errorForeground)', marginBottom: 12 }}>
           {errorMessage ?? 'An error occurred.'}
         </div>
-        <button
-          style={buttonStyle}
-          onClick={() => vscode.postMessage({ type: 'retry' })}
-        >
-          Retry
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {setupRequired && (
+            <button
+              style={buttonStyle}
+              onClick={() => vscode.postMessage({ type: 'runSetup' })}
+            >
+              Setup
+            </button>
+          )}
+          <button
+            style={buttonStyle}
+            onClick={() => vscode.postMessage({ type: 'retry' })}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     )
   }

@@ -2,7 +2,7 @@ import type { VertoAdapter, VertoGraph } from '@verto/core'
 import { validateVertoConfig } from '@verto/config'
 import type { VertoConfig } from '@verto/config'
 import { GitHubClient } from './client.js'
-import { expandGraphClosure } from './closure.js'
+import { expandGraphClosure, expandParentClosure } from './closure.js'
 import { requireGitHubConfig } from './githubConfig.js'
 import { mapIssuesToGraph } from './mapper.js'
 import type { GitHubProjectV2Item } from './system_types.js'
@@ -35,6 +35,9 @@ export class GitHubAdapter implements VertoAdapter<VertoConfig> {
         github.issueFilter,
       )
       issues = await expandGraphClosure(client, filtered)
+      if (github.includeClosedAncestors !== false) {
+        issues = await expandParentClosure(client, issues)
+      }
     }
 
     return mapIssuesToGraph(issues, projectItemsByNodeId, config)

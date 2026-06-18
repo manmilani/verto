@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveDisplayStatusGroup, isDoneBucket, isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP, countByDisplayStatusGroup, formatDisplayGroupCounts, summarizePipelineByDisplayGroup, weightByDisplayStatusGroup } from '../webview/displayStatusGroup.js'
+import { resolveDisplayStatusGroup, isDoneBucket, isGap, groupLabelsWithOther, groupLabelsForDisplay, OTHER_DISPLAY_STATUS_GROUP, countByDisplayStatusGroup, formatDisplayGroupCounts, summarizePipelineByDisplayGroup, weightByDisplayStatusGroup, shouldShowOtherColumn, hasOpenTicketStatusOutsideConfiguredLists } from '../webview/displayStatusGroup.js'
 import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
 
@@ -90,6 +90,80 @@ describe('resolveDisplayStatusGroup', () => {
   })
 })
 
+describe('groupLabelsForDisplay', () => {
+  it('omits Other when all rows map to configured groups', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Done', sources: { ticket: { isDone: true, statuses: ['Closed'] } } },
+      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['Doing'] } } },
+      { label: 'Raw', sources: { ticket: { isDone: false, statuses: ['Draft'] } } },
+    ]
+    const rows = [
+      { nodeType: 'ticket' as const, isDone: true, status: 'Closed' },
+      { nodeType: 'ticket' as const, isDone: false, status: 'Doing' },
+      { nodeType: 'ticket' as const, isDone: false, status: 'Draft' },
+    ]
+    expect(groupLabelsForDisplay(groups, rows)).toEqual(['Done', 'In Progress', 'Raw'])
+  })
+
+  it('includes Other when a row is unmapped', () => {
+    const rows = [
+      { nodeType: 'ticket' as const, isDone: false, status: 'Mystery' },
+    ]
+    expect(groupLabelsForDisplay(defaultGroups, rows)).toEqual([
+      'Done', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
+    ])
+  })
+
+  it('includes Other when an open ticket status is removed from In Progress list', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Done', sources: { ticket: { isDone: true, statuses: ['Closed'] } } },
+      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['Doing'] } } },
+      { label: 'Raw', sources: { ticket: { isDone: false, statuses: ['Draft'] } } },
+    ]
+    const rows = [
+      { nodeType: 'ticket' as const, isDone: false, status: 'Specifying' },
+    ]
+    expect(resolveDisplayStatusGroup(rows[0], groups)).toBe(OTHER_DISPLAY_STATUS_GROUP)
+    expect(groupLabelsForDisplay(groups, rows)).toEqual([
+      'Done', 'In Progress', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
+    ])
+  })
+
+  it('includes Other for Child-Care-Hub style config when status is unlisted', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Done', sources: { ticket: { isDone: true, statuses: ['Closed'] }, parsed: { isDone: true, statuses: ['done'] } } },
+      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['To_Plan', 'Planning', 'To_Implement', 'Implementing', 'To_Verify', 'Verifying'] } } },
+      { label: 'Raw', sources: { ticket: { isDone: false, statuses: ['Draft'] }, parsed: { isDone: false, statuses: ['raw'] } } },
+    ]
+    const rows = [
+      { nodeType: 'ticket' as const, isDone: false, status: 'To_Specify' },
+    ]
+    expect(shouldShowOtherColumn(groups, rows)).toBe(true)
+    expect(hasOpenTicketStatusOutsideConfiguredLists(rows, groups)).toBe(true)
+    expect(groupLabelsForDisplay(groups, rows)).toContain(OTHER_DISPLAY_STATUS_GROUP)
+  })
+
+  it('does not match In Progress via isDone:false alone when statuses are listed', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['Doing'] } } },
+    ]
+    expect(resolveDisplayStatusGroup(
+      { nodeType: 'ticket', isDone: false, status: 'Specifying' },
+      groups,
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
+  })
+
+  it('done ticket still matches Done when statuses is also configured', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Done', sources: { ticket: { isDone: true, statuses: ['Closed'] } } },
+    ]
+    expect(resolveDisplayStatusGroup(
+      { nodeType: 'ticket', isDone: true, status: 'Any Legacy Label' },
+      groups,
+    )).toBe('Done')
+  })
+})
+
 describe('groupLabelsWithOther', () => {
   it('appends Other after configured labels', () => {
     expect(groupLabelsWithOther(defaultGroups)).toEqual([
@@ -97,15 +171,15 @@ describe('groupLabelsWithOther', () => {
     ])
   })
 
-  it('does not duplicate Other when a configured group already uses that label', () => {
+  it('does not duplicate others when a configured group already uses that label', () => {
     const groups: DisplayStatusGroup[] = [
-      { label: 'Other', sources: { ticket: { isDone: true } } },
+      { label: 'others', sources: { ticket: { isDone: true } } },
     ]
-    expect(groupLabelsWithOther(groups)).toEqual(['Other'])
+    expect(groupLabelsWithOther(groups)).toEqual(['others'])
     expect(countByDisplayStatusGroup(
       [{ nodeType: 'ticket', isDone: true, status: 'Done' }],
       groups,
-    )).toEqual({ Other: 1 })
+    )).toEqual({ others: 1 })
   })
 })
 
@@ -120,16 +194,16 @@ describe('countByDisplayStatusGroup', () => {
     expect(countByDisplayStatusGroup(rows, defaultGroups)).toEqual({
       Done: 1,
       Raw: 1,
-      Other: 2,
+      others: 2,
     })
   })
 })
 
 describe('formatDisplayGroupCounts', () => {
   it('formats non-zero counts in config order', () => {
-    const counts = { Done: 3, Raw: 0, Other: 1 }
+    const counts = { Done: 3, Raw: 0, others: 1 }
     expect(formatDisplayGroupCounts(counts, defaultGroups)).toBe(
-      '3 Done · 1 Other',
+      '3 Done · 1 others',
     )
   })
 })
@@ -141,9 +215,9 @@ describe('summarizePipelineByDisplayGroup', () => {
       { id: 'b', title: 'B', isDone: false, status: 'In Progress', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u' },
     ]
     const { counts, weights } = summarizePipelineByDisplayGroup(rows, defaultGroups)
-    expect(counts).toEqual({ Done: 1, Raw: 0, Other: 1 })
-    expect(weights).toEqual({ Done: 2, Raw: 0, Other: 1 })
-    expect(formatDisplayGroupCounts(weights, defaultGroups)).toBe('2 Done · 1 Other')
+    expect(counts).toEqual({ Done: 1, Raw: 0, others: 1 })
+    expect(weights).toEqual({ Done: 2, Raw: 0, others: 1 })
+    expect(formatDisplayGroupCounts(weights, defaultGroups)).toBe('2 Done · 1 others')
   })
 })
 
@@ -153,7 +227,7 @@ describe('weightByDisplayStatusGroup', () => {
       { id: 'a', title: 'A', isDone: true, status: 'Done', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u', weight: 2 },
     ]
     expect(weightByDisplayStatusGroup(rows, defaultGroups)).toEqual({
-      Done: 2, Raw: 0, Other: 0,
+      Done: 2, Raw: 0, others: 0,
     })
   })
 })

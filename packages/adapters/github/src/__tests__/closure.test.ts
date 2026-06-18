@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { expandGraphClosure } from '../closure.js'
+import { expandGraphClosure, expandParentClosure } from '../closure.js'
 import type { GitHubIssue } from '../system_types.js'
 import type { GitHubClient } from '../client.js'
 
@@ -97,5 +97,26 @@ describe('expandGraphClosure', () => {
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('A')
     warnSpy.mockRestore()
+  })
+})
+
+describe('expandParentClosure', () => {
+  it('fetches closed ancestor of open leaf', async () => {
+    const P = makeIssue('P', { closed: true })
+    const C = makeIssue('C', { parent: { id: 'P' } })
+    const client = mockClient({ P })
+    const result = await expandParentClosure(client, [C])
+    expect(result.map(i => i.id).sort()).toEqual(['C', 'P'])
+    expect(client.fetchIssuesByNodeIds).toHaveBeenCalledWith(['P'])
+  })
+
+  it('stops when all parents are already loaded', async () => {
+    const P = makeIssue('P')
+    const C = makeIssue('C', { parent: { id: 'P' } })
+    const fetchSpy = vi.fn(async () => [])
+    const client = { fetchIssuesByNodeIds: fetchSpy } as unknown as GitHubClient
+    const result = await expandParentClosure(client, [C, P])
+    expect(result).toHaveLength(2)
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

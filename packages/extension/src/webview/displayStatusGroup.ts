@@ -6,9 +6,69 @@ export type PillTone = 'success' | 'warning' | 'info' | 'neutral' | 'deleted' | 
 export type TextTone = 'primary' | 'secondary' | 'tertiary' | 'quaternary'
 export type StatTone = 'success' | 'warning' | 'info' | 'danger'
 
-export const OTHER_DISPLAY_STATUS_GROUP = 'Other'
+export const OTHER_DISPLAY_STATUS_GROUP = 'others'
 
-/** Configured group labels plus the implicit Other bucket (single source of truth for table/bar headers). */
+/** Union of ticket workflow statuses listed on non-done groups. */
+export function configuredOpenTicketStatuses(groups: DisplayStatusGroup[]): Set<string> {
+  const set = new Set<string>()
+  for (const group of groups) {
+    if (isDoneBucket(group)) continue
+    group.sources.ticket?.statuses?.forEach(status => set.add(status))
+  }
+  return set
+}
+
+/** True when any row resolves to the implicit Other bucket. */
+export function hasOtherDisplayGroupRows(
+  rows: Iterable<Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>>,
+  groups: DisplayStatusGroup[],
+): boolean {
+  for (const row of rows) {
+    if (resolveDisplayStatusGroup(row, groups) === OTHER_DISPLAY_STATUS_GROUP) return true
+  }
+  return false
+}
+
+/** True when an open ticket's workflow status is not listed on any non-done group. */
+export function hasOpenTicketStatusOutsideConfiguredLists(
+  rows: Iterable<Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>>,
+  groups: DisplayStatusGroup[],
+): boolean {
+  const configured = configuredOpenTicketStatuses(groups)
+  if (configured.size === 0) return false
+  for (const row of rows) {
+    if (row.nodeType !== 'ticket' || row.isDone) continue
+    if (row.status === undefined) continue
+    if (!configured.has(row.status)) return true
+  }
+  return false
+}
+
+/** Whether portfolio/legend UI should surface the implicit Other bucket. */
+export function shouldShowOtherColumn(
+  groups: DisplayStatusGroup[],
+  rows: Iterable<Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>>,
+): boolean {
+  return hasOtherDisplayGroupRows(rows, groups)
+    || hasOpenTicketStatusOutsideConfiguredLists(rows, groups)
+}
+
+/** Configured group labels for UI columns/legends; includes Other only when needed. */
+export function groupLabelsForDisplay(
+  groups: DisplayStatusGroup[],
+  rows: Iterable<Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>>,
+): string[] {
+  const labels = groups.map(g => g.label)
+  if (
+    shouldShowOtherColumn(groups, rows) &&
+    !labels.includes(OTHER_DISPLAY_STATUS_GROUP)
+  ) {
+    labels.push(OTHER_DISPLAY_STATUS_GROUP)
+  }
+  return labels
+}
+
+/** Configured group labels plus the implicit Other bucket (for internal counting). */
 export function groupLabelsWithOther(groups: DisplayStatusGroup[]): string[] {
   const labels = groups.map(g => g.label)
   if (!labels.includes(OTHER_DISPLAY_STATUS_GROUP)) {
@@ -29,6 +89,29 @@ export function isDoneBucket(group: DisplayStatusGroup): boolean {
       || group.sources.parsed?.isDone === true
 }
 
+function sourceRuleMatches(
+  row: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
+  rule: { isDone?: boolean; statuses?: string[] },
+  colIsDone: boolean,
+): boolean {
+  const isDonePredicateMatch =
+    rule.isDone !== undefined && row.isDone === rule.isDone
+
+  const hasStatuses = rule.statuses !== undefined && rule.statuses.length > 0
+  const statusMatch =
+    hasStatuses &&
+    row.status !== undefined &&
+    rule.statuses!.includes(row.status) &&
+    (colIsDone ? row.isDone === true : row.isDone === false)
+
+  // Non-done groups with an explicit status list: only listed statuses match.
+  if (hasStatuses && !colIsDone) {
+    return statusMatch
+  }
+
+  return isDonePredicateMatch || statusMatch
+}
+
 export function resolveDisplayStatusGroup(
   row: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
   groups: DisplayStatusGroup[],
@@ -37,17 +120,9 @@ export function resolveDisplayStatusGroup(
     const rule = group.sources[row.nodeType as 'ticket' | 'parsed']
     if (!rule) continue
 
-    const isDonePredicateMatch =
-      rule.isDone !== undefined && row.isDone === rule.isDone
-
-    const colIsDone = isDoneBucket(group)
-    const statusMatch =
-      rule.statuses !== undefined &&
-      row.status !== undefined &&
-      rule.statuses.includes(row.status) &&
-      (colIsDone || row.isDone === false)
-
-    if (isDonePredicateMatch || statusMatch) return group.label
+    if (sourceRuleMatches(row, rule, isDoneBucket(group))) {
+      return group.label
+    }
   }
   return OTHER_DISPLAY_STATUS_GROUP
 }
@@ -127,7 +202,7 @@ export function isGap(
 
 /** Comma-separated prose list of configured display groups for page descriptions. */
 export function formatDisplayGroupsProse(groups: DisplayStatusGroup[]): string {
-  const labels = groupLabelsWithOther(groups)
+  const labels = groups.map(g => g.label)
   if (labels.length === 0) return 'in a configured delivery state'
   if (labels.length === 1) return labels[0]
   return `${labels.slice(0, -1).join(', ')}, or ${labels[labels.length - 1]}`

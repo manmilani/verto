@@ -5,7 +5,7 @@ import { resolveDisplayStatusGroup, OTHER_DISPLAY_STATUS_GROUP } from './display
 /**
  * Returns a human-readable status string for a node using the configured
  * display-status groups. Format: "<group> (<raw status>)" or "<group>" when
- * no raw status is present. Falls back to "Other (<raw>)" / "Other" when the
+ * no raw status is present. Falls back to "others (<raw>)" / "others" when the
  * node doesn't match any group.
  */
 export function formatNodeStatus(
@@ -14,7 +14,7 @@ export function formatNodeStatus(
 ): string {
   const label = resolveDisplayStatusGroup(node, groups)
   const raw = node.status
-  if (label === OTHER_DISPLAY_STATUS_GROUP) return raw ? `Other (${raw})` : 'Other'
+  if (label === OTHER_DISPLAY_STATUS_GROUP) return raw ? `${OTHER_DISPLAY_STATUS_GROUP} (${raw})` : OTHER_DISPLAY_STATUS_GROUP
   return raw ? `${label} (${raw})` : label
 }
 

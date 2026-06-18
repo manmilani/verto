@@ -19,6 +19,7 @@ type GitHubScopeVariant =
 
 export type GitHubConfig = GitHubScopeVariant & {
   ownerType?: 'user' | 'organization'
+  includeClosedAncestors?: boolean
   fieldMappings?: FieldMappings
 }
 

@@ -38,3 +38,28 @@ export async function expandGraphClosure(
 
   return [...all.values()]
 }
+
+/** BFS upward on issue.parent.id — fetches closed ancestors missing from the graph. */
+export async function expandParentClosure(
+  client: GitHubClient,
+  initialIssues: GitHubIssue[],
+  maxRounds = 5,
+): Promise<GitHubIssue[]> {
+  const all = new Map(initialIssues.map(i => [i.id, i]))
+
+  for (let round = 0; round < maxRounds; round++) {
+    const parentIds = new Set<string>()
+    for (const issue of all.values()) {
+      const parentId = issue.parent?.id
+      if (parentId && !all.has(parentId)) {
+        parentIds.add(parentId)
+      }
+    }
+    if (parentIds.size === 0) break
+
+    const fetched = await client.fetchIssuesByNodeIds([...parentIds])
+    fetched.forEach(i => all.set(i.id, i))
+  }
+
+  return [...all.values()]
+}

@@ -4,9 +4,9 @@ import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
 import {
   resolveDisplayStatusGroupIndex,
-  isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP,
+  isGap, groupLabelsForDisplay, OTHER_DISPLAY_STATUS_GROUP,
   countByDisplayStatusGroup, weightByDisplayStatusGroup, formatDisplayGroupCounts,
-  pillToneForNode, formatDisplayGroupsProse,
+  pillToneForNode, formatDisplayGroupsProse, shouldShowOtherColumn,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
@@ -33,9 +33,24 @@ export function DeliveryMap({
 }: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
+  const pipelinesBySliceId = useMemo(() => {
+    const map = new Map<string, VertoNode[]>()
+    for (const n of graph.nodes) {
+      if (n.isDeliverySlice) {
+        map.set(n.id, buildPipelineForSlice(n.id, graph, implOrder))
+      }
+    }
+    return map
+  }, [graph, implOrder])
+
   const allGroups = useMemo(
-    () => groupLabelsWithOther(displayStatusGroups),
-    [displayStatusGroups],
+    () => groupLabelsForDisplay(displayStatusGroups, graph.nodes),
+    [displayStatusGroups, graph.nodes],
+  )
+
+  const showOtherLegend = useMemo(
+    () => shouldShowOtherColumn(displayStatusGroups, graph.nodes),
+    [graph.nodes, displayStatusGroups],
   )
 
   const slices = useMemo(
@@ -46,16 +61,6 @@ export function DeliveryMap({
     ),
     [graph.nodes, bundle.deliveryCompleteness],
   )
-
-  const pipelinesBySliceId = useMemo(() => {
-    const map = new Map<string, VertoNode[]>()
-    for (const n of graph.nodes) {
-      if (n.isDeliverySlice) {
-        map.set(n.id, buildPipelineForSlice(n.id, graph, implOrder))
-      }
-    }
-    return map
-  }, [graph, implOrder])
 
   const dmStats = useMemo(
     () => deliveryMapStats(bundle, displayStatusGroups, pipelinesBySliceId),
@@ -127,7 +132,7 @@ export function DeliveryMap({
         }}
       >
         <Text size="small" weight="semibold" tone="secondary">Legend</Text>
-        <StatusLegend displayStatusGroups={displayStatusGroups} />
+        <StatusLegend displayStatusGroups={displayStatusGroups} showOther={showOtherLegend} />
         <Spacer />
         <Text size="small" tone="quaternary">Live data from your tracker</Text>
       </Row>
@@ -172,7 +177,7 @@ export function DeliveryMap({
             <Text italic tone="secondary">{slice._outcome}</Text>
           )}
 
-          <UsageBar pipeline={pipeline} displayStatusGroups={displayStatusGroups} />
+          <UsageBar pipeline={pipeline} allNodes={graph.nodes} displayStatusGroups={displayStatusGroups} />
 
           <Divider />
 
@@ -382,11 +387,12 @@ function PipelineStep({
   )
 }
 
-function UsageBar({ pipeline, displayStatusGroups }: {
+function UsageBar({ pipeline, allNodes, displayStatusGroups }: {
   pipeline: VertoNode[]
+  allNodes: VertoNode[]
   displayStatusGroups: DisplayStatusGroup[]
 }) {
-  const allGroups = groupLabelsWithOther(displayStatusGroups)
+  const allGroups = groupLabelsForDisplay(displayStatusGroups, allNodes)
   const weights = weightByDisplayStatusGroup(pipeline, displayStatusGroups)
   const total = Object.values(weights).reduce((a, b) => a + b, 0)
   if (total === 0) return null

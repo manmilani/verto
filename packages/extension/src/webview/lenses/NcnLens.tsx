@@ -11,6 +11,7 @@ import {
   StatusLegend, Spacer, Pill,
 } from '../components/ui.js'
 import { ncnStats } from '../bundleMetrics.js'
+import { shouldShowOtherColumn } from '../displayStatusGroup.js'
 
 interface Props {
   bundle: DeliveryMapBundle
@@ -41,6 +42,8 @@ export function NcnLens({
   const focusedNode = focusedNcnNodeId
     ? graph.nodes.find(n => n.id === focusedNcnNodeId)
     : undefined
+
+  const showOtherLegend = shouldShowOtherColumn(displayStatusGroups, graph.nodes)
 
   return (
     <Stack gap={20} style={{ padding: 24, maxWidth: 1320, margin: '0 auto' }}>
@@ -93,7 +96,7 @@ export function NcnLens({
           </select>
         </Row>
         <Spacer />
-        <StatusLegend displayStatusGroups={displayStatusGroups} showReadyBorder />
+        <StatusLegend displayStatusGroups={displayStatusGroups} showOther={showOtherLegend} showReadyBorder />
       </Row>
 
       {(focusedNode || highlightedSliceId) && (

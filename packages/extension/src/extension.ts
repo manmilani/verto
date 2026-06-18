@@ -6,6 +6,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('verto.openPanel', () => manager.openOrReveal()),
     vscode.commands.registerCommand('verto.refresh',   () => manager.refresh()),
+    vscode.commands.registerCommand('verto.setup',     () => manager.runSetupCommand()),
   )
 }
 

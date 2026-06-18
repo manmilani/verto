@@ -26,18 +26,18 @@ describe('formatNodeStatus', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: 'Backlog' },
       defaultGroups,
-    )).toBe('Other (Backlog)')
+    )).toBe('others (Backlog)')
   })
 
-  it('undone ticket with no status → Other', () => {
+  it('undone ticket with no status → others', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: undefined },
       defaultGroups,
-    )).toBe('Other')
+    )).toBe('others')
   })
 
-  it('falls to Other when no group has a rule for this nodeType', () => {
-    // Groups with only ticket rules — parsed nodes fall to Other
+  it('falls to others when no group has a rule for this nodeType', () => {
+    // Groups with only ticket rules — parsed nodes fall to others
     const ticketOnlyGroups: DisplayStatusGroup[] = [
       { label: 'Done', sources: { ticket: { isDone: true } } },
       { label: 'In Progress', sources: { ticket: { isDone: false } } },
@@ -45,7 +45,7 @@ describe('formatNodeStatus', () => {
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: false, status: 'custom' },
       ticketOnlyGroups,
-    )).toBe('Other (custom)')
+    )).toBe('others (custom)')
   })
 
   it('parsed done node matches Done group', () => {
@@ -62,11 +62,11 @@ describe('formatNodeStatus', () => {
     )).toBe('Raw (raw)')
   })
 
-  it('empty groups → falls through to Other', () => {
+  it('empty groups → falls through to others', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: 'Todo' },
       [],
-    )).toBe('Other (Todo)')
+    )).toBe('others (Todo)')
   })
 })
 

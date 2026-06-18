@@ -20,6 +20,10 @@
       {
         "command": "verto.refresh",
         "title": "Verto: Refresh"
+      },
+      {
+        "command": "verto.setup",
+        "title": "Verto: Setup"
       }
     ]
   },

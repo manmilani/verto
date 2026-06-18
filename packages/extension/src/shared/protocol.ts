@@ -21,7 +21,7 @@ export type HostToWebviewMessage =
       priorityOptionHints: PriorityOptionHints;
       restoredState?: PersistedPanelState }
   | { type: 'loading' }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; setupRequired?: boolean }
 
 export type WebviewToHostMessage =
   | { type: 'ready' }
@@ -29,3 +29,4 @@ export type WebviewToHostMessage =
   | { type: 'persistState'; state: PersistedPanelState }
   | { type: 'setPriority'; sliceId: string; priority: number | null }
   | { type: 'retry' }
+  | { type: 'runSetup' }

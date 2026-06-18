@@ -93,6 +93,39 @@ describe('GitHubAdapter', () => {
     expect(graph.nodes[0].id).toBe('R1')
   })
 
+  it('repository scope: expands parent closure by default', async () => {
+    const P = makeIssue('P', { closed: true })
+    const C = makeIssue('C', { parent: { id: 'P' } })
+    const { GitHubClient } = await import('../client.js')
+    vi.spyOn(GitHubClient.prototype, 'fetchRepositoryIssues').mockResolvedValue([C])
+    vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([P])
+
+    const adapter = new GitHubAdapter('test-token')
+    const graph = await adapter.loadProject(repoConfig)
+    expect(graph.nodes.map(n => n.id).sort()).toEqual(['C', 'P'])
+  })
+
+  it('repository scope: skips parent closure when includeClosedAncestors is false', async () => {
+    const C = makeIssue('C', { parent: { id: 'P' } })
+    const { GitHubClient } = await import('../client.js')
+    vi.spyOn(GitHubClient.prototype, 'fetchRepositoryIssues').mockResolvedValue([C])
+    const fetchSpy = vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([])
+
+    const adapter = new GitHubAdapter('test-token')
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'repository',
+        owner: 'test',
+        repository: 'my-repo',
+        includeClosedAncestors: false,
+      },
+    }
+    const graph = await adapter.loadProject(config)
+    expect(graph.nodes.map(n => n.id)).toEqual(['C'])
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('throws before network call when config is invalid', async () => {
     const bad = { adapter: 'github', github: { scope: 'project', owner: 'x' } } as unknown as VertoConfig
     const adapter = new GitHubAdapter('test-token')
