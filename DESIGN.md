@@ -484,8 +484,8 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 
 - **Portfolio** — per slice, bucket Requirements using `ui.displayStatusGroups` (§4.6.3).
   **Sort:** delivery slices by `deliveryCompleteness[sliceId]` descending (highest
-  completeness first). **Slice picker pills:** neutral tone in Phase 3 (status/state-based
-  pill colouring for all nodes deferred to Phase 4 — see §4.8).
+  completeness first). **Primary user** column — `personas` joined (`' / '`) per slice.
+  **Slice picker pills:** completion-toned via `buildTone(deliveryCompleteness)` (Phase 4).
 - **UsageBar** — same display-status groups as the portfolio table plus an implicit **Other** bucket;
   segment value = **sum of `weight`** (default 1) of requirements in that bucket.
   With default weights this equals a count.
@@ -735,6 +735,7 @@ packages/adapters/github/
   client.ts                  # GraphQL / REST I/O — queries & mutations
   mapper.ts                  # two-way mapping: tracker-native ↔ VertoNode / VertoEdge
   adapter.ts                 # VertoAdapter.loadProject() → VertoGraph only (§4.6.5)
+  githubConfig.ts            # requireGitHubConfig() — guard when VertoConfig.github is optional
 
 packages/text-parser/       # post-adapter enrichment — NOT a tracker adapter (§4.6.8)
   materialize.ts             # RAW_REQ → nodeType: 'parsed' nodes + edges
@@ -805,6 +806,17 @@ JSONC-aware parsing. Config files use **JSONC format** (`.jsonc` extension; `//`
 comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` both fail
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
 `@verto/config`; the config type lives in `@verto/config` only.
+
+**`VertoConfig.github` is adapter-conditional.** The TypeScript type declares
+`github?: GitHubConfig`. JSON Schema requires only `adapter` at the root; when
+`adapter === "github"`, the `github` block is required (`allOf` + `if`/`then` in
+`schema.ts`). Non-GitHub adapters (e.g. future Beans) omit `github` entirely. GitHub
+adapter code calls `requireGitHubConfig(config)` (`packages/adapters/github/src/githubConfig.ts`)
+for a clear error when the block is missing.
+
+**`@verto/config/priority-hints` subpath.** Browser-safe helpers for priority dropdown
+labels (`buildPriorityOptionHints`, `formatPriorityOptionLabel`, …) — exported separately
+so the webview bundle does not pull in `node:fs` via the main `@verto/config` parse path.
 
 **`ui.displayStatusGroups` (Phase 2.5; renamed from `portfolioColumns`).** UI-layer
 config under the root **`ui`** key. Defines how canonical node fields (`nodeType`,
@@ -1028,12 +1040,20 @@ not inside adapters:
 
 ```
 adapter.loadProject(config) → VertoGraph
-  → runHostPipeline(graph, { parsedEnabled? })
+resolveProjectTitle(config, token)   // adapter-aware panel title (extension host only)
+  → runHostPipeline(graph, { parsedEnabled?, priorityOverlay? })
        → materializeParsedRequirements(graph)
+       → computeBodyFields(graph)
        → filterParsedNodes(graph)          // when !parsedEnabled / --no-parsed
        → validateGraph(graph)
+       → applyPriorityOverlay(graph, overlay?)   // Phase 4; slice ids only
        → buildDeliveryMapBundle(graph)
 ```
+
+**`resolveProjectTitle`** (`packages/extension/src/host/resolveProjectTitle.ts`) —
+extension-host only. For `adapter === 'github'`, delegates to `@verto/adapter-github`
+`resolveProjectName`; other adapters return the adapter id until they supply their own
+resolver. Keeps GitHub-specific I/O out of the generic load path.
 
 **Required-field fallback policy (read path).** Some `VertoNode` properties are
 required but may have no mapped ticket field. The mapper must behave consistently:
@@ -1195,10 +1215,12 @@ these from the live project schema.
 4. **`parseDescBlock(body)`** — low-level helper: extract the first paragraph of the
    `DESC:BEGIN` / `DESC:END` block (strip HTML comments, split on blank line, take
    first paragraph). Called by `computeBodyFields`; not for direct use in the webview.
-5. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`):
-   `materializeParsedRequirements` → `computeBodyFields` → `filterParsedNodes` when
-   `parsedEnabled` is `false` → `validateGraph` → `buildDeliveryMapBundle`; returns
-   `DeliveryMapBundle`. Shared by `scripts/load-project.mjs` and extension `loadPipeline.ts`.
+5. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`);
+   `opts.priorityOverlay` (Phase 4, slice ids only): `materializeParsedRequirements`
+   → `computeBodyFields` → `filterParsedNodes` when `parsedEnabled` is `false` →
+   `validateGraph` → `applyPriorityOverlay` when overlay present →
+   `buildDeliveryMapBundle`; returns `DeliveryMapBundle`. Shared by
+   `scripts/load-project.mjs` and extension `loadPipeline.ts`.
 
 **Body stripping (Phase 3, `panelManager.ts`):** After `runHostPipeline` returns the
 bundle, `panelManager.ts` removes `ticketFields.body` from every node before sending
@@ -1263,8 +1285,9 @@ nodes. Parsed nodes inherit parent URL + anchor.
   such as `isDeliverySlice` and `isDone`); optional runtime ID caches. Rule of thumb:
   *if it's "how this workspace is wired to its tracker," it's workspace config.*
 - **In workspace/global editor state (transient UI):** refresh interval, selected
-  vertical, current lens, graph pan/zoom — not committed to `verto.config.jsonc`
-  unless we later decide otherwise.
+  vertical, current lens, graph pan/zoom, **custom journey priority overlay** (Phase 4,
+  `workspaceState` until Phase 5 write-back), NCN highlight/focus and table-view
+  preference — not committed to `verto.config.jsonc` unless we later decide otherwise.
 - **Secrets** (GitHub PAT, etc.): editor or environment settings — **never** in
   `verto.config.jsonc`.
 
@@ -1277,8 +1300,8 @@ nodes. Parsed nodes inherit parent URL + anchor.
 - **Panel location:** **editor tab** via `WebviewPanel` (`createWebviewPanel`) —
   not sidebar, not custom editor.
 - **NCN graph UI stack:** **@xyflow/react** (React Flow) for rendering; **ELK**
-  (`elkjs`) as the background layout engine. **Phase 3:** pan/zoom disabled;
-  pan/zoom/focus deferred to Phase 4.
+  (`elkjs`) as the background layout engine. **Phase 4:** pan/zoom enabled
+  (`panOnScroll`, `zoomOnScroll`); journey highlight + click-to-focus neighbourhood.
 - **Bundlers:** extension **host** → **esbuild**; **webview** → **Vite**. CSP-safe
   webview bundle; no inline scripts.
 - **Standard pieces only:** extension manifest + activation, a **WebviewPanel**
@@ -1291,35 +1314,33 @@ nodes. Parsed nodes inherit parent URL + anchor.
   `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
   Requirements** toggle persistence, and UI state. Adapters do **not** materialize
   parsed nodes or build bundles.
-- **Webview responsibilities (Phase 3):** purely a view of the `DeliveryMapBundle`
-  and config payload it receives — the **Delivery Map** and **NCN graph** lenses.
-  Priority editor and implementation-order table are **Phase 4**. The deprecated
-  original canvas's `useCanvasState` is replaced by a thin hook over `postMessage`
-  + host persistence. Theme via VS Code CSS variables instead of hard-coded hex.
-- **Parity target:** Phase 3 Delivery Map achieves **canvas fidelity** (persona/outcome,
-  pipeline, portfolio table, UsageBar, gaps — §3.7). Phase 3 NCN graph is an MVP
-  (full graph, ready colouring, leverage badges; no pan/zoom). Phase 4 achieves
-  **full UI fidelity** with the deprecated canvas’s user-visible outcomes (see
-  [IMPLEMENTATION.md — Phase 4](./IMPLEMENTATION.md#phase-4--full-ui-fidelity)):
-  NCN pan/zoom, journey highlight + click-to-focus neighbourhood, slice priority
-  editor, two-mode implementation-order table, status/state-based node colouring
-  (all nodes), and remaining theming — same core algorithms throughout; Verto
-  architecture for implementation.
+- **Webview responsibilities:** a view of the `DeliveryMapBundle`, config payload,
+  and host-derived metadata (`projectName`, `priorityOptionHints`, overlay state).
+  **Delivery Map** and **NCN graph** lenses with canvas-fidelity chrome (shared
+  `components/ui.tsx`: pills, stats, data tables, status dots/legend). **Phase 4:**
+  slice priority editor (dropdown), implementation-order / leverage table toggle,
+  NCN pan/zoom/focus, status-group colouring on all nodes via `displayStatusGroup.ts`
+  + `theme.ts`. The deprecated original canvas's `useCanvasState` is replaced by a
+  thin hook over `postMessage` + host persistence. Theme via VS Code CSS variables
+  instead of hard-coded hex.
+- **Parity target:** Phase 4 **full UI fidelity** is **complete** — see
+  [IMPLEMENTATION.md — Phase 4](./IMPLEMENTATION.md#phase-4--full-ui-fidelity).
+  Phase 3 delivered the read-only foundation; Phase 4 matched canvas user-visible
+  outcomes (priorities, tables, graph interaction, status colouring).
 
 **Host↔webview message protocol.** All communication between the extension host and
 the webview uses a typed `postMessage` contract defined in
 `packages/extension/src/shared/protocol.ts`, imported by both host and webview build
-targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?: string; … }`
-  (`focusedNode` = selected delivery-slice id in the Delivery Map lens). **Phase 4:**
-  NCN lens adds separate persisted state for journey highlight and click-to-focus
-  (canvas `GraphView` — not the same field as Delivery Map slice selection). Exact
-  protocol fields defined during Phase 4 implementation.
+targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?;
+ncnHighlightedSliceId?; ncnFocusedNodeId?; ncnTableView?: 'implementationOrder' |
+'leverage' }` (`focusedNode` = selected delivery-slice id in the Delivery Map lens;
+NCN highlight/focus fields are separate from Delivery Map slice selection).
 
 *Host → webview:*
 
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
-| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `restoredState?: PersistedPanelState` | Initial load, refresh, **Enable Parsed Requirements** toggle change, or **priority overlay** change (`setPriority`) |
+| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `priorityOverlayActive: boolean`; `projectName: string`; `journeyPriorityOverlay: Record<string, number>`; `priorityOptionHints: PriorityOptionHints`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, or priority overlay change |
 
 *Webview → host:*
 
@@ -1328,7 +1349,7 @@ targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedN
 | `'ready'` | — | Webview mounted; host holds the first `'update'` until this arrives |
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
 | `'setPriority'` | `sliceId: string; priority: number \| null` (`null` clears the override) | User edits priority on a delivery slice; host updates overlay + rebuilds bundle |
-| `'persistState'` | `state: PersistedPanelState` | Lens switch or focused-node change (debounced) |
+| `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN highlight/focus, or table-view toggle (debounced) |
 
 `displayStatusGroups` travels in `'update'` alongside the bundle — **not** inside
 `DeliveryMapBundle` — keeping `@verto/core` free of config concerns.
@@ -1394,8 +1415,9 @@ the body sections cited — this list is the index.
   `@verto/text-parser` owns materialize → filter → validate → bundle (§4.6.5, §4.6.8).
 - ~~**Status vocabulary.**~~ **Closed** — workflow `status` on canonical root (from
   tracker); graph math uses `isDone`. Parsed raw lines use `raw` / `done`. Slice-level
-  **partial** progress UI deferred to Phase 4 (`deliveryCompleteness` bar). Phase 4
-  status/state-based node colouring (all nodes) — palette detail TBD.
+  completeness shown via `deliveryCompleteness` Stat + completion-toned pills (Phase 4).
+  Status/state-based node colouring on all nodes — `resolveDisplayStatusGroup()` +
+  `theme.ts` palette by group index (Phase 4).
 - ~~**Vertical priority representation.**~~ **Closed** — numeric field (1–9) required on all nodes; global ranking via chain-traversal algorithm with normalisation — see §3.5 and `types.ts` `Priority` type.
 - ~~**Multi-parent scenarios.**~~ **Closed** — nodes with multiple upward chains each generate results per chain; the minimum normalised value wins — see §3.5.
 - ~~**Black boxes.**~~ **Closed (removed)** — deprecated canvas section not ported;
@@ -1438,9 +1460,9 @@ the body sections cited — this list is the index.
   `computeBodyFields` in `@verto/text-parser` sets `_outcome` (first DESC paragraph) on
   ticket nodes at pipeline time; `_note` on children likewise. `ticketFields.body`
   stripped by `panelManager.ts` before webview `'update'` message (§3.7, §4.6.8).
-- ~~**UI port fidelity (Delivery Map).**~~ **Closed (Phase 3)** — persona/outcome,
-  pipeline, portfolio table, UsageBar, gaps required; deprecated black-box section
-  **not** ported.
+- ~~**UI port fidelity (Delivery Map).**~~ **Closed (Phase 3–4)** — persona/outcome,
+  pipeline, portfolio table (incl. Primary user column), UsageBar, gaps; completion-toned
+  slice pills and shared table chrome (Phase 4); deprecated black-box section **not** ported.
 - **Requirements ↔ child ticket linking.** Explicit mechanism — **deferred**; union
   is concatenation only, no dedupe.
 - **Decomposition CTA.** UI action when a slice has raw requirements but no children
@@ -1476,19 +1498,22 @@ the body sections cited — this list is the index.
   [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
 - ~~**Personas source (GitHub).**~~ **Closed (Phase 2.5)** — label prefix `persona:`;
   optional `fieldMappings.personas` replaces label extraction — §4.6.4, §4.6.7.
-- ~~**Config bootstrap / audit.**~~ **Closed (design)** — audit step drafts
-  `verto.config.jsonc` from live project shape; extension setup copies defaults and
-  presents draft for edit — see §4.6.6.
+- ~~**Config bootstrap / audit.**~~ **Closed (design + library)** — audit step drafts
+  `verto.config.jsonc` from live project shape; `auditProjectScope` /
+  `auditRepositoryScope` exported from `@verto/adapter-github` (Phase 4); extension setup
+  wizard (screens / validation UX) still open — see §4.6.6.
 - ~~**Required-field fallback (read path).**~~ **Closed (Phase 2.5)** — fail:
   `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`,
   `nodeType`, `nodeOrigin`; default `5`: `priority`; optional: `status` (`undefined`),
   `personas` (`[]` or label extraction); enrichment: `_rawReqIds` (`[]` from adapter) —
   see §4.6.5. `nodeType` / `nodeOrigin` stamped by `mapper.ts`.
-- ~~**`VertoConfig` schema.**~~ **Closed (Phase 2)** — `fieldMappings` is
-  `Record<string, FieldMappingEntry>` nested under `github` in `VertoConfig`; `from.kind:
-  'issue' | 'projectV2'`; optional `values` map (full-entry replace on merge); optional
-  `type` hint; `scope`-conditional required fields validated by JSON Schema via `ajv`;
-  JSONC format with `comment-json` parser — see `packages/config/` (`@verto/config`).
+- ~~**`VertoConfig` schema.**~~ **Closed (Phase 2; extended Phase 4)** — `fieldMappings`
+  is `Record<string, FieldMappingEntry>` nested under `github` in `VertoConfig` when the
+  GitHub adapter is selected; `github` is **optional** on `VertoConfig` at the type level
+  and required by JSON Schema only when `adapter === "github"`; `from.kind: 'issue' |
+  'projectV2'`; optional `values` map (full-entry replace on merge); optional `type`
+  hint; `scope`-conditional required fields inside `github`; JSONC via `comment-json` —
+  see `packages/config/` (`@verto/config`).
 - ~~**Read-only MVP vs. write-back day one.**~~ **Closed** — read-only MVP first
   (Phases 2–4); write-back in Phase 5.
 - ~~**GitHub adapter scope.**~~ **Closed (Phase 2)** — `github.scope: "project" |
@@ -1500,33 +1525,34 @@ the body sections cited — this list is the index.
   persisted deferred to Phase 5). Rate-limit: exponential backoff (100 ms × 2ⁿ, max 3
   retries). Pagination: cursor-based, fetch all pages (top-level + nested connections).
 - **Adapter capability differences.** How the core/UI degrade gracefully when an
-  adapter lacks a feature (e.g. no custom fields, no native blocking links).
+  adapter lacks a feature (e.g. no custom fields, no native blocking links). Partially
+  addressed: `resolveProjectTitle` falls back to adapter id; `requireGitHubConfig` gives
+  a specific error when `github` is missing for the GitHub adapter.
 - **Beans or Backlog.md / file-system shape.** File format, on-disk schema, and how
   dependencies/priorities are expressed in files; equivalent of `project_fields.ts`
   for config-driven fields if needed.
 
 ### 5.4 Extension & UI
 
-- ~~**UI port fidelity (Phase 3 scope).**~~ **Closed** — Delivery Map requires
-  canvas fidelity (persona/outcome, pipeline, portfolio table, UsageBar, gaps).
-  NCN pan/zoom deferred to Phase 4.
+- ~~**UI port fidelity (Phase 3 scope).**~~ **Closed** — Delivery Map and NCN lenses
+  achieve canvas fidelity (Phase 3 foundation + Phase 4 interaction/colouring/tables).
 - ~~**DAG layout library.**~~ **Closed (Phase 3)** — **@xyflow/react** (React
   Flow) for graph UI; **ELK** (`elkjs`) for layout. See §4.8.
 - ~~**Extension bundlers.**~~ **Closed (Phase 3)** — host: **esbuild**; webview:
   **Vite** (§4.8).
-- ~~**NCN pan/zoom (Phase 3).**~~ **Closed (deferred to Phase 4)** — disabled in
-  Phase 3 read-only panel.
+- ~~**NCN pan/zoom (Phase 3).**~~ **Closed (Phase 4)** — enabled in `NcnGraph.tsx`.
 - ~~**Theming.**~~ **Closed (Phase 4)** — Status-based colouring uses VS Code theme
   variables throughout. Palette mapped by display-status-group **array position** in
-  `theme.ts` (not user-configurable; no config changes). See §4.6.3.
+  `theme.ts` (not user-configurable; no config changes). `pillToneForNode()` maps group
+  index to pill tones in tables. See §4.6.3.
 - **Large-graph performance.** Deferred — evaluate after Phase 4 when the
   interactive graph can be dogfooded (see IMPLEMENTATION.md unplanned backlog).
 - ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**
   (`WebviewPanel`). Agent/chat workflow integration — deferred.
-- ~~**Setup UX (adapter config).**~~ **Closed (design)** — wizard asks adapter +
-  project identity, runs audit, seeds `.vscode/verto.config.jsonc` from
-  `defaults.verto.config.jsonc` + discovered project shape, user edits before save —
-  see §4.6.3, §4.6.6. Remaining: exact wizard screens and validation UX.
+- ~~**Setup UX (adapter config).**~~ **Partially closed** — audit library shipped
+  (`@verto/adapter-github`); wizard asks adapter + project identity, runs audit, seeds
+  `.vscode/verto.config.jsonc` from `defaults.verto.config.jsonc` + discovered project
+  shape — see §4.6.3, §4.6.6. **Remaining:** exact wizard screens and validation UX.
 
 ### 5.5 Product & process
 

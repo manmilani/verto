@@ -15,7 +15,7 @@
 | 2 | [GitHub adapter — read-only](#phase-2--github-adapter--read-only) | `loadProject()` returns graph from GitHub *(bundle via host pipeline after Phase 2.5)* | Complete |
 | 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | Complete |
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | Complete |
-| 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | |
+| 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | Complete |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
 | 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself | |
 
@@ -143,7 +143,7 @@ mutations (Phase 5), and the audit script.
 
 | File | Purpose |
 |---|---|
-| `packages/config/src/types.ts` | `VertoConfig` TypeScript type + `FieldMappingEntry` shape (`from.kind`, value-map, `type` hint); includes `github.scope: "repository" \| "project"`, scope-conditional required fields (`repository` for repository scope, `owner` + `projectNumber` for project scope), and optional `github.issueFilter` (labels, states, milestone, assignee) for repository scope |
+| `packages/config/src/types.ts` | `VertoConfig` TypeScript type + `FieldMappingEntry` shape (`from.kind`, value-map, `type` hint); `github?: GitHubConfig` (required only when `adapter === "github"`); includes `github.scope`, scope-conditional required fields inside `github`, and optional `github.issueFilter` for repository scope |
 | `packages/config/src/schema.ts` | `VertoConfig` JSON Schema (or `vertoConfig.schema.json` alongside); validates scope-conditional required fields; used by the extension and audit script |
 | `packages/config/src/index.ts` | Public re-exports for `@verto/config`; consumed by adapters and the extension (`@verto/core` does not depend on this package) |
 | `packages/adapters/github/system_types.ts` | Typed shapes for GitHub GraphQL responses — split by source: Issues API types (`Issue`, blocking/sub-issue links, issue type, labels, assignees, etc.) and ProjectV2 types (project item + field values; only used in project scope) |
@@ -327,6 +327,8 @@ stretch goal — it is not required to dogfood the extension.
 
 ## Phase 4 — Full UI fidelity
 
+**Status:** Complete.
+
 **Goal:** Full parity with the deprecated canvas feature set, adapted to the target
 architecture — matching **user-visible outcomes**, not the canvas implementation.
 
@@ -358,7 +360,7 @@ docs win**.
 | Highlight journey (dropdown) | NCN journey/slice subgraph highlight (`GraphView`) |
 | `graphFocus` / click focus | NCN click-to-focus neighbourhood (prereqs + dependents); separate from Delivery Map slice selection |
 | Clear focus | Restore journey-highlight subgraph (not full graph unless no journey selected) |
-| `buildExecutionOrder` / ready table | Two-mode implementation-order UI (see below) |
+| `buildExecutionOrder` / ready table | **Table view toggle** (`ncnTableView`): **Leverage table** (`readyIds` by leverage) or **Implementation order** (full `implementationOrder` when slice priorities are set); user switches manually — not auto-selected from overlay state |
 | `STATUS` / pill tones | Status/state-based colouring on **all** nodes via `resolveDisplayStatusGroup()`; palette baked into `theme.ts` by group array position — not config-driven |
 
 **Compute model for interactive priority editing:** the webview sends a `setPriority`
@@ -387,23 +389,28 @@ overlay through to `runHostPipeline`. The CLI (`scripts/load-project.mjs`) omits
 overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 `priorityOverlay.ts`.
 
-### Additions to Phase 3 webview
+### Deliverables (implemented)
 
-| Feature | Notes |
+| Feature | Location / notes |
 |---|---|
-| `@verto/adapter-github` audit library | Extract GitHub audit/bootstrap from `scripts/audit-github-project.mjs` into importable `@verto/adapter-github` code; script becomes thin CLI (prerequisite for setup wizard) |
-| `packages/core/src/bundle.ts` + `types.ts` | Add `servedBySliceIds: Record<string, string[]>` to `DeliveryMapBundle` — for each node, the list of delivery-slice ids whose closure contains it; computed in `buildDeliveryMapBundle()` |
-| `packages/extension/src/host/priorityOverlay.ts` | Load/save overlay from `workspaceState` only — **no** `applyPriorityOverlay()` here |
-| `packages/extension/src/host/loadPipeline.ts` | `runPipeline(..., priorityOverlay?)` — threads overlay into `runHostPipeline` |
-| `@verto/text-parser` `runHostPipeline` | Accept optional `priorityOverlay` in `HostPipelineOptions`; defines and exports `applyPriorityOverlay(graph, overlay): VertoGraph` (pure graph transform); applies overlay before `buildDeliveryMapBundle()` |
-| `packages/extension/src/shared/protocol.ts` | Add `setPriority: { sliceId: string; priority: number \| null }` (`null` clears the override) to `WebviewToHostMessage`; extend `PersistedPanelState` with NCN journey-highlight and click-to-focus fields (exact fields defined during implementation) |
-| Priority editor | Numeric input (1–9) **per delivery slice only** (`isDeliverySlice` nodes); sends `setPriority` → host updates overlay + recomputes bundle → webview re-renders |
-| Implementation order table | **Two modes** (canvas `GraphView`): (1) **No slice priorities in overlay** — “Ready to start now — ranked by leverage”: `readyIds` only, sorted by `leverageScore` desc; (2) **Slice priorities set** — full execution order: all not-done nodes topologically ordered (`implementationOrder`), with Ready/Blocked column. **Columns:** priority (strip trailing zeros from `globalPriorityRanking[id]` — e.g. `13000` → `”13”`; lower = higher priority), title (with ticket link), status (`”<displayStatusGroup> (<node.status>)”` or `”<displayStatusGroup>”` if status absent; `”Other [(<status>)]”` if no group match), leverage (`leverageScore[id]`), serves (`servedBySliceIds[id]` resolved to slice titles) |
-| Delivery completeness | Per-slice progress bar from `bundle.deliveryCompleteness[sliceId]` — slice-level “partial” visual treatment deferred from Phase 3 |
-| Leverage score in graph | Node size or badge proportional to `bundle.leverageScore`; visual emphasis on high-leverage blockers (canvas outcome) |
-| NCN pan, zoom, focus | Canvas `GraphView` fidelity: pan/zoom; **Highlight journey** subgraph; **click node** → focus neighbourhood (node + prereqs + dependents); **clear focus** → restore journey highlight; click row in implementation-order table → focus node in graph |
-| Status/state node colouring | Uses `ui.displayStatusGroups` via `resolveDisplayStatusGroup()` on **all** nodes; palette baked into `theme.ts` by group array position — **no config schema changes** |
-| Full theming | Every status/state color uses VS Code theme variables; light + dark mode verified |
+| `@verto/adapter-github` audit library | `auditProjectScope` / `auditRepositoryScope` exported from `@verto/adapter-github`; `scripts/audit-github-project.mjs` is a thin CLI |
+| `requireGitHubConfig` | `packages/adapters/github/src/githubConfig.ts` — shared guard when `VertoConfig.github` is optional at the type level |
+| `resolveProjectTitle` | `packages/extension/src/host/resolveProjectTitle.ts` — adapter-aware panel title (`github` → project/repo name; other adapters → adapter id) |
+| `servedBySliceIds` | `packages/core/src/bundle.ts` + `types.ts` — computed in `buildDeliveryMapBundle()` |
+| `applyPriorityOverlay` | `packages/text-parser/src/applyPriorityOverlay.ts` — applied in `runHostPipeline` before bundle build |
+| `priorityOverlay.ts` | `packages/extension/src/host/priorityOverlay.ts` — `workspaceState` load/save only |
+| `loadPipeline.ts` | Threads `priorityOverlay`; builds `priorityOptionHints` via `buildPriorityOptionHints` |
+| `@verto/config/priority-hints` | Browser-safe subpath export (`priorityHints.ts`) — P1–P9 labels from `fieldMappings.priority.values` |
+| Protocol extensions | `setPriority`, `projectName`, `priorityOverlayActive`, `journeyPriorityOverlay`, `priorityOptionHints`, `ncnHighlightedSliceId`, `ncnFocusedNodeId`, `ncnTableView` on `PersistedPanelState` |
+| Priority editor | `PriorityEditor.tsx` — dropdown per delivery slice (P1–P9 + tracker-mapped hints); journeys sorted by overlay priority |
+| Implementation order tables | `ImplementationOrderTable.tsx` — leverage view + implementation-order view; shared `DataTableFrame` chrome; status-group dots in `#` column; click row → focus graph node |
+| NCN graph | `NcnGraph.tsx` — pan/zoom (`panOnScroll`, `zoomOnScroll`); journey highlight via `servedBySliceIds`; click-to-focus neighbourhood; status-group edge colouring; leverage badges |
+| NCN lens chrome | `NcnLens.tsx` — stats, journey selector, `FocusedNodeDetail`, table-view toggle (`Pill`), TOC callout |
+| Delivery Map polish | `DeliveryMap.tsx` — canvas-fidelity layout; completion-toned slice pills; **Primary user** portfolio column (`personas`); memoized `pipelinesBySliceId` |
+| Display status helpers | `displayStatusGroup.ts` — `resolveDisplayStatusGroup`, `pillToneForNode`, `isGap`, …; `theme.ts` palette by group index |
+| Shared webview UI | `components/ui.tsx` — `Pill`, `Stat`, `DataTableFrame`, `StatusDot`, table style helpers, `StatusLegend`, … |
+
+**Unlocks:** Phase 5 (write-back); first-run setup wizard (audit library prerequisite met).
 
 **Pre–Phase 4 (completed):** `portfolioColumns` renamed to `ui.displayStatusGroups`
 with types `DisplayStatusGroup` / `UiConfig`; webview matcher
@@ -415,14 +422,13 @@ entry (gap callouts are one consumer).
 - **Priority edit scope** — Phase 4 UI edits priority for **delivery slices only**
   (overlay on `isDeliverySlice` nodes). Per-node ticket priority from the tracker
   remains unchanged until Phase 5 write-back.
-- **Implementation order table** — two modes per canvas; not a single “ready +
-  incomplete” filter.
+- **Implementation order table** — two **views** toggled in the NCN lens (leverage vs implementation order); leverage view available even when overlay is active.
 - **NCN focus vs Delivery Map slice** — separate concerns; canvas `GraphView`
   behaviour is the outcome reference.
 - **Priority overlay hook** — `runPipeline(..., priorityOverlay?)` →
   `runHostPipeline` → `applyPriorityOverlay` before bundle build.
 - **`applyPriorityOverlay` location** — pure function `applyPriorityOverlay(graph, overlay): VertoGraph` defined and exported from `@verto/text-parser` (alongside other graph transforms). Extension `priorityOverlay.ts` handles `workspaceState` persistence only; it does not define the transform.
-- **Priority column format** — `globalPriorityRanking[id]` displayed by stripping trailing zeros from the normalized integer (e.g. `13200` → `”132”`). No prefix, no dots. Lower = higher priority; more digits = deeper priority chain.
+- **Priority column format** — `globalPriorityRanking[id]` displayed by stripping trailing zeros; UI prefixes with `P` (e.g. rank `13` → `P13`). Lower = higher priority; more digits = deeper priority chain.
 - **Status display rule** — `displayStatusGroup` label is the display vocabulary everywhere (column headers, legends, node colours, pill tones, UsageBar segments). Per-node status values: `”<displayStatusGroup> (<node.status>)”` when `node.status` is present; `”<displayStatusGroup>”` when absent. No group match: `”Other (<node.status>)”` if status present, else `”Other”`.
 - **`DisplayStatusGroup` config schema** — no new fields added in Phase 4. `weight` dropped entirely from the concept. `tone`/`chartColor` not added. Schema remains `label` + `sources` only. Palette baked into `theme.ts` by group array position.
 - **`servedBySliceIds` in `DeliveryMapBundle`** — `Record<string, string[]>` added in Phase 4; computed in `buildDeliveryMapBundle()` in `@verto/core`. For each node, lists the delivery-slice ids whose transitive closure contains it. Used by the implementation-order table “Serves” column and the NCN focused-node detail panel.
@@ -507,20 +513,23 @@ Each is linked to the phase where it blocks progress.
 | Portfolio sort — `deliveryCompleteness[sliceId]` desc; neutral pills Phase 3 | Resolved Phase 3 | §3.7 |
 | UI port fidelity (Delivery Map) — canvas components required | Resolved Phase 3 | §5.4, §3.7 |
 | NCN pan/zoom — out for Phase 3 | Resolved Phase 3 | §5.4 |
-| Extract audit into `@verto/adapter-github` | Phase 4 | IMPLEMENTATION Phase 4 |
+| Extract audit into `@verto/adapter-github` | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Adapter-conditional `github` config block | Resolved Phase 4 | `VertoConfig.github?`; JSON Schema requires `github` only when `adapter === "github"`; `requireGitHubConfig` in adapter |
 | Priority edit scope — delivery slices only (overlay) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| Implementation order — two-mode canvas behaviour | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Implementation order — two-view canvas behaviour | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| NCN table view toggle (`ncnTableView`) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Priority overlay — `runPipeline` / `runHostPipeline` hook | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | `applyPriorityOverlay` location — in `@verto/text-parser`, not extension host | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| Priority column format — strip trailing zeros, no prefix/dots | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Priority column format — strip trailing zeros, `P` prefix in UI | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Priority dropdown hints (`@verto/config/priority-hints`) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Status display rule — `displayStatusGroup` everywhere; parenthetical for individual nodes | Resolved Phase 4 | §4.6.3, IMPLEMENTATION Phase 4 |
 | `DisplayStatusGroup` config schema — no new fields; `weight` dropped; palette by array position | Resolved Phase 4 | §4.6.3, §5.4 |
 | `servedBySliceIds` in `DeliveryMapBundle` — delivery-slice closure membership per node | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| Status/state node colouring (all nodes) — palette detail | Resolved Phase 4 | §4.6.3, §4.8, §5.4 |
-| Requirements ↔ child ticket linking | Deferred | §5.2 |
-| Decomposition CTA (sub-issues from Requirements-only slice) | Deferred | §5.2 |
-| Auto-promote parents when no delivery slices | Deferred | §5.2 |
-| Slice-level "partial" / delivery completeness bar | Phase 4 | §5.2 |
+| Status/state node colouring (all nodes) — palette by group index | Resolved Phase 4 | §4.6.3, §4.8, §5.4 |
+| NCN pan/zoom and focus | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| UI port fidelity (NCN + tables) | Resolved Phase 4 | §5.4 |
+| Slice-level delivery completeness display | Resolved Phase 4 | Stat + completion-toned slice pills (not a separate progress-bar widget) |
+| `resolveProjectTitle` — adapter-aware panel title | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
 | Write-back conflict policy | Phase 5 | §5.3 |
 | Beans on-disk format + dep/priority conventions | Phase 6 | §5.3 |
@@ -550,16 +559,14 @@ whether to extend an existing phase or insert a new one. Cross-reference [DESIGN
 
 | Item | Notes | Suggested phase |
 |---|---|---|
-| **First-run setup wizard** | Adapter + project identity, audit, seed `.vscode/verto.config.jsonc`; exact screens / validation UX still open (DESIGN §4.6.3, §4.6.6, §5.4) | Post–Phase 3; after audit library (Phase 4) |
+| **First-run setup wizard** | Adapter + project identity, audit, seed `.vscode/verto.config.jsonc`; audit library shipped in Phase 4; exact screens / validation UX still open (DESIGN §4.6.3, §4.6.6, §5.4) | Post–Phase 4 |
 | **Agent / chat workflow integration** | How the Verto panel relates to Cursor agent workflows (DESIGN §5.4) | TBD |
 
 ### UI & graph
 
 | Item | Notes | Suggested phase |
 |---|---|---|
-| **NCN pan/zoom and focus** | React Flow interaction deferred from Phase 3 | Phase 4 |
-| **Slice-level delivery completeness bar** | Per-slice progress from `bundle.deliveryCompleteness` | Phase 4 |
-| **Status/state node colouring** | Status/state-based tones on all nodes; detailed palette rules TBD | Phase 4 |
+| **Dedicated slice progress bar widget** | Completeness shown via Stat + pill tones today; optional richer bar UI | TBD |
 | **Large-graph performance** | ELK + React Flow tuning for 100+ nodes — evaluate after Phase 4 dogfooding (DESIGN §5.4) | Post–Phase 4 |
 
 ### Domain, adapters & product (DESIGN §5)

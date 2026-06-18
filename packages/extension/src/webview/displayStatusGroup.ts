@@ -1,5 +1,6 @@
 import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
+import { nodeWeight } from '@verto/core'
 
 export type PillTone = 'success' | 'warning' | 'info' | 'neutral' | 'deleted' | 'danger'
 export type TextTone = 'primary' | 'secondary' | 'tertiary' | 'quaternary'
@@ -9,7 +10,17 @@ export const OTHER_DISPLAY_STATUS_GROUP = 'Other'
 
 /** Configured group labels plus the implicit Other bucket (single source of truth for table/bar headers). */
 export function groupLabelsWithOther(groups: DisplayStatusGroup[]): string[] {
-  return [...groups.map(g => g.label), OTHER_DISPLAY_STATUS_GROUP]
+  const labels = groups.map(g => g.label)
+  if (!labels.includes(OTHER_DISPLAY_STATUS_GROUP)) {
+    labels.push(OTHER_DISPLAY_STATUS_GROUP)
+  }
+  return labels
+}
+
+function emptyGroupRecord(groups: DisplayStatusGroup[]): Record<string, number> {
+  return Object.fromEntries(
+    groupLabelsWithOther(groups).map(label => [label, 0]),
+  ) as Record<string, number>
 }
 
 /** True when a display-status group entry marks satisfied/done state (structural predicate on config). */
@@ -54,6 +65,56 @@ export function resolveDisplayStatusGroupIndex(
   return groups.findIndex(g => g.label === label)
 }
 
+/** Count rows per display group label (includes Other). Keys follow groupLabelsWithOther order. */
+export function countByDisplayStatusGroup(
+  rows: Iterable<Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>>,
+  groups: DisplayStatusGroup[],
+): Record<string, number> {
+  const counts = emptyGroupRecord(groups)
+  for (const row of rows) {
+    counts[resolveDisplayStatusGroup(row, groups)]++
+  }
+  return counts
+}
+
+/** Per-group weight sums (UsageBar segments and weighted summary text). */
+export function weightByDisplayStatusGroup(
+  rows: Iterable<VertoNode>,
+  groups: DisplayStatusGroup[],
+): Record<string, number> {
+  const weights = emptyGroupRecord(groups)
+  for (const row of rows) {
+    weights[resolveDisplayStatusGroup(row, groups)] += nodeWeight(row)
+  }
+  return weights
+}
+
+/** Per-group node counts and weight sums in a single pass when both are needed. */
+export function summarizePipelineByDisplayGroup(
+  rows: Iterable<VertoNode>,
+  groups: DisplayStatusGroup[],
+): { counts: Record<string, number>; weights: Record<string, number> } {
+  const counts = emptyGroupRecord(groups)
+  const weights = emptyGroupRecord(groups)
+  for (const row of rows) {
+    const label = resolveDisplayStatusGroup(row, groups)
+    counts[label]++
+    weights[label] += nodeWeight(row)
+  }
+  return { counts, weights }
+}
+
+/** Prose summary of non-zero values in config order, e.g. "3 Done · 2 In Progress · 1 Other". */
+export function formatDisplayGroupCounts(
+  values: Record<string, number>,
+  groups: DisplayStatusGroup[],
+): string {
+  return groupLabelsWithOther(groups)
+    .filter(label => (values[label] ?? 0) > 0)
+    .map(label => `${values[label]} ${label}`)
+    .join(' · ')
+}
+
 /** Gap callouts are one consumer of satisfied-group matching. */
 export function isGap(
   row: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
@@ -66,7 +127,7 @@ export function isGap(
 
 /** Comma-separated prose list of configured display groups for page descriptions. */
 export function formatDisplayGroupsProse(groups: DisplayStatusGroup[]): string {
-  const labels = [...groups.map(g => g.label), OTHER_DISPLAY_STATUS_GROUP]
+  const labels = groupLabelsWithOther(groups)
   if (labels.length === 0) return 'in a configured delivery state'
   if (labels.length === 1) return labels[0]
   return `${labels.slice(0, -1).join(', ')}, or ${labels[labels.length - 1]}`

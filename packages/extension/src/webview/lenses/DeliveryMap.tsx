@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
-import { nodeWeight } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
 import {
-  resolveDisplayStatusGroup, resolveDisplayStatusGroupIndex,
+  resolveDisplayStatusGroupIndex,
   isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP,
+  countByDisplayStatusGroup, weightByDisplayStatusGroup, formatDisplayGroupCounts,
   pillToneForNode, formatDisplayGroupsProse,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
@@ -62,6 +62,22 @@ export function DeliveryMap({
     [bundle, displayStatusGroups, pipelinesBySliceId],
   )
 
+  const activeSliceId = useMemo(() => {
+    if (slices.length === 0) return undefined
+    if (focusedNode && slices.some(s => s.id === focusedNode)) return focusedNode
+    return slices[0].id
+  }, [slices, focusedNode])
+
+  const pipeline = useMemo(
+    () => (activeSliceId ? pipelinesBySliceId.get(activeSliceId) ?? [] : []),
+    [activeSliceId, pipelinesBySliceId],
+  )
+
+  const gaps = useMemo(
+    () => pipeline.filter(row => isGap(row, displayStatusGroups)),
+    [pipeline, displayStatusGroups],
+  )
+
   if (slices.length === 0) {
     return (
       <div style={{ padding: 24, color: 'var(--vscode-descriptionForeground)' }}>
@@ -70,12 +86,8 @@ export function DeliveryMap({
     )
   }
 
-  const slice = graph.nodes.find(n => n.id === focusedNode) ?? slices[0]
-  const pipeline = pipelinesBySliceId.get(slice.id) ?? []
+  const slice = slices.find(s => s.id === activeSliceId) ?? slices[0]
   const scomp = bundle.deliveryCompleteness?.[slice.id] ?? 0
-  const gaps = pipeline.filter(row => isGap(row, displayStatusGroups))
-
-  const sc = countPipeline(pipeline, displayStatusGroups)
 
   const solidSlices = slices.filter(s => (bundle.deliveryCompleteness?.[s.id] ?? 0) >= 0.7)
 
@@ -102,7 +114,7 @@ export function DeliveryMap({
           label="Journeys ≥70% built"
           tone="info"
         />
-        <Stat value={String(dmStats.gapCount)} label="Black-box steps (unbuilt)" tone="danger" />
+        <Stat value={String(dmStats.gapCount)} label="Gap steps (unsatisfied)" tone="danger" />
       </Grid>
 
       <Row
@@ -160,7 +172,7 @@ export function DeliveryMap({
             <Text italic tone="secondary">{slice._outcome}</Text>
           )}
 
-          <UsageBar pipeline={pipeline} allGroups={allGroups} displayStatusGroups={displayStatusGroups} />
+          <UsageBar pipeline={pipeline} displayStatusGroups={displayStatusGroups} />
 
           <Divider />
 
@@ -185,7 +197,7 @@ export function DeliveryMap({
 
           {gaps.length > 0 && (
             <Callout
-              tone={sc.gap > 0 ? 'danger' : 'warning'}
+              tone="danger"
               title={`What's missing to fully deliver "${slice.title}" (${gaps.length} of ${pipeline.length} steps)`}
             >
               <Stack gap={4}>
@@ -238,12 +250,7 @@ export function DeliveryMap({
             <tbody>
               {slices.map(s => {
                 const rows = pipelinesBySliceId.get(s.id) ?? []
-                const counts: Record<string, number> = {}
-                for (const col of allGroups) counts[col] = 0
-                for (const row of rows) {
-                  const col = resolveDisplayStatusGroup(row, displayStatusGroups)
-                  counts[col] = (counts[col] ?? 0) + 1
-                }
+                const counts = countByDisplayStatusGroup(rows, displayStatusGroups)
                 const comp = bundle.deliveryCompleteness?.[s.id] ?? 0
                 const isSelected = s.id === slice.id
                 const primaryUser = s.personas.length > 0 ? s.personas.join(' / ') : '—'
@@ -301,21 +308,6 @@ export function DeliveryMap({
       )}
     </Stack>
   )
-}
-
-function countPipeline(
-  pipeline: VertoNode[],
-  displayStatusGroups: DisplayStatusGroup[],
-): { done: number; partial: number; designed: number; gap: number } {
-  const c = { done: 0, partial: 0, designed: 0, gap: 0 }
-  for (const row of pipeline) {
-    if (row.isDone) { c.done++; continue }
-    if (isGap(row, displayStatusGroups)) { c.gap++; continue }
-    const idx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
-    if (idx === 1) c.partial++
-    else c.designed++
-  }
-  return c
 }
 
 function PipelineStep({
@@ -390,33 +382,28 @@ function PipelineStep({
   )
 }
 
-function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
+function UsageBar({ pipeline, displayStatusGroups }: {
   pipeline: VertoNode[]
-  allGroups: string[]
   displayStatusGroups: DisplayStatusGroup[]
 }) {
-  const weights: Record<string, number> = {}
-  for (const col of allGroups) weights[col] = 0
-  for (const row of pipeline) {
-    const col = resolveDisplayStatusGroup(row, displayStatusGroups)
-    weights[col] = (weights[col] ?? 0) + nodeWeight(row)
-  }
+  const allGroups = groupLabelsWithOther(displayStatusGroups)
+  const weights = weightByDisplayStatusGroup(pipeline, displayStatusGroups)
   const total = Object.values(weights).reduce((a, b) => a + b, 0)
   if (total === 0) return null
 
-  const counts = countPipeline(pipeline, displayStatusGroups)
+  const weightSummary = formatDisplayGroupCounts(weights, displayStatusGroups)
 
   return (
     <div>
       <Row gap={8} style={{ marginBottom: 4 }}>
         <Text size="small" tone="secondary" weight="semibold" style={{ flex: 1 }}>Subsystem build mix</Text>
-        <Text size="small" tone="tertiary">
-          {counts.done} built · {counts.partial} partial · {counts.designed} spec&apos;d · {counts.gap} black box
-        </Text>
+        {weightSummary && (
+          <Text size="small" tone="tertiary">{weightSummary}</Text>
+        )}
       </Row>
       <div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
         {allGroups.map(col => {
-          const w = weights[col] ?? 0
+          const w = weights[col]
           if (w === 0) return null
           const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
             ? -1
@@ -432,7 +419,7 @@ function UsageBar({ pipeline, allGroups, displayStatusGroups }: {
       </div>
       <Row gap={12} wrap style={{ marginTop: 4 }}>
         {allGroups.map(col => {
-          const w = weights[col] ?? 0
+          const w = weights[col]
           if (w === 0) return null
           const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
             ? -1

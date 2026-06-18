@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { resolveDisplayStatusGroup, isDoneBucket, isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP } from '../webview/displayStatusGroup.js'
+import { resolveDisplayStatusGroup, isDoneBucket, isGap, groupLabelsWithOther, OTHER_DISPLAY_STATUS_GROUP, countByDisplayStatusGroup, formatDisplayGroupCounts, summarizePipelineByDisplayGroup, weightByDisplayStatusGroup } from '../webview/displayStatusGroup.js'
 import type { DisplayStatusGroup } from '@verto/config'
+import type { VertoNode } from '@verto/core'
 
 // Default groups from defaults.verto.config.jsonc
 const defaultGroups: DisplayStatusGroup[] = [
@@ -98,6 +99,67 @@ describe('groupLabelsWithOther', () => {
     expect(groupLabelsWithOther(defaultGroups)).toEqual([
       'Done', 'In Progress', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
     ])
+  })
+
+  it('does not duplicate Other when a configured group already uses that label', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Other', sources: { ticket: { isDone: true } } },
+    ]
+    expect(groupLabelsWithOther(groups)).toEqual(['Other'])
+    expect(countByDisplayStatusGroup(
+      [{ nodeType: 'ticket', isDone: true, status: 'Done' }],
+      groups,
+    )).toEqual({ Other: 1 })
+  })
+})
+
+describe('countByDisplayStatusGroup', () => {
+  it('counts rows per configured group label', () => {
+    const rows = [
+      { nodeType: 'ticket' as const, isDone: true, status: 'Done' },
+      { nodeType: 'ticket' as const, isDone: false, status: 'In Progress' },
+      { nodeType: 'parsed' as const, isDone: false, status: 'raw' },
+      { nodeType: 'ticket' as const, isDone: false, status: 'Review' },
+    ]
+    expect(countByDisplayStatusGroup(rows, defaultGroups)).toEqual({
+      Done: 1,
+      'In Progress': 2,
+      Raw: 1,
+      Other: 0,
+    })
+  })
+})
+
+describe('formatDisplayGroupCounts', () => {
+  it('formats non-zero counts in config order', () => {
+    const counts = { Done: 3, 'In Progress': 2, Raw: 0, Other: 1 }
+    expect(formatDisplayGroupCounts(counts, defaultGroups)).toBe(
+      '3 Done · 2 In Progress · 1 Other',
+    )
+  })
+})
+
+describe('summarizePipelineByDisplayGroup', () => {
+  it('accumulates counts and weights in one pass', () => {
+    const rows: VertoNode[] = [
+      { id: 'a', title: 'A', isDone: true, status: 'Done', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u', weight: 2 },
+      { id: 'b', title: 'B', isDone: false, status: 'In Progress', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u' },
+    ]
+    const { counts, weights } = summarizePipelineByDisplayGroup(rows, defaultGroups)
+    expect(counts).toEqual({ Done: 1, 'In Progress': 1, Raw: 0, Other: 0 })
+    expect(weights).toEqual({ Done: 2, 'In Progress': 1, Raw: 0, Other: 0 })
+    expect(formatDisplayGroupCounts(weights, defaultGroups)).toBe('2 Done · 1 In Progress')
+  })
+})
+
+describe('weightByDisplayStatusGroup', () => {
+  it('returns only weight sums', () => {
+    const rows: VertoNode[] = [
+      { id: 'a', title: 'A', isDone: true, status: 'Done', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u', weight: 2 },
+    ]
+    expect(weightByDisplayStatusGroup(rows, defaultGroups)).toEqual({
+      Done: 2, 'In Progress': 0, Raw: 0, Other: 0,
+    })
   })
 })
 
