@@ -48,10 +48,6 @@ function RowIndex({
   )
 }
 
-function rowStyle(isFocused: boolean): React.CSSProperties {
-  return dataTableRowStyle(isFocused)
-}
-
 function WorkItemPill({
   node, displayStatusGroups, isFocused, onFocus,
 }: {
@@ -139,7 +135,7 @@ export function ImplementationOrderTable({
                     <tr
                       key={id}
                       onClick={() => onFocusNode(id)}
-                      style={rowStyle(isFocused)}
+                      style={dataTableRowStyle(isFocused)}
                     >
                       <td style={dataTableTdWorkItemStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -238,7 +234,7 @@ export function ImplementationOrderTable({
                   <tr
                     key={id}
                     onClick={() => onFocusNode(id)}
-                    style={rowStyle(isFocused)}
+                    style={dataTableRowStyle(isFocused)}
                   >
                     <td style={{ ...dataTableTdCompactStyle, textAlign: 'right', ...indexColPadding }}>
                       <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} />

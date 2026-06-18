@@ -1,4 +1,4 @@
-import type { UiConfig, VertoConfig } from './types.js'
+import type { UiConfig, VertoConfig, GitHubConfig } from './types.js'
 
 function uiConfigHasValues(ui: UiConfig): boolean {
   return Object.values(ui).some(v => v !== undefined)
@@ -28,14 +28,19 @@ export function mergeConfigs(defaults: VertoConfig, workspace: Partial<VertoConf
   const merged: VertoConfig = {
     ...defaults,
     ...workspaceRest,
-    github: {
+  }
+
+  if (defaults.github !== undefined || workspaceGithub !== undefined) {
+    merged.github = {
       ...defaults.github,
       ...workspaceGithub,
       fieldMappings: {
         ...defaults.github?.fieldMappings,
         ...workspaceGithub?.fieldMappings,
       },
-    },
+    } as GitHubConfig
+  } else {
+    delete merged.github
   }
 
   if (ui !== undefined) {

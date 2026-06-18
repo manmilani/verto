@@ -1,4 +1,4 @@
-import type { DeliveryMapBundle } from '@verto/core'
+import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from './pipelineRows.js'
 import { isGap } from './displayStatusGroup.js'
@@ -14,6 +14,7 @@ export function countDirectDependents(bundle: DeliveryMapBundle, nodeId: string)
 export function deliveryMapStats(
   bundle: DeliveryMapBundle,
   displayStatusGroups: DisplayStatusGroup[],
+  pipelinesBySliceId?: ReadonlyMap<string, VertoNode[]>,
 ) {
   const slices = bundle.graph.nodes.filter(n => n.isDeliverySlice)
   const implOrder = bundle.implementationOrder ?? []
@@ -26,7 +27,8 @@ export function deliveryMapStats(
     const comp = bundle.deliveryCompleteness?.[slice.id] ?? 0
     weightedSum += comp
     if (comp >= 0.7) built70 += 1
-    const pipeline = buildPipelineForSlice(slice.id, bundle.graph, implOrder)
+    const pipeline = pipelinesBySliceId?.get(slice.id)
+      ?? buildPipelineForSlice(slice.id, bundle.graph, implOrder)
     gapCount += pipeline.filter(row => isGap(row, displayStatusGroups)).length
   }
 

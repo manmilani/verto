@@ -8,7 +8,7 @@ import { PriorityEditor } from './PriorityEditor.js'
 import { FocusedNodeDetail } from './FocusedNodeDetail.js'
 import {
   H1, H2, Text, Stack, Row, Grid, Stat, Divider, Callout, BorderedBox,
-  StatusLegend, Spacer,
+  StatusLegend, Spacer, Pill,
 } from '../components/ui.js'
 import { ncnStats } from '../bundleMetrics.js'
 
@@ -157,20 +157,18 @@ export function NcnLens({
       <Stack gap={10}>
         <Row gap={8} wrap>
           <Text size="small" weight="semibold" tone="secondary">Table view</Text>
-          <button
-            type="button"
-            style={{ ...toggleBtnStyle, ...(tableView === 'implementationOrder' ? toggleBtnActiveStyle : {}) }}
+          <Pill
+            active={tableView === 'implementationOrder'}
             onClick={() => onTableViewChange('implementationOrder')}
           >
             Implementation order
-          </button>
-          <button
-            type="button"
-            style={{ ...toggleBtnStyle, ...(tableView === 'leverage' ? toggleBtnActiveStyle : {}) }}
+          </Pill>
+          <Pill
+            active={tableView === 'leverage'}
             onClick={() => onTableViewChange('leverage')}
           >
             Leverage table
-          </button>
+          </Pill>
         </Row>
 
         {tableView === 'implementationOrder' && (
@@ -212,20 +210,4 @@ export function NcnLens({
       </Callout>
     </Stack>
   )
-}
-
-const toggleBtnStyle: React.CSSProperties = {
-  background: 'transparent',
-  color: 'var(--vscode-foreground)',
-  border: '1px solid var(--vscode-panel-border)',
-  borderRadius: 12,
-  padding: '4px 12px',
-  cursor: 'pointer',
-  fontSize: 12,
-}
-
-const toggleBtnActiveStyle: React.CSSProperties = {
-  background: 'var(--vscode-button-background)',
-  color: 'var(--vscode-button-foreground)',
-  borderColor: 'transparent',
 }

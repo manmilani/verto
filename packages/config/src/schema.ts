@@ -95,13 +95,19 @@ const uiConfigSchema = {
 
 const vertoConfigSchema = {
   type: 'object',
-  required: ['adapter', 'github'],
+  required: ['adapter'],
   additionalProperties: true,
   properties: {
     adapter: { type: 'string' },
     github: githubConfigSchema,
     ui: uiConfigSchema,
   },
+  allOf: [
+    {
+      if: { properties: { adapter: { const: 'github' } }, required: ['adapter'] },
+      then: { required: ['github'] },
+    },
+  ],
 }
 
 const validate = ajv.compile(vertoConfigSchema)

@@ -34,11 +34,11 @@ describe('mergeConfigs', () => {
       },
     }
     const merged = mergeConfigs(base, workspace)
-    expect(merged.github.fieldMappings!['status']).toEqual({
+    expect(merged.github!.fieldMappings!['status']).toEqual({
       from: { kind: 'projectV2', field: 'Status' },
       type: 'select',
     })
-    expect((merged.github.fieldMappings!['status'] as { values?: unknown }).values).toBeUndefined()
+    expect((merged.github!.fieldMappings!['status'] as { values?: unknown }).values).toBeUndefined()
   })
 
   it('new workspace key is added; defaults keys are preserved', () => {
@@ -53,9 +53,9 @@ describe('mergeConfigs', () => {
       },
     }
     const merged = mergeConfigs(base, workspace)
-    expect(merged.github.fieldMappings!['priority']).toBeDefined()
-    expect(merged.github.fieldMappings!['type']).toBeDefined()
-    expect(merged.github.fieldMappings!['status']).toEqual(base.github.fieldMappings!['status'])
+    expect(merged.github!.fieldMappings!['priority']).toBeDefined()
+    expect(merged.github!.fieldMappings!['type']).toBeDefined()
+    expect(merged.github!.fieldMappings!['status']).toEqual(base.github!.fieldMappings!['status'])
   })
 
   it('no workspace fieldMappings → defaults fieldMappings unchanged', () => {
@@ -63,10 +63,11 @@ describe('mergeConfigs', () => {
       github: { scope: 'project', owner: 'owner', projectNumber: 2 },
     }
     const merged = mergeConfigs(base, workspace)
-    expect(merged.github.fieldMappings).toEqual(base.github.fieldMappings)
-    expect(merged.github.scope).toBe('project')
-    if (merged.github.scope === 'project') {
-      expect(merged.github.projectNumber).toBe(2)
+    const github = merged.github!
+    expect(github.fieldMappings).toEqual(base.github!.fieldMappings)
+    expect(github.scope).toBe('project')
+    if (github.scope === 'project') {
+      expect(github.projectNumber).toBe(2)
     }
   })
 

@@ -80,21 +80,8 @@ export function pillToneForNode(
   if (node.isDone) return 'success'
   if (isGap(node, groups)) return 'deleted'
   const idx = resolveDisplayStatusGroupIndex(node, groups)
-  if (idx <= 0) return 'info'
-  if (idx === 1) return 'warning'
+  if (idx < 0) return 'neutral'
+  if (idx === 0) return 'warning'
+  if (idx === 1) return 'info'
   return 'info'
-}
-
-/** Weight 0–1 for row tone colouring (mirrors canvas STATUS weights). */
-export function nodeStatusWeight(
-  node: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
-  groups: DisplayStatusGroup[],
-): number {
-  if (node.isDone) return 1
-  if (isGap(node, groups)) return 0
-  const idx = resolveDisplayStatusGroupIndex(node, groups)
-  if (idx < 0) return 0
-  if (idx === 0) return 0.5
-  if (idx === 1) return 0.15
-  return 0.15
 }

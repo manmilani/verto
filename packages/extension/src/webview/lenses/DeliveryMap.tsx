@@ -38,13 +38,29 @@ export function DeliveryMap({
     [displayStatusGroups],
   )
 
-  const slices = [...graph.nodes.filter(n => n.isDeliverySlice)].sort(
-    (a, b) =>
-      (bundle.deliveryCompleteness?.[b.id] ?? 0) -
-      (bundle.deliveryCompleteness?.[a.id] ?? 0),
+  const slices = useMemo(
+    () => [...graph.nodes.filter(n => n.isDeliverySlice)].sort(
+      (a, b) =>
+        (bundle.deliveryCompleteness?.[b.id] ?? 0) -
+        (bundle.deliveryCompleteness?.[a.id] ?? 0),
+    ),
+    [graph.nodes, bundle.deliveryCompleteness],
   )
 
-  const dmStats = deliveryMapStats(bundle, displayStatusGroups)
+  const pipelinesBySliceId = useMemo(() => {
+    const map = new Map<string, VertoNode[]>()
+    for (const n of graph.nodes) {
+      if (n.isDeliverySlice) {
+        map.set(n.id, buildPipelineForSlice(n.id, graph, implOrder))
+      }
+    }
+    return map
+  }, [graph, implOrder])
+
+  const dmStats = useMemo(
+    () => deliveryMapStats(bundle, displayStatusGroups, pipelinesBySliceId),
+    [bundle, displayStatusGroups, pipelinesBySliceId],
+  )
 
   if (slices.length === 0) {
     return (
@@ -55,7 +71,7 @@ export function DeliveryMap({
   }
 
   const slice = graph.nodes.find(n => n.id === focusedNode) ?? slices[0]
-  const pipeline = buildPipelineForSlice(slice.id, graph, implOrder)
+  const pipeline = pipelinesBySliceId.get(slice.id) ?? []
   const scomp = bundle.deliveryCompleteness?.[slice.id] ?? 0
   const gaps = pipeline.filter(row => isGap(row, displayStatusGroups))
 
@@ -221,7 +237,7 @@ export function DeliveryMap({
             </thead>
             <tbody>
               {slices.map(s => {
-                const rows = buildPipelineForSlice(s.id, graph, implOrder)
+                const rows = pipelinesBySliceId.get(s.id) ?? []
                 const counts: Record<string, number> = {}
                 for (const col of allGroups) counts[col] = 0
                 for (const row of rows) {

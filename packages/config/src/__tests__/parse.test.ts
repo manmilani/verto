@@ -14,7 +14,7 @@ describe('parseVertoConfig', () => {
     }`
     const config = parseVertoConfig(jsonc)
     expect(config.adapter).toBe('github')
-    expect(config.github.owner).toBe('owner')
+    expect(config.github!.owner).toBe('owner')
   })
 
   it('throws on invalid config (missing required field)', () => {
@@ -24,6 +24,16 @@ describe('parseVertoConfig', () => {
 
   it('throws on malformed JSON', () => {
     expect(() => parseVertoConfig('{ broken json')).toThrow()
+  })
+
+  it('parses non-github adapter without github block', () => {
+    const config = parseVertoConfig('{ "adapter": "beans" }')
+    expect(config.adapter).toBe('beans')
+    expect(config.github).toBeUndefined()
+  })
+
+  it('throws when github adapter omits github block', () => {
+    expect(() => parseVertoConfig('{ "adapter": "github" }')).toThrow()
   })
 
   it('parses valid ui.displayStatusGroups', () => {

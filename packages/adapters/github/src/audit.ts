@@ -1,5 +1,6 @@
 import { graphql } from '@octokit/graphql'
 import type { VertoConfig, FieldMappings, DisplayStatusGroup } from '@verto/config'
+import { requireGitHubConfig } from './githubConfig.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GQL = (query: string, variables?: Record<string, unknown>) => Promise<any>
@@ -22,13 +23,14 @@ export interface AuditResult {
  * fieldMappings and displayStatusGroups seeded from the project's fields.
  */
 export async function auditProjectScope(token: string, config: VertoConfig): Promise<AuditResult> {
-  if (config.github.scope !== 'project') {
+  const github = requireGitHubConfig(config)
+  if (github.scope !== 'project') {
     throw new Error('auditProjectScope requires config.github.scope === "project"')
   }
 
   const gql = makeGql(token)
   const warnings: string[] = []
-  const ownerField = config.github.ownerType === 'organization' ? 'organization' : 'user'
+  const ownerField = github.ownerType === 'organization' ? 'organization' : 'user'
 
   const data = await gql(
     `query($owner: String!, $number: Int!) {
@@ -44,7 +46,7 @@ export async function auditProjectScope(token: string, config: VertoConfig): Pro
         }
       }
     }`,
-    { owner: config.github.owner, number: config.github.projectNumber },
+    { owner: github.owner, number: github.projectNumber },
   )
 
   const project = data[ownerField]?.projectV2
@@ -86,9 +88,9 @@ export async function auditProjectScope(token: string, config: VertoConfig): Pro
     ui: { displayStatusGroups },
     github: {
       scope: 'project',
-      owner: config.github.owner,
-      projectNumber: config.github.projectNumber,
-      ...(config.github.ownerType ? { ownerType: config.github.ownerType } : {}),
+      owner: github.owner,
+      projectNumber: github.projectNumber,
+      ...(github.ownerType ? { ownerType: github.ownerType } : {}),
       fieldMappings,
     },
   }
@@ -101,13 +103,14 @@ export async function auditProjectScope(token: string, config: VertoConfig): Pro
  * Also logs informational messages about available labels and fieldMappings gaps.
  */
 export async function auditRepositoryScope(token: string, config: VertoConfig): Promise<AuditResult> {
-  if (config.github.scope !== 'repository') {
+  const github = requireGitHubConfig(config)
+  if (github.scope !== 'repository') {
     throw new Error('auditRepositoryScope requires config.github.scope === "repository"')
   }
 
   const gql = makeGql(token)
   const warnings: string[] = []
-  const repoConfig = config.github as Extract<VertoConfig['github'], { scope: 'repository' }>
+  const repoConfig = github
 
   const data = await gql(
     `query($owner: String!, $name: String!) {
@@ -117,7 +120,7 @@ export async function auditRepositoryScope(token: string, config: VertoConfig): 
         }
       }
     }`,
-    { owner: config.github.owner, name: repoConfig.repository },
+    { owner: github.owner, name: repoConfig.repository },
   )
 
   const repo = data.repository
@@ -132,7 +135,7 @@ export async function auditRepositoryScope(token: string, config: VertoConfig): 
   }
   warnings.push('Issue type: readable per-issue via fieldMappings type → { from: { kind: "issue", field: "type" } }')
 
-  const configMappings = config.github.fieldMappings ?? {}
+  const configMappings = github.fieldMappings ?? {}
   const projectV2Gaps = Object.entries(configMappings)
     .filter(([, e]) => e.from.kind === 'projectV2')
     .map(([k]) => k)
@@ -148,7 +151,7 @@ export async function auditRepositoryScope(token: string, config: VertoConfig): 
     adapter: 'github',
     github: {
       scope: 'repository',
-      owner: config.github.owner,
+      owner: github.owner,
       repository: repoConfig.repository,
       ...(repoConfig.issueFilter ? { issueFilter: repoConfig.issueFilter } : {}),
       fieldMappings,

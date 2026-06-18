@@ -41,6 +41,6 @@ export interface UiConfig {
 
 export interface VertoConfig {
   adapter: string
-  github: GitHubConfig
+  github?: GitHubConfig
   ui?: UiConfig
 }

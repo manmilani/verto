@@ -1,9 +1,9 @@
 import type { DeliveryMapBundle } from '@verto/core'
 import type { VertoConfig, DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
-import { resolveProjectName } from '@verto/adapter-github'
 import { buildPriorityOptionHints } from '@verto/config'
 import { runHostPipeline } from '@verto/text-parser'
 import { getAdapter } from './adapterRegistry.js'
+import { resolveProjectTitle } from './resolveProjectTitle.js'
 
 export async function runPipeline(
   config: VertoConfig,
@@ -19,7 +19,7 @@ export async function runPipeline(
   const adapter = getAdapter(config, token)
   const [graph, projectName] = await Promise.all([
     adapter.loadProject(config),
-    resolveProjectName(config, token),
+    resolveProjectTitle(config, token),
   ])
   const bundle = runHostPipeline(graph, { parsedEnabled, priorityOverlay })
   const displayStatusGroups = config.ui?.displayStatusGroups ?? []
