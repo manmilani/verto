@@ -16,6 +16,7 @@
 | 2.5 | [Parsed requirements & Delivery Map model](#phase-25--parsed-requirements--delivery-map-model) | `@verto/text-parser`, canonical schema, portfolio config, shared pipeline | Complete |
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | Complete |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | Complete |
+| 4.5 | [Setup wizard & config bootstrap](#phase-45--setup-wizard--config-bootstrap) | First-run QuickPick wizard; audit-seeded `verto.config.jsonc`; repository ancestor closure | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
 | 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself | |
 
@@ -262,9 +263,9 @@ The first point at which Verto can be dogfooded against its own GitHub project.
 
 **Depends on:** Phase 2.5 (parsed requirements pipeline, portfolio config, canonical schema).
 
-**Note:** Phase 3 assumes `.vscode/verto.config.jsonc` is already seeded (by the Phase 2 audit
-script or by hand). The first-run setup wizard (DESIGN.md §4.6.3, §4.6.6) is a post–Phase 3
-stretch goal — it is not required to dogfood the extension.
+**Note:** Phase 3 shipped without the setup wizard; config was seeded by the Phase 2 audit
+script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-wizard--config-bootstrap)**
+(DESIGN.md §4.6.9).
 
 ### Deliverables — extension host
 
@@ -410,7 +411,7 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 | Display status helpers | `displayStatusGroup.ts` — `resolveDisplayStatusGroup`, `pillToneForNode`, `isGap`, …; `theme.ts` palette by group index |
 | Shared webview UI | `components/ui.tsx` — `Pill`, `Stat`, `DataTableFrame`, `StatusDot`, table style helpers, `StatusLegend`, … |
 
-**Unlocks:** Phase 5 (write-back); first-run setup wizard (audit library prerequisite met).
+**Unlocks:** [Phase 4.5](#phase-45--setup-wizard--config-bootstrap) (setup wizard; audit library prerequisite met); Phase 5 (write-back).
 
 **Pre–Phase 4 (completed):** `portfolioColumns` renamed to `ui.displayStatusGroups`
 with types `DisplayStatusGroup` / `UiConfig`; webview matcher
@@ -435,7 +436,111 @@ entry (gap callouts are one consumer).
 
 ---
 
+## Phase 4.5 — Setup wizard & config bootstrap
+
+**Goal:** A new user can configure Verto from the extension without hand-writing
+`.vscode/verto.config.jsonc`. QuickPick wizard collects adapter + issue source, writes
+identity config, runs audit to seed `fieldMappings` and `ui.displayStatusGroups` with
+explanatory JSONC comments, opens the file for editing, and loads the panel. Repository
+scope gains upward parent closure so the initial `issueFilter` does not need to express
+hierarchy.
+
+**Depends on:** Phase 4 (audit library, extension host + webview, `@verto/config`).
+
+**Design reference:** [DESIGN.md §4.6.9](./DESIGN.md#469-first-run-setup-wizard).
+
+### Entry points
+
+| Trigger | Behaviour |
+|---|---|
+| First `verto.openPanel` | Start setup when config is missing, incomplete, or invalid |
+| `verto.setup` command | Always available |
+| **Setup** button in webview | Shown only for **missing / incomplete / invalid config** — not for auth failures or GitHub API errors |
+| Re-run on existing config | Prompt *"Config exists — re-run setup?"* → **Yes, continue** / **No, cancel**; pre-fill every step from existing `verto.config.jsonc` |
+
+### Wizard flow (QuickPick + input boxes)
+
+1. **Start** — command, first run, or Setup button.
+2. **Adapter** — *"Select your ticket/issue tracking system:"* → **GitHub** (only option). Selecting GitHub triggers **VS Code GitHub auth** immediately.
+3. **Issues source (authenticated user)** — *"Select your issues source:"*
+   - `"-- Source issues from another GitHub owner --"` → **3.b.1**
+   - Separator `"By Repository:"` / `"No repositories found."` + repo list (authenticated user's login)
+   - Separator `"By Project:"` / `"No projects found."` + project list
+   - Selection implies `github.scope` (`repository` vs `project`); no separate scope step.
+3.b.1 **Other owner** — input *"Enter GitHub owner's username:"*; adapter resolves owner via **try `user(login)` → `organization(login)`** (adapter-specific), then lists repos/projects.
+3.b.2 **Issues source (named owner)** — same tree as 3.a for `<owner_name>`.
+4. **Save identity** — first write to `.vscode/verto.config.jsonc` (create `.vscode/` if missing): `adapter`, `github.scope`, `github.owner`, `projectNumber` or `repository`, `ownerType` as resolved; repository-scope limitation comments. This file is **identity-only** (no `fieldMappings`, no `ui.displayStatusGroups`) until step 5 completes.
+5. **Audit & enrich** — adapter audit; merge with defaults; write `fieldMappings`, `ui.displayStatusGroups`, explanatory + optional-override comment blocks; **JSONC comment preservation** (no blind `JSON.stringify`). Wizard should run steps 4→5 without yielding to a panel load in between (or hold setup-in-progress so refresh is deferred until step 5 finishes).
+6. **Open editor** — open `verto.config.jsonc` in VS Code.
+7. **Post-setup** — auto-`refresh()` on the panel.
+
+QuickPick "tree" uses `QuickPickItemKind.Separator` for non-selectable headers and
+indented/prefixed child items. List APIs require **cursor pagination**.
+
+### Deliverables — `@verto/config`
+
+| File | Purpose |
+|---|---|
+| `packages/config/src/schema.ts` | Add `github.includeClosedAncestors` (boolean, default **true** when omitted at runtime) |
+| `packages/config/src/types.ts` | `includeClosedAncestors?: boolean` on `GitHubConfig` |
+| `packages/config/src/write.ts` (new) | JSONC-aware config writer — merge/update while preserving comments (`comment-json` or equivalent) |
+| `packages/config/src/index.ts` | Export `writeVertoConfigFile` |
+
+### Deliverables — `@verto/adapter-github`
+
+| File | Purpose |
+|---|---|
+| `packages/adapters/github/src/discovery.ts` (new) | `listRepositories(token, owner)`, `listProjects(token, owner)` with cursor pagination; `resolveOwner(token, login)` (user → org). Throws on API failure (distinct from empty list). Wizard catches and shows an error notification + closes QuickPick gracefully — not an unhandled rejection / generic VS Code modal |
+| `packages/adapters/github/src/closure.ts` | **Upward parent closure** when `includeClosedAncestors !== false`: for each loaded issue whose `parent` is not in the graph, fetch parent recursively to root |
+| `packages/adapters/github/src/adapter.ts` | Call parent closure after `expandGraphClosure` in repository scope |
+| `packages/adapters/github/src/audit.ts` | Enhance output for wizard: merge issue-native defaults, `displayStatusGroups`, comment blocks, repo-scope `issueFilter` default + label suggestions |
+| `packages/adapters/github/defaults.verto.config.jsonc` | Document `includeClosedAncestors` and default `issueFilter` for repository scope |
+| `scripts/audit-github-project.mjs` | Use JSONC-aware writer |
+
+### Deliverables — extension host
+
+| File | Purpose |
+|---|---|
+| `packages/extension/src/host/setupWizard.ts` (new) | QuickPick flow (§4.6.9); identity write (step 4); audit + enrich write (step 5); open editor (step 6); re-run prompt + pre-fill; catch discovery/list API errors (step 3) — notify user and close wizard cleanly |
+| `packages/extension/src/host/configLoader.ts` | Replace single generic load failure with typed errors: **missing** (no file), **incomplete** (file exists but setup not finished — e.g. identity-only after step 4: no workspace `fieldMappings` / `displayStatusGroups` seeded by audit), **invalid** (schema/parse failure). Incomplete and missing → Setup path; do **not** merge defaults and load with silently degraded mappings |
+| `packages/extension/src/host/panelManager.ts` | On missing/incomplete/invalid config → offer setup; maps `configLoader` typed errors to `'error'` + `setupRequired: true` for **missing / incomplete / invalid** only — **not** auth or API errors; `createFileSystemWatcher` on `.vscode/verto.config.jsonc` with debounced auto-`refresh()` (**500–1000 ms**) — must fire on **create** as well as change (initial setup writes the file for the first time; watcher registered before wizard must not rely on change-only) |
+| `packages/extension/src/extension.ts` | Register `verto.setup`; first-run hook from `verto.openPanel` |
+| `packages/extension/package.json` | Contribute `verto.setup` command |
+
+### Deliverables — webview
+
+| File | Purpose |
+|---|---|
+| `packages/extension/src/shared/protocol.ts` | `WebviewToHostMessage`: `'runSetup'`; extend `'error'` with optional `setupRequired?: boolean` — host sets `setupRequired: true` only when `panelManager` catches a missing / incomplete / invalid config error from `configLoader` |
+| `packages/extension/src/webview/App.tsx` | **Setup** button when `'error'` has `setupRequired: true` (missing / incomplete / invalid config); sends `'runSetup'` |
+
+### Repository scope — `issueFilter` and ancestors
+
+| Setting | Value |
+|---|---|
+| `github.issueFilter` | Default `{ "states": ["OPEN"] }` in generated config (GitHub API cannot express hierarchy) |
+| `github.includeClosedAncestors` | Default **`true`**; upward parent walk after initial fetch + `expandGraphClosure` |
+| Optional narrowing | Audit discovers labels; commented `issueFilter.labels` / `milestone` suggestions for large repos |
+
+### Decisions (resolved)
+
+- **UI pattern** — QuickPick + input boxes; final step opens JSONC in editor (no setup webview).
+- **Auth vs owner** — VS Code GitHub session on adapter pick; `github.owner` may differ via "another owner" branch.
+- **`ownerType`** — adapter-specific; GitHub: try user then organization.
+- **JSONC writes** — preserve comments on wizard write and config updates.
+- **Partial config (steps 4–5)** — identity-only file after step 4 is **incomplete**, not loadable; `configLoader` must not treat it as valid and silently rely on runtime default merge alone. Triggers Setup button / setup flow, same as missing config.
+- **Discovery API errors** — list failures in step 3 are explicit wizard errors (notification + graceful close), not empty QuickPick lists.
+- **Config file watcher** — `FileSystemWatcher` on create + change; debounce **500–1000 ms** before `refresh()` so first write during setup is observed without refresh storms while editing.
+- **Re-audit** — **deferred** beyond initial wizard; when added, must not blindly overwrite user-edited `fieldMappings` keys or `displayStatusGroups`.
+- **Not in setup** — parsed-requirements toggle, priority overlay, write-back (runtime / later phases).
+
+**Unlocks:** Self-service onboarding without CLI audit script; Phase 5 can assume most workspaces have a seeded config.
+
+---
+
 ## Phase 5 — Write-back
+
+**Depends on:** Phase 4.5 recommended (seeded workspace config) but not strictly blocking.
 
 **Goal:** A PM can set priority, mark items done, add/remove blocking links, or create child
 tickets from the Verto panel, and those changes propagate to GitHub.
@@ -531,6 +636,7 @@ Each is linked to the phase where it blocks progress.
 | Slice-level delivery completeness display | Resolved Phase 4 | Stat + completion-toned slice pills (not a separate progress-bar widget) |
 | `resolveProjectTitle` — adapter-aware panel title | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
+| First-run setup wizard | Resolved Phase 4.5 | §4.6.9, IMPLEMENTATION Phase 4.5 |
 | Write-back conflict policy | Phase 5 | §5.3 |
 | Beans on-disk format + dep/priority conventions | Phase 6 | §5.3 |
 
@@ -559,7 +665,6 @@ whether to extend an existing phase or insert a new one. Cross-reference [DESIGN
 
 | Item | Notes | Suggested phase |
 |---|---|---|
-| **First-run setup wizard** | Adapter + project identity, audit, seed `.vscode/verto.config.jsonc`; audit library shipped in Phase 4; exact screens / validation UX still open (DESIGN §4.6.3, §4.6.6, §5.4) | Post–Phase 4 |
 | **Agent / chat workflow integration** | How the Verto panel relates to Cursor agent workflows (DESIGN §5.4) | TBD |
 
 ### UI & graph

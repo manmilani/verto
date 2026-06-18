@@ -27,7 +27,7 @@
 1. [Background — the existing Rustybu canvas](#1-background--the-existing-rustybu-canvas)
 2. [Verto — System Intention / Goal](#2-verto--system-intention--goal)
 3. [High-Level Abstract Solution Design](#3-high-level-abstract-solution-design)
-4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.8](#468-parsed-requirements-verto-text-parser)
+4. [Solution System Design](#4-solution-system-design) — adapter architecture: [§4.6.1](#461-canonical-vs-tracker-native-models)–[§4.6.9](#469-first-run-setup-wizard)
 5. [Knowledge Gaps](#5-knowledge-gaps)
 6. [Implementation Plan](#6-implementation-plan)
 
@@ -695,7 +695,7 @@ truth — tickets in the tracker remain authoritative (see §4.9).
   runs `buildDeliveryMapBundle()`.
 - **Later adapters:** Jira; local file-system trackers such as **Beans** or
   **Backlog.md**. All implement the same interface and are selected/configured at
-  workspace setup (see §4.6.3–§4.6.6).
+  workspace setup (see §4.6.3–§4.6.6, §4.6.9).
 
 The subsections below document the **adapter architecture** agreed for
 implementation.
@@ -793,10 +793,10 @@ This override rule applies uniformly to:
 `defaults.verto.config.jsonc` directly, optionally merged with a hand-written or
 audit-generated `.vscode/verto.config.jsonc`.
 
-**When the extension exists:** first-run setup asks for adapter type and project
-identity, runs the **audit/bootstrap** step (§4.6.6), copies merged defaults into
-`.vscode/verto.config.jsonc`, and presents the draft for user editing — never
-starting from a blank config.
+**When the extension exists:** first-run setup is implemented by the **setup wizard**
+(§4.6.9): QuickPick flow for adapter + issue source, **audit/bootstrap** (§4.6.6),
+merged defaults written to `.vscode/verto.config.jsonc` with explanatory JSONC comments,
+then opened in the editor — never starting from a blank config.
 
 **`@verto/config` package.** The `VertoConfig` TypeScript type, JSON Schema (validated
 via `ajv`), and runtime helpers live in `packages/config/` (`@verto/config`):
@@ -905,6 +905,9 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
     "owner": "manmilani",
     "projectNumber": 1,          // required when scope is "project"
     // "repository": "my-repo", // required when scope is "repository"
+    // Repository scope only:
+    // "issueFilter": { "states": ["OPEN"] },
+    // "includeClosedAncestors": true,  // default true — upward parent closure (§4.6.7)
     "fieldMappings": {
       // --- Canonical VertoNode fields (routed to node root) ---
       //
@@ -1104,11 +1107,13 @@ fields, options, issue types) and produces a **draft** `.vscode/verto.config.jso
    not on the board).
 4. Emit a draft config using **names only**; ID caches are populated at runtime on
    first load.
+5. Preserve **JSONC comments** on write (setup wizard and tooling use an AST-aware
+   writer — not `JSON.stringify`).
 
 **Interim tooling:** [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs)
 prototypes aligning a GitHub ProjectV2 field *schema* with the VertoNode-derived
-column set (Status options + custom fields). The extension's setup wizard will
-reuse this discovery logic when seeding `verto.config.jsonc`.
+column set (Status options + custom fields). The extension's setup wizard (§4.6.9)
+reuses audit discovery logic when seeding `verto.config.jsonc`.
 
 #### 4.6.7 First adapter: GitHub Issues
 
@@ -1150,9 +1155,21 @@ mapping layer consistent across scopes.
 **`github.ownerType`.** Set to `"user"` (default) or `"organization"` to select between
 `user(login).projectV2` and `organization(login).projectV2` for project-scope enumeration.
 
-**Repository scope: issue filter.** Without narrowing, `repository.issues` returns every
-open issue — unworkable for large repos. `github.issueFilter` (labels, states, milestone,
-assignee) narrows the set. The audit script flags its absence as a warning.
+**Repository scope: issue filter.** `github.issueFilter` (labels, states, milestone,
+assignee) narrows which issues Verto **reads** from the repository — it does not
+configure GitHub. Without narrowing, `repository.issues` with default
+`states: ["OPEN"]` returns every open issue — unworkable for large repos. The setup
+wizard and audit seed a default `issueFilter: { "states": ["OPEN"] }` and comment
+optional label/milestone narrowing discovered from the repo.
+
+**Repository scope: closed ancestors (`github.includeClosedAncestors`).** GitHub's
+Issues API cannot express "include closed issues that have an open parent or open
+descendant." Hierarchy inclusion is **adapter load policy**, not `issueFilter` syntax.
+When `includeClosedAncestors` is **`true`** (default), after the initial fetch and
+`expandGraphClosure()` (blocking / sub-issues), the adapter walks **upward** along
+`parent` links: for any loaded issue whose parent is not yet in the graph, fetch the
+parent recursively to the root. Set to `false` to skip upward closure (open issues
+only, plus downward/cross refs from `expandGraphClosure`).
 
 **Graph closure for cross-scope references.** Blocking links (`blockedBy`), sub-issues
 (`subIssues`), and external dependents (`blocking`) can reference issues outside the
@@ -1162,9 +1179,10 @@ IDs not yet in the graph, fetches them in batches (via the Issues API), and repe
 closure is complete (capped at 5 rounds with a summary warning). Issues fetched during
 closure have no ProjectV2 field values; `priority` defaults to `5` for them. If the cap is
 reached with refs still unresolved, `validateGraph()` will surface the dangling refs as
-errors. Note: `parent.id` is intentionally excluded from the closure referenced set —
-under Verto semantics a child's `prereqIds` does **not** include its parent, so an
-unloaded parent causes no dangling reference.
+errors. Downward `expandGraphClosure` still does **not** follow `parent.id` (child's
+`prereqIds` does not include its parent); upward parent closure (above) covers closed
+ancestors of loaded open issues. An unloaded parent alone causes no dangling reference
+under Verto semantics.
 
 **Cross-link:** See [Phase 2 implementation plan](./IMPLEMENTATION.md#phase-2--github-adapter-read-only)
 for the full deliverables, decisions, and verification steps.
@@ -1269,6 +1287,78 @@ Parsed nodes: `isDeliverySlice: false`, `priority: 5`, `nodeOrigin: 'text-parser
 **`ticketUrl` (Phase 2.5 alignment):** required on all nodes (`ticketUrl: string`,
 not optional). `validateGraph` emits an **error** (not warning) when absent on ticket
 nodes. Parsed nodes inherit parent URL + anchor.
+
+#### 4.6.9 First-run setup wizard
+
+**Phase 4.5.** Guided workspace configuration from the VS Code extension — no
+hand-written config required for first use. Implementation detail:
+[IMPLEMENTATION.md Phase 4.5](./IMPLEMENTATION.md#phase-45--setup-wizard--config-bootstrap).
+
+**UI pattern.** QuickPick and input boxes; final step **opens** `.vscode/verto.config.jsonc`
+in the editor. No dedicated setup webview for config editing.
+
+**Entry points.**
+
+| Trigger | Behaviour |
+|---|---|
+| First `verto.openPanel` | Start setup when config is missing, incomplete, or invalid |
+| `verto.setup` command | Always available |
+| **Setup** button in webview | Only for missing / incomplete / invalid config — not auth or API errors |
+| Re-run on existing config | *"Config exists — re-run setup?"*; pre-fill every step from existing config |
+
+**Wizard flow.**
+
+1. Start (command, first run, or Setup button).
+2. **Adapter** — *"Select your ticket/issue tracking system:"* → **GitHub** (only option
+   today). Selection triggers **VS Code GitHub auth** immediately.
+3. **Issues source (authenticated user)** — tree-style QuickPick:
+   - `"-- Source issues from another GitHub owner --"` → owner input branch (3.b).
+   - Separator `"By Repository:"` / `"No repositories found."` + repos for auth login.
+   - Separator `"By Project:"` / `"No projects found."` + projects for auth login.
+   - Repo vs project pick sets `github.scope` (`repository` vs `project`).
+3.b. **Another owner** — input owner login; adapter resolves via **try `user(login)` →
+   `organization(login)`** (adapter-specific); list repos/projects for that owner.
+4. **Save identity** — first write to `.vscode/verto.config.jsonc` (create `.vscode/`
+   if missing): `adapter`, `github.scope`, `github.owner`, `projectNumber` or
+   `repository`, `ownerType`; repository-scope limitation comments in file. File is
+   **identity-only** until step 5 (no audit-seeded `fieldMappings` or
+   `displayStatusGroups`).
+5. **Audit & enrich** — run §4.6.6 audit; merge adapter defaults; write
+   `fieldMappings`, `ui.displayStatusGroups`, explanatory comments and brief
+   optional-override blocks (`priority`, `isDeliverySlice`, `personas`, `issueFilter`,
+   …); **preserve JSONC comments** on write (no blind `JSON.stringify`).
+6. **Open editor** — open config in VS Code.
+7. **Post-setup** — auto-`refresh()` panel; host watches config file (debounced
+   refresh on save, **500–1000 ms**; watcher fires on **create** and change so the
+   first write during setup is observed).
+
+**Incomplete config.** Between steps 4 and 5, or if setup is abandoned after step 4,
+the identity-only file is **not** a valid load target. `configLoader` classifies it as
+**incomplete** (distinct from missing and schema-invalid) and routes to the Setup
+button — it must not merge adapter defaults at runtime and load with silently
+degraded mappings.
+
+**Discovery errors.** `listRepositories` / `listProjects` failures during step 3
+surface as wizard errors (user notification, QuickPick closes cleanly) — not as an
+empty list indistinguishable from "no repos/projects".
+
+**Config errors → Setup button.** `configLoader` throws typed errors (missing /
+incomplete / invalid). `panelManager` maps only those three to `'error'` messages
+with `setupRequired: true`; auth and API failures send `'error'` without
+`setupRequired` (Retry only).
+
+**Auth vs owner.** GitHub session (token) is separate from `github.owner` (API identity).
+The authenticated user may configure Verto for another owner's project/repo when permitted.
+
+**Adapter discovery APIs (GitHub).** `listRepositories`, `listProjects` (paginated),
+`resolveOwner` — used by the wizard; audit/bootstrap remains `auditProjectScope` /
+`auditRepositoryScope`.
+
+**Re-audit.** Deferred beyond initial wizard. When added, merge must not blindly
+overwrite user-edited `fieldMappings` entries or `displayStatusGroups`.
+
+**Not configured by setup.** Parsed-requirements toggle, priority overlay, panel lens
+state — `workspaceState` at runtime.
 
 ### 4.7 State: tickets vs. workspace
 
@@ -1497,10 +1587,10 @@ the body sections cited — this list is the index.
   [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs).
 - ~~**Personas source (GitHub).**~~ **Closed (Phase 2.5)** — label prefix `persona:`;
   optional `fieldMappings.personas` replaces label extraction — §4.6.4, §4.6.7.
-- ~~**Config bootstrap / audit.**~~ **Closed (design + library)** — audit step drafts
-  `verto.config.jsonc` from live project shape; `auditProjectScope` /
+- ~~**Config bootstrap / audit.**~~ **Closed (design + library; wizard Phase 4.5)** —
+  audit step drafts `verto.config.jsonc` from live project shape; `auditProjectScope` /
   `auditRepositoryScope` exported from `@verto/adapter-github` (Phase 4); extension setup
-  wizard (screens / validation UX) still open — see §4.6.6.
+  wizard specified in §4.6.9 (IMPLEMENTATION Phase 4.5).
 - ~~**Required-field fallback (read path).**~~ **Closed (Phase 2.5)** — fail:
   `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`,
   `nodeType`, `nodeOrigin`; default `5`: `priority`; optional: `status` (`undefined`),
@@ -1548,10 +1638,10 @@ the body sections cited — this list is the index.
   interactive graph can be dogfooded (see IMPLEMENTATION.md unplanned backlog).
 - ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**
   (`WebviewPanel`). Agent/chat workflow integration — deferred.
-- ~~**Setup UX (adapter config).**~~ **Partially closed** — audit library shipped
-  (`@verto/adapter-github`); wizard asks adapter + project identity, runs audit, seeds
-  `.vscode/verto.config.jsonc` from `defaults.verto.config.jsonc` + discovered project
-  shape — see §4.6.3, §4.6.6. **Remaining:** exact wizard screens and validation UX.
+- ~~**Setup UX (adapter config).**~~ **Closed (Phase 4.5)** — QuickPick wizard
+  (§4.6.9): adapter + issue source, audit, JSONC seed with comments, open in editor;
+  config file watcher + debounced refresh (**500–1000 ms**); `github.includeClosedAncestors` for repository
+  scope. Re-audit deferred.
 
 ### 5.5 Product & process
 
@@ -1587,5 +1677,6 @@ Summary of phases:
 | 2.5 | Parsed requirements & Delivery Map model |
 | 3 | VS Code extension — read-only panel |
 | 4 | Full UI fidelity |
+| 4.5 | Setup wizard & config bootstrap |
 | 5 | Write-back |
 | 6 | Beans (file-system) adapter |
