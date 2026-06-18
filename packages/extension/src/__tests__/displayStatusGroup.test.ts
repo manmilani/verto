@@ -5,20 +5,16 @@ import type { VertoNode } from '@verto/core'
 
 // Default groups from defaults.verto.config.jsonc
 const defaultGroups: DisplayStatusGroup[] = [
-  { label: 'Done',        sources: { ticket: { isDone: true },  parsed: { isDone: true } } },
-  { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
-  { label: 'Raw',         sources: { parsed:  { isDone: false, statuses: ['raw'] } } },
+  { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+  { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
 ]
 
 describe('isDoneBucket', () => {
   it('identifies Done group as done-bucket', () => {
     expect(isDoneBucket(defaultGroups[0])).toBe(true)
   })
-  it('identifies In Progress as non-done-bucket', () => {
-    expect(isDoneBucket(defaultGroups[1])).toBe(false)
-  })
   it('identifies Raw as non-done-bucket', () => {
-    expect(isDoneBucket(defaultGroups[2])).toBe(false)
+    expect(isDoneBucket(defaultGroups[1])).toBe(false)
   })
 })
 
@@ -37,25 +33,25 @@ describe('resolveDisplayStatusGroup', () => {
     )).toBe('Done')
   })
 
-  it('in-progress ticket with matching status → In Progress', () => {
+  it('open ticket with workflow status → Other', () => {
     expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: 'In Progress' },
       defaultGroups,
-    )).toBe('In Progress')
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
   })
 
-  it('open ticket with non-matching status → In Progress (isDone:false predicate)', () => {
+  it('open ticket with non-matching status → Other', () => {
     expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: 'Todo' },
       defaultGroups,
-    )).toBe('In Progress')
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
   })
 
-  it('open ticket with undefined status → In Progress', () => {
+  it('open ticket with undefined status → Other', () => {
     expect(resolveDisplayStatusGroup(
       { nodeType: 'ticket', isDone: false, status: undefined },
       defaultGroups,
-    )).toBe('In Progress')
+    )).toBe(OTHER_DISPLAY_STATUS_GROUP)
   })
 
   it('undone parsed with status raw → Raw', () => {
@@ -97,7 +93,7 @@ describe('resolveDisplayStatusGroup', () => {
 describe('groupLabelsWithOther', () => {
   it('appends Other after configured labels', () => {
     expect(groupLabelsWithOther(defaultGroups)).toEqual([
-      'Done', 'In Progress', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
+      'Done', 'Raw', OTHER_DISPLAY_STATUS_GROUP,
     ])
   })
 
@@ -123,18 +119,17 @@ describe('countByDisplayStatusGroup', () => {
     ]
     expect(countByDisplayStatusGroup(rows, defaultGroups)).toEqual({
       Done: 1,
-      'In Progress': 2,
       Raw: 1,
-      Other: 0,
+      Other: 2,
     })
   })
 })
 
 describe('formatDisplayGroupCounts', () => {
   it('formats non-zero counts in config order', () => {
-    const counts = { Done: 3, 'In Progress': 2, Raw: 0, Other: 1 }
+    const counts = { Done: 3, Raw: 0, Other: 1 }
     expect(formatDisplayGroupCounts(counts, defaultGroups)).toBe(
-      '3 Done · 2 In Progress · 1 Other',
+      '3 Done · 1 Other',
     )
   })
 })
@@ -146,9 +141,9 @@ describe('summarizePipelineByDisplayGroup', () => {
       { id: 'b', title: 'B', isDone: false, status: 'In Progress', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u' },
     ]
     const { counts, weights } = summarizePipelineByDisplayGroup(rows, defaultGroups)
-    expect(counts).toEqual({ Done: 1, 'In Progress': 1, Raw: 0, Other: 0 })
-    expect(weights).toEqual({ Done: 2, 'In Progress': 1, Raw: 0, Other: 0 })
-    expect(formatDisplayGroupCounts(weights, defaultGroups)).toBe('2 Done · 1 In Progress')
+    expect(counts).toEqual({ Done: 1, Raw: 0, Other: 1 })
+    expect(weights).toEqual({ Done: 2, Raw: 0, Other: 1 })
+    expect(formatDisplayGroupCounts(weights, defaultGroups)).toBe('2 Done · 1 Other')
   })
 })
 
@@ -158,13 +153,13 @@ describe('weightByDisplayStatusGroup', () => {
       { id: 'a', title: 'A', isDone: true, status: 'Done', nodeType: 'ticket', nodeOrigin: 'github', isDeliverySlice: false, priority: 5, prereqIds: [], childIds: [], ticketUrl: 'u', weight: 2 },
     ]
     expect(weightByDisplayStatusGroup(rows, defaultGroups)).toEqual({
-      Done: 2, 'In Progress': 0, Raw: 0, Other: 0,
+      Done: 2, Raw: 0, Other: 0,
     })
   })
 })
 
 describe('isGap', () => {
-  it('open ticket → gap (In Progress is not a done-bucket)', () => {
+  it('open ticket → gap (no done-bucket match)', () => {
     expect(isGap(
       { nodeType: 'ticket', isDone: false, status: 'In Progress' },
       defaultGroups,

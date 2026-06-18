@@ -832,7 +832,6 @@ Shape:
   "ui": {
     "displayStatusGroups": [
       { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
-      { "label": "In Progress", "sources": { "ticket": { "isDone": false, "statuses": ["In Progress"] } } },
       { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
     ]
   }

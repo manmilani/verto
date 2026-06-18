@@ -219,7 +219,7 @@ prior two-column / display-only body / `REQ:` markers design.
 |---|---|
 | `packages/config/src/types.ts` | `UiConfig` with `ui.displayStatusGroups` — source-aware display-status groups (`ticket` / `parsed`); optional `fieldMappings.personas` override (no default binding) |
 | `packages/config/src/schema.ts` | JSON Schema for `ui.displayStatusGroups`; `personas` allowed as optional `fieldMappings` key |
-| `packages/adapters/github/defaults.verto.config.jsonc` | Seed `ui.displayStatusGroups` (Done / in-progress / raw); **no** default `personas` field binding (labels are the default source) |
+| `packages/adapters/github/defaults.verto.config.jsonc` | Seed `ui.displayStatusGroups` (Done / raw); **no** default `personas` field binding (labels are the default source) |
 
 ### Deliverables — host load pipeline (shared)
 

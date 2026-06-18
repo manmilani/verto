@@ -3,17 +3,16 @@ import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus, formatPriority } from '../webview/nodeStatusFormat.js'
 
 const defaultGroups: DisplayStatusGroup[] = [
-  { label: 'Done',        sources: { ticket: { isDone: true },  parsed: { isDone: true } } },
-  { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
-  { label: 'Raw',         sources: { parsed:  { isDone: false, statuses: ['raw'] } } },
+  { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+  { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
 ]
 
 describe('formatNodeStatus', () => {
   it('matched group + raw status → "<group> (<raw>)"', () => {
     expect(formatNodeStatus(
-      { nodeType: 'ticket', isDone: false, status: 'In Progress' },
+      { nodeType: 'parsed', isDone: false, status: 'raw' },
       defaultGroups,
-    )).toBe('In Progress (In Progress)')
+    )).toBe('Raw (raw)')
   })
 
   it('matched group + no raw status → "<group>"', () => {
@@ -23,19 +22,18 @@ describe('formatNodeStatus', () => {
     )).toBe('Done')
   })
 
-  it('undone ticket with unknown status matches In Progress group (isDone predicate wins)', () => {
-    // In Progress rule has isDone:false — any undone ticket matches it regardless of status
+  it('undone ticket with workflow status → Other', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: 'Backlog' },
       defaultGroups,
-    )).toBe('In Progress (Backlog)')
+    )).toBe('Other (Backlog)')
   })
 
-  it('undone ticket with no status matches In Progress group', () => {
+  it('undone ticket with no status → Other', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: undefined },
       defaultGroups,
-    )).toBe('In Progress')
+    )).toBe('Other')
   })
 
   it('falls to Other when no group has a rule for this nodeType', () => {
