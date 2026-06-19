@@ -242,7 +242,7 @@ export function Pill({
         fontSize: size === 'sm' ? 11 : 12,
         fontWeight: active ? 600 : 500,
         cursor: onClick ? 'pointer' : undefined,
-        border: `1px solid ${colors.border}`,
+        border: `1px solid ${color ? colors.border : (active ? 'var(--vscode-focusBorder)' : colors.border)}`,
         background: color ? colors.bg : (active ? colors.bg : 'var(--vscode-editor-background)'),
         color: colors.fg,
         overflow: multiline ? 'visible' : 'hidden',

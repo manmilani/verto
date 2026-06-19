@@ -41,7 +41,6 @@ export {
   shouldShowOthersColumn,
   resolveDisplayStatusGroup,
   groupLabelsForDisplay,
-  allDisplayGroupLabels,
   resolveDisplayStatusGroupIndex,
   isGap,
   formatDisplayGroupsProse,

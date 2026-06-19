@@ -407,8 +407,8 @@ function UsageBar({ pipeline, displayStatusGroups, showOthersColumn, displayStat
 }) {
   const allGroups = groupLabelsForDisplay(displayStatusGroups, showOthersColumn)
   const weights = weightByDisplayStatusGroup(pipeline, displayStatusGroups)
-  const visibleTotal = allGroups.reduce((sum, col) => sum + (weights[col] ?? 0), 0)
-  if (visibleTotal === 0) return null
+  const total = Object.values(weights).reduce((a, b) => a + b, 0)
+  if (total === 0) return null
 
   const weightSummary = formatDisplayGroupCounts(weights, displayStatusGroups, showOthersColumn)
 
@@ -429,7 +429,7 @@ function UsageBar({ pipeline, displayStatusGroups, showOthersColumn, displayStat
             <div
               key={col}
               title={`${col}: ${w}${displayStatusGroupTooltips[col] ? ` — ${displayStatusGroupTooltips[col]}` : ''}`}
-              style={{ flex: w / visibleTotal, background: statusGroupColor(groupIdx), minWidth: 2 }}
+              style={{ flex: w / total, background: statusGroupColor(groupIdx), minWidth: 2 }}
             />
           )
         })}

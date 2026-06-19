@@ -2,13 +2,12 @@ import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
 import { nodeWeight } from '@verto/core'
 import {
-  allDisplayGroupLabels,
+  groupLabelsForDisplay,
   resolveDisplayStatusGroup,
   resolveDisplayStatusGroupIndex,
   isGap,
   OTHER_DISPLAY_STATUS_GROUP,
   SYSTEM_DONE_DISPLAY_GROUP_LABEL,
-  groupLabelsForDisplay,
   formatDisplayGroupsProse,
   shouldShowOthersColumn,
   buildStatusUniverse,
@@ -35,7 +34,7 @@ export type StatTone = 'success' | 'warning' | 'info' | 'danger'
 
 function emptyGroupRecord(userGroups: DisplayStatusGroup[]): Record<string, number> {
   return Object.fromEntries(
-    allDisplayGroupLabels(userGroups).map(label => [label, 0]),
+    groupLabelsForDisplay(userGroups, true).map(label => [label, 0]),
   ) as Record<string, number>
 }
 
@@ -78,7 +77,7 @@ export function summarizePipelineByDisplayGroup(
 export function formatDisplayGroupCounts(
   values: Record<string, number>,
   userGroups: DisplayStatusGroup[],
-  showOthersColumn = false,
+  showOthersColumn: boolean,
 ): string {
   return groupLabelsForDisplay(userGroups, showOthersColumn)
     .filter(label => (values[label] ?? 0) > 0)

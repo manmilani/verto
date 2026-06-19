@@ -1,12 +1,11 @@
 import type { DeliveryMapBundle } from '@verto/core'
-import type { VertoConfig, DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
+import type { VertoConfig, DisplayStatusGroup, PriorityOptionHints, FieldMappings } from '@verto/config'
 import {
   buildPriorityOptionHints,
   buildStatusUniverse,
   shouldShowOthersColumn,
   buildDisplayStatusGroupTooltips,
 } from '@verto/config'
-import { fetchProjectStatusOptions } from '@verto/adapter-github'
 import { runHostPipeline } from '@verto/text-parser'
 import { getAdapter } from './adapterRegistry.js'
 import { resolveProjectTitle } from './resolveProjectTitle.js'
@@ -25,10 +24,11 @@ export async function runPipeline(
   priorityOptionHints: PriorityOptionHints
 }> {
   const adapter = getAdapter(config, token)
+  const fieldMappings = adapter.fieldMappings?.(config) as FieldMappings | undefined
   const [graph, projectName, auditedTicketStatuses] = await Promise.all([
     adapter.loadProject(config),
     resolveProjectTitle(config, token),
-    fetchProjectStatusOptions(token, config),
+    adapter.fetchStatusOptions?.(config) ?? Promise.resolve([]),
   ])
   const bundle = runHostPipeline(graph, { parsedEnabled, priorityOverlay })
   const displayStatusGroups = config.ui?.displayStatusGroups ?? []
@@ -36,13 +36,13 @@ export async function runPipeline(
   const showOthersColumn = shouldShowOthersColumn(
     displayStatusGroups,
     statusUniverse,
-    config.github?.fieldMappings,
+    fieldMappings,
   )
-  const priorityOptionHints = buildPriorityOptionHints(config.github?.fieldMappings?.priority)
+  const priorityOptionHints = buildPriorityOptionHints(fieldMappings?.priority)
   const displayStatusGroupTooltips = buildDisplayStatusGroupTooltips(
     displayStatusGroups,
     statusUniverse,
-    config.github?.fieldMappings,
+    fieldMappings,
     showOthersColumn,
   )
   return {

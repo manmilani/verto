@@ -57,12 +57,14 @@ export function parseRawReqBlock(body: string, parentId: string): ParsedRawReq[]
       note = text
     }
 
+    const status = checked ? 'done' : 'raw'
+
     results.push({
       id: `${parentId}#raw-req-${n}`,
       name,
       note,
-      status: checked ? 'done' : 'raw',
-      isDone: (checked ? 'done' : 'raw') === 'done',
+      status,
+      isDone: status === 'done',
     })
   }
 

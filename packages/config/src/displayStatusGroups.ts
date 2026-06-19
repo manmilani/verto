@@ -200,14 +200,6 @@ export function groupLabelsForDisplay(
   return labels
 }
 
-/** All bucket keys for counting (includes others even when the column is hidden). */
-export function allDisplayGroupLabels(
-  userGroups: DisplayStatusGroup[],
-): string[] {
-  const labels = groupLabelsForDisplay(userGroups, true)
-  return labels
-}
-
 export function resolveDisplayStatusGroupIndex(
   row: Pick<StatusNode, 'nodeType' | 'status'> & { isDone: boolean },
   userGroups: DisplayStatusGroup[],
