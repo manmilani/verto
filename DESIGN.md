@@ -418,10 +418,12 @@ The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey)
 **Slice header (canvas fidelity):**
 
 - **Persona** — `personas: string[]` (canonical root field; default `[]`). **Population
-  (load time):** the GitHub adapter extracts `personas` per-issue from labels matching
-  `persona:<value>` on **any** ticket node — not gated on `isDeliverySlice`. Optional
-  **`fieldMappings.personas`** in workspace config overrides label extraction when present
-  (no default entry in `defaults.verto.config.jsonc`). See §4.6.7. **Display (Phase 3
+  (load time):** populated by the standard parsed sub-field mapping `"labels.persona"` —
+  see §4.6.4 (parsed sub-field mappings). The GitHub adapter default config includes
+  `personas: { from: { kind: 'issue', field: 'labels.persona' } }`, which extracts all
+  `persona:<value>` labels via `@verto/text-parser`. Workspace config may override this
+  entry like any other `fieldMappings` entry; if no `personas` entry is present at all,
+  `mapper.ts` falls back to direct label extraction. See §4.6.7. **Display (Phase 3
   UI):** the Delivery Map slice header reads `personas` from the selected slice node;
   the field may also be populated on non-slice tickets but is not displayed there.
 - **Outcome** — display-only: `node._outcome` on the selected slice node — the
@@ -1024,6 +1026,33 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
 
 No config annotation is needed — routing is automatic and transparent. To promote a field from `ticketFields` to canonical: add it to `VertoNode` and `CANONICAL_VERTO_NODE_KEYS`; the same `fieldMappings` entry then routes to the root without any config change.
 
+**Parsed sub-field mappings.** When `from.field` contains a dot (e.g. `"labels.persona"`, `"body.PHASE"`), the entry addresses a structured value *within* a tracker field rather than the field itself. The part before the dot is the **base field**; the part after is the **key to extract**. Dot-notation works for all `kind` variants (`'issue'` and `'projectV2'`).
+
+Two hints on `FieldMappingEntry` describe the **source** (not the destination):
+
+- **`type`** — coercion target for the extracted raw string. Defaults to `'text'` when absent. `'select'`/`'iteration'` are silently treated as `'text'` (projectV2-column-specific concepts not applicable here). `'boolean'` is new: for labels, boolean synthesis applies (see below); for text-block, standard coercion of the extracted string. `isArray: true` + `type: 'boolean'` is rejected at config validation.
+- **`isArray`** — whether the output must be an array. Defaults to `false` when absent.
+
+These two hints bring parsed fields to the same level of informedness as standard fields (where type and shape are known from tracker schema or audit).
+
+- **Adapters** skip dot-notation entries in their main field-mapping loop and instead auto-include the base field in `node.ticketFields` (if not already explicitly mapped), so the text-parser has the raw value to parse. This applies to both `kind: 'issue'` and `kind: 'projectV2'` entries; for `'projectV2'`, the base field is resolved from `projectItem.fieldValues` by case-insensitive name match.
+- **`@verto/text-parser`** receives `fieldMappings` via `HostPipelineOptions.fieldMappings` and runs `applyParsedFieldMappings` on every ticket node after `computeBodyFields`. It dispatches by the base field's runtime type:
+
+| Base field runtime type | Parser | isArray: false | isArray: true |
+|---|---|---|---|
+| `string[]` | **Labels parser** | First `KEY:VALUE` raw string, or `null` on miss | `(string \| null)[]` — all matches in order; bare `KEY`-only → `null` slot; no matches → `[]` |
+| `string` | **Text-block parser** | `KEY:BEGIN`/`KEY:END` block (plain or `<!-- -->`) → trimmed string, or `null` | `[string]` (one-element array) or `null` if block absent/empty |
+| other | — | Entry skipped | Entry skipped |
+
+Data flow per entry: `parser → [boolean synthesis] → values remapping → coerceFieldValue → routeParsedValue`
+
+- **Parsers** are pure extractors — they never return booleans. For `isArray: false`, they return a raw string or `null`.
+- **Boolean synthesis** (labels only, `isArray: false`): if the parser returns `null` and `type === 'boolean'`, the main loop checks `labels.includes(parsedKey)` → `true`/`false`. Values and `coerceFieldValue` are skipped for this synthesized boolean. Text-block misses with `type: 'boolean'` stay `null` (not written).
+- **`values` remapping** is applied before `coerceFieldValue`, on miss → `null`. For `isArray: true`: applied per non-null element; `null` slots (bare KEY-only labels) pass through unchanged.
+- **`coerceFieldValue`** (from `@verto/config`) is the shared coercion helper used by both the adapter (standard fields) and text-parser (parsed fields). Called with `type === undefined` for the adapter path → raw passthrough. Null/undefined input → `null` before the type switch.
+- **Routing** follows the standard rule (canonical root or `ticketFields`). `null` is never written; `[]` (empty array) and `false` (absent boolean label) are written. There is no special boolean-canonical skip — store what you get.
+- **`select`/`iteration` on dot-notation** entries: resolved to `'text'` before coercion (these are projectV2-column-specific concepts).
+
 **System-only canonical fields.** Not all `CANONICAL_VERTO_NODE_KEYS` members appear
 in `fieldMappings`. These are **always** populated outside `fieldMappings` and are
 **never** config entries:
@@ -1035,16 +1064,17 @@ in `fieldMappings`. These are **always** populated outside `fieldMappings` and a
 | `_rawReqIds` | **`@verto/text-parser`** (`[]` on ticket nodes before materialize; populated after) |
 | `_note` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph); `materializeParsedRequirements` (parsed: note from RAW_REQ line) |
 | `_outcome` | **`@verto/text-parser`** — `computeBodyFields` (ticket: first DESC paragraph; same as `_note`); always `undefined` on parsed nodes |
-| `personas` (GitHub default) | **`mapper.ts`** — from issue labels `persona:<value>` when no `fieldMappings.personas` override |
+| `personas` (GitHub default) | **`@verto/text-parser`** `applyParsedFieldMappings` via `fieldMappings.personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true }` (default config); **`mapper.ts`** label-extraction fallback when no `fieldMappings.personas` entry exists |
 | `weight` | **`fieldMappings`** when an effort estimate exists (optional; normalized by `nodeWeight()` — see `completeness.ts`) |
 
 `isDone` and `isDeliverySlice` are populated by the system accessor by default but
 may be overridden via an optional `fieldMappings` entry. `priority` and `status`
 require user-configured `fieldMappings` bindings when the tracker exposes those
-fields (`status` may be absent — see §4.6.5). **`personas`:** GitHub adapter
-default is label extraction (above); if **`fieldMappings.personas`** is present in
-effective config, label extraction is **skipped** and the standard `fieldMappings`
-path populates `personas` instead. If neither applies, **`[]`**.
+fields (`status` may be absent — see §4.6.5). **`personas`:** the GitHub adapter
+default config includes `personas: { from: { kind: 'issue', field: 'labels.persona' } }`;
+`@verto/text-parser` extracts persona values from `ticketFields.labels` and writes them
+to `node.personas`. When no `fieldMappings.personas` entry is present, `mapper.ts`
+falls back to direct `persona:<value>` label extraction. If neither applies, **`[]`**.
 
 **`type` hint for ticket fields.** Non-canonical `fieldMappings` entries may carry an optional `"type"` hint (`"text"`, `"number"`, `"date"`, `"select"`, `"iteration"`). The mapper uses it to coerce raw source values to the correct JavaScript type. The hint is omitted for canonical fields (their types are in `types.ts`). The audit step populates it automatically from the source's field schema (§4.6.6).
 
@@ -1079,11 +1109,13 @@ interface FieldAccessor {
   field; `isDeliverySlice` from parent presence; `ticketUrl` from native issue URL.
   **`mapper.ts` stamps `nodeType: 'ticket'` and `nodeOrigin: '<adapter-id>'`** (e.g.
   `'github'`) on every ticket node after accessors run — not via `fieldMappings`.
-  **GitHub `personas` default:** when `fieldMappings.personas` is absent, collect
-  `<value>` from each issue label whose name starts with `persona:` (prefix match,
-  case-sensitive); preserve label list order; dedupe not required. A `fieldMappings`
-  entry for `isDone` or `isDeliverySlice` overrides the system-accessor default for
-  that field; **`fieldMappings.personas`** overrides label extraction.
+  **GitHub `personas` fallback:** when `fieldMappings.personas` is entirely absent,
+  `mapper.ts` collects `<value>` from each issue label whose name starts with `persona:`
+  (prefix match, case-sensitive); preserve label list order; dedupe not required. When
+  `fieldMappings.personas` IS present (default config uses `"labels.persona"`), the
+  adapter sets `personas: []` as a placeholder and `@verto/text-parser` fills it via
+  `applyParsedFieldMappings`. A `fieldMappings` entry for `isDone` or `isDeliverySlice`
+  overrides the system-accessor default for that field.
 - **Project accessors** — backed by `project_fields.ts`, a **config-driven field
   registry** that reads `fieldMappings` from effective config and exposes the same
   `FieldAccessor` interface for all remaining fields — both canonical ones that need
@@ -1145,7 +1177,7 @@ required but may have no mapped ticket field. The mapper must behave consistentl
 | **No fallback — fail** | `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`, `nodeType`, `nodeOrigin` | **Error; do not produce a graph.** System-mapped or stamped by `mapper.ts` (see system-only table above). If absent after mapping, data is corrupt. |
 | **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Audit flags missing mapping; emit non-fatal notice. |
 | **Optional — continue** | `status` | **`undefined`** if no `fieldMappings` binding or board field absent (e.g. repository scope). No error. |
-| **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels (GitHub default path) and no `fieldMappings.personas` override. No error. Override: standard `fieldMappings` routing when `fieldMappings.personas` is set. |
+| **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels and no `fieldMappings.personas` entry. Default config uses `"labels.persona"` dot-notation; `@verto/text-parser` populates from labels. No error. |
 | **Optional — continue** | `weight` | **`undefined`** if unmapped. Algorithms use `nodeWeight()` (see `completeness.ts`). No error. |
 | **Optional — continue** | `created_at` | **System accessor** on GitHub (`issue.createdAt`); overridable via `fieldMappings.created_at`. No error if absent on other adapters. |
 | **Enrichment-only** | `_rawReqIds` | **`[]`** on ticket nodes from adapter; populated by `materializeParsedRequirements`. Adapter does not set parsed-node entries. |
@@ -1212,8 +1244,8 @@ Grounded in GitHub GraphQL capabilities documented under
 | **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
 | **Raw requirements** | Issue body `RAW_REQ:BEGIN` / `RAW_REQ:END` block; materialized by `@verto/text-parser` |
-| **Personas** (`personas`) | **Default:** issue **labels** `persona:<value>` → `personas: string[]` (values after `persona:` prefix; label list order). **Override:** optional `fieldMappings.personas` in workspace config — when present, replaces label extraction (not in `defaults.verto.config.jsonc`). |
-| **Labels** (`ticketFields.labels`) | Native issue labels — passthrough includes all labels; `persona:*` labels also feed canonical `personas` unless overridden |
+| **Personas** (`personas`) | Default config: `personas: { from: { kind: 'issue', field: 'labels.persona' } }` — dot-notation parsed sub-field; `@verto/text-parser` extracts `persona:<value>` labels → `string[]`. Workspace config may override. When no `personas` entry at all: `mapper.ts` label-extraction fallback. |
+| **Labels** (`ticketFields.labels`) | Native issue labels — passthrough includes all labels; also the base field for `labels.persona` sub-field extraction |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
 | **Assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |
 | **Source URL** (`ticketUrl`) | Native issue `url` field — canonical root field; system-mapped (no `fieldMappings` entry needed) |

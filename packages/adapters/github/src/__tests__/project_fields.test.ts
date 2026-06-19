@@ -185,6 +185,62 @@ describe('ProjectFieldAccessor', () => {
     expect(fields.ticketFields!['score']).toBeNull()
   })
 
+  it('dot-notation entry is skipped in main loop — target key not set by adapter', () => {
+    const mappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' } },
+    }
+    const issue = makeIssue({ labels: { nodes: [{ name: 'persona:engineer' }] } })
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue)
+    // Adapter skips the dot-notation entry; text-parser handles extraction
+    expect((fields as Record<string, unknown>)['personas']).toBeUndefined()
+    expect(fields.ticketFields?.['personas']).toBeUndefined()
+  })
+
+  it('dot-notation entry auto-includes base field in ticketFields when not already mapped', () => {
+    const mappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' } },
+      // 'labels' not explicitly mapped
+    }
+    const issue = makeIssue({ labels: { nodes: [{ name: 'persona:engineer' }, { name: 'bug' }] } })
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue)
+    expect(fields.ticketFields!['labels']).toEqual(['persona:engineer', 'bug'])
+  })
+
+  it('dot-notation entry does NOT auto-include base field when it is already explicitly mapped', () => {
+    const mappings: FieldMappings = {
+      labels:   { from: { kind: 'issue', field: 'labels' } },
+      personas: { from: { kind: 'issue', field: 'labels.persona' } },
+    }
+    const issue = makeIssue({ labels: { nodes: [{ name: 'persona:engineer' }] } })
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue)
+    // labels present because of the explicit mapping, not the auto-include
+    expect(fields.ticketFields!['labels']).toEqual(['persona:engineer'])
+  })
+
+  it('auto-include fires for dot-notation when base field was set to null by type coercion', () => {
+    // Scenario: `body` is mapped to a projectV2 field with type:'number', which coerces
+    // the text value to null.  The null guard (`=== null`) in the auto-include loop
+    // must cause the issue-native resolver to run so that body.PHASE extraction can work.
+    const mappings: FieldMappings = {
+      body: { from: { kind: 'projectV2', field: 'Body' }, type: 'number' },
+      phase: { from: { kind: 'issue', field: 'body.PHASE' } },
+    }
+    const issueBody = 'PHASE:BEGIN\nalpha\nPHASE:END'
+    const issue = makeIssue({ body: issueBody })
+    const item: GitHubProjectV2Item = {
+      issueNodeId: issue.id,
+      fieldValues: [{ fieldName: 'Body', kind: 'text', value: 'not-a-number' }],
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue, item)
+    // projectV2 mapping returned null (coercion failed); auto-include should
+    // populate body from the issue so that text-parser can extract PHASE later.
+    expect(fields.ticketFields!['body']).toBe(issueBody)
+  })
+
   it('routes canonical key to node root and non-canonical to ticketFields', () => {
     const mappings: FieldMappings = {
       isDone: { from: { kind: 'projectV2', field: 'Status' }, type: 'select', values: { Done: true, Open: false } },
@@ -199,5 +255,59 @@ describe('ProjectFieldAccessor', () => {
     const fields = pfa.toVertoNodeFields(issue, item)
     expect(fields.isDone).toBe(true)
     expect(fields.ticketFields!['my_custom']).toBe('body text')
+  })
+
+  it('kind:projectV2 dot-notation auto-includes base field from fieldValues', () => {
+    const mappings: FieldMappings = {
+      phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
+    }
+    const issue = makeIssue({ body: 'PHASE:BEGIN\nalpha\nPHASE:END' })
+    const item: GitHubProjectV2Item = {
+      issueNodeId: issue.id,
+      fieldValues: [{ fieldName: 'body', kind: 'text', value: 'PHASE:BEGIN\nalpha\nPHASE:END' }],
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue, item)
+    expect(fields.ticketFields!['body']).toBe('PHASE:BEGIN\nalpha\nPHASE:END')
+  })
+
+  it('kind:projectV2 dot-notation: base absent from fieldValues → ticketFields unchanged', () => {
+    const mappings: FieldMappings = {
+      phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
+    }
+    const issue = makeIssue()
+    const item: GitHubProjectV2Item = {
+      issueNodeId: issue.id,
+      fieldValues: [],  // no 'body' field in the project
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue, item)
+    expect(fields.ticketFields?.['body']).toBeUndefined()
+  })
+
+  it('kind:projectV2 dot-notation skipped in repository scope', () => {
+    const mappings: FieldMappings = {
+      phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
+    }
+    const issue = makeIssue({ body: 'PHASE:BEGIN\nalpha\nPHASE:END' })
+    const pfa = new ProjectFieldAccessor(mappings, 'repository')
+    const fields = pfa.toVertoNodeFields(issue)
+    expect(fields.ticketFields?.['body']).toBeUndefined()
+  })
+
+  it('kind:projectV2 dot-notation: excluded if base is explicitly mapped as projectV2', () => {
+    const mappings: FieldMappings = {
+      body: { from: { kind: 'projectV2', field: 'body' } },
+      phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
+    }
+    const issue = makeIssue()
+    const item: GitHubProjectV2Item = {
+      issueNodeId: issue.id,
+      fieldValues: [{ fieldName: 'body', kind: 'text', value: 'some body text' }],
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    const fields = pfa.toVertoNodeFields(issue, item)
+    // Explicit mapping sets ticketFields.body; auto-include should NOT overwrite it
+    expect(fields.ticketFields!['body']).toBe('some body text')
   })
 })

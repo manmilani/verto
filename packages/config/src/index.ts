@@ -10,6 +10,7 @@ export type {
 } from './types.js'
 
 export { validateVertoConfig } from './schema.js'
+export { coerceFieldValue } from './coerce.js'
 export { mergeConfigs, mergeUi } from './merge.js'
 export { parseVertoConfig, readVertoConfigFile } from './parse.js'
 export {

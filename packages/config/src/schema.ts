@@ -19,7 +19,8 @@ const fieldMappingEntrySchema = {
       },
     },
     values: { type: 'object' },
-    type: { type: 'string', enum: ['text', 'number', 'date', 'select', 'iteration'] },
+    type: { type: 'string', enum: ['text', 'number', 'boolean', 'date', 'select', 'iteration'] },
+    isArray: { type: 'boolean' },
   },
 }
 
@@ -128,6 +129,16 @@ export function validateVertoConfig(raw: unknown): VertoConfig {
   const config = raw as unknown as VertoConfig
   if (config.ui?.displayStatusGroups) {
     validateUserDisplayStatusGroups(config.ui.displayStatusGroups)
+  }
+
+  if (config.github?.fieldMappings) {
+    for (const [key, entry] of Object.entries(config.github.fieldMappings)) {
+      if (entry.isArray === true && entry.type === 'boolean') {
+        throw new Error(
+          `Invalid VertoConfig: fieldMappings["${key}"] cannot combine isArray:true with type:"boolean"`,
+        )
+      }
+    }
   }
 
   return config

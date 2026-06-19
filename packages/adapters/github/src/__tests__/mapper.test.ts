@@ -153,7 +153,7 @@ describe('mapIssuesToGraph', () => {
     expect(graph.nodes[0].personas).toEqual(['admin', 'user'])
   })
 
-  it('personas from fieldMappings.personas overrides label extraction', () => {
+  it('personas from fieldMappings.personas (kind:issue, field:labels) overrides label extraction', () => {
     const config: VertoConfig = {
       adapter: 'github',
       github: {
@@ -169,9 +169,32 @@ describe('mapIssuesToGraph', () => {
     })
     const graph = mapIssuesToGraph([issue], new Map(), config)
     const n = graph.nodes[0]
-    // With fieldMappings.personas → ProjectFieldAccessor returns all label names (raw, unfiltered)
+    // With fieldMappings.personas using plain 'labels' → ProjectFieldAccessor returns all label names (raw, unfiltered)
     // vs. default extraction which would return ['admin'] (only persona: labels, prefix stripped)
     expect(n.personas).toEqual(['persona:admin', 'bug'])
+  })
+
+  it('personas from dot-notation fieldMappings (labels.persona) → adapter sets personas:[] placeholder; text-parser fills it', () => {
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'test', projectNumber: 1,
+        fieldMappings: {
+          labels:   { from: { kind: 'issue', field: 'labels' } },
+          personas: { from: { kind: 'issue', field: 'labels.persona' } },
+        },
+      },
+    }
+    const issue = makeIssue('A', {
+      labels: { nodes: [{ name: 'persona:admin' }, { name: 'bug' }] },
+    })
+    const graph = mapIssuesToGraph([issue], new Map(), config)
+    const n = graph.nodes[0]
+    // Adapter skips the dot-notation entry → personas placeholder is [] (hasPersonaMapping path)
+    // text-parser (applyParsedFieldMappings) will extract ['admin'] from ticketFields.labels
+    expect(n.personas).toEqual([])
+    // labels base field present in ticketFields for text-parser to consume
+    expect(n.ticketFields!['labels']).toEqual(['persona:admin', 'bug'])
   })
 
   it('status from fieldMappings routes to node.status (canonical root), not ticketFields.status', () => {

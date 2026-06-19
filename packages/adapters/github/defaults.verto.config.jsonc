@@ -42,9 +42,14 @@
       "status": {
         "from": { "kind": "projectV2", "field": "Status" },
         "type": "select"
-      }
+      },
 
-      // Since ProjectV2 fiels are user-defined, they should be added to workspace verto.config.jsonc. Examples:
+      // -- Parsed sub-field mappings (dot-notation; extracted by @verto/text-parser) --
+      // personas: extracted from any label matching "persona:<value>" on the issue.
+      // Add more entries here for other label-based or body-block fields.
+      "personas": { "from": { "kind": "issue", "field": "labels.persona" }, "isArray": true }
+
+      // Since ProjectV2 fields are user-defined, they should be added to workspace verto.config.jsonc. Examples:
       // "priority": {
       //   "from": { "kind": "projectV2", "field": "Priority" },
       //   "type": "select",

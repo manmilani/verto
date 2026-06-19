@@ -201,4 +201,61 @@ describe('audit enrichment', () => {
     expect(text).toContain('includeClosedAncestors')
     expect(text).toContain('issueFilter')
   })
+
+  it('mergeIssueNativeDefaults restores issue-native labels when audit discovers a projectV2 Labels column', async () => {
+    // Audit discovers a "Labels" SINGLE_SELECT board column and would key it as
+    // `labels: { kind: 'projectV2', field: 'Labels' }`.  mergeIssueNativeDefaults must
+    // overwrite that with the more reliable issue-native resolver so that labels-based
+    // sub-field extraction (e.g. labels.persona) works correctly.
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              { name: 'Status', dataType: 'SINGLE_SELECT', options: [{ name: 'Open' }] },
+              { name: 'Labels', dataType: 'SINGLE_SELECT', options: [] },
+            ],
+          },
+        },
+      },
+    })
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: { scope: 'project', owner: 'acme', projectNumber: 1 },
+    }
+    const { discovered } = await auditProjectScope('token', config)
+    // Must be issue-native, not the projectV2 Labels column
+    expect(discovered.github?.fieldMappings?.labels?.from.kind).toBe('issue')
+    expect(discovered.github?.fieldMappings?.labels?.from.field).toBe('labels')
+  })
+
+  it('mergeIssueNativeDefaults leaves workspace-configured issue mapping untouched', async () => {
+    // A user's explicit issue-native labels mapping should survive the merge unchanged.
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              { name: 'Status', dataType: 'SINGLE_SELECT', options: [{ name: 'Open' }] },
+              { name: 'Labels', dataType: 'SINGLE_SELECT', options: [] },
+            ],
+          },
+        },
+      },
+    })
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'project',
+        owner: 'acme',
+        projectNumber: 1,
+        fieldMappings: {
+          labels: { from: { kind: 'issue', field: 'labels' } },
+        },
+      },
+    }
+    const { discovered } = await auditProjectScope('token', config)
+    // Workspace-configured issue mapping must not be overwritten
+    expect(discovered.github?.fieldMappings?.labels?.from.kind).toBe('issue')
+  })
 })

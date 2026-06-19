@@ -23,6 +23,7 @@ export const githubAdapterDefaults: VertoConfig = {
       updated_at:  { from: { kind: 'issue',     field: 'updated_at' } },
       milestone:   { from: { kind: 'issue',     field: 'milestone' } },
       status:      { from: { kind: 'projectV2', field: 'Status' }, type: 'select' },
+      personas:    { from: { kind: 'issue',     field: 'labels.persona' }, isArray: true },
     },
   },
 }

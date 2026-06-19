@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { VertoNode, VertoGraph } from '@verto/core'
+import type { FieldMappings } from '@verto/config'
 import { runHostPipeline } from '../runHostPipeline.js'
 
 function node(overrides: Partial<VertoNode> & { id: string; title: string }): VertoNode {
@@ -142,5 +143,68 @@ describe('runHostPipeline', () => {
     const graph: VertoGraph = { nodes: [t], edges: [] }
     const bundle = runHostPipeline(graph, { priorityOverlay: { T: 1 } })
     expect(bundle.graph.nodes.find(n => n.id === 'T')!.priority).toBe(5)
+  })
+
+  it('fieldMappings: personas populated from labels.persona via two-phase pipeline', () => {
+    // Simulates what the adapter produces: personas placeholder [] + labels in ticketFields
+    const n = node({
+      id: 'A',
+      title: 'A',
+      personas: [],  // adapter placeholder when fieldMappings.personas exists
+      ticketFields: { labels: ['persona:engineer', 'persona:designer', 'bug'] },
+    })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const fieldMappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
+    }
+    const bundle = runHostPipeline(graph, { fieldMappings })
+    const result = bundle.graph.nodes.find(nd => nd.id === 'A')!
+    expect(result.personas).toEqual(['engineer', 'designer'])
+  })
+
+  it('fieldMappings: single persona label produces string[] not scalar', () => {
+    const n = node({
+      id: 'A',
+      title: 'A',
+      personas: [],
+      ticketFields: { labels: ['persona:admin', 'bug'] },
+    })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const fieldMappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
+    }
+    const bundle = runHostPipeline(graph, { fieldMappings })
+    const result = bundle.graph.nodes.find(nd => nd.id === 'A')!
+    expect(Array.isArray(result.personas)).toBe(true)
+    expect(result.personas).toEqual(['admin'])
+  })
+
+  it('fieldMappings: absent labels base field leaves personas at [] (no crash)', () => {
+    const n = node({ id: 'A', title: 'A', personas: [] })  // no ticketFields.labels
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const fieldMappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
+    }
+    const bundle = runHostPipeline(graph, { fieldMappings })
+    expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.personas).toEqual([])
+  })
+
+  it('fieldMappings: body.PHASE extracted to ticketFields', () => {
+    const body = '<!-- PHASE:BEGIN -->\nalpha\n<!-- PHASE:END -->'
+    const n = node({ id: 'A', title: 'A', ticketFields: { body } })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const fieldMappings: FieldMappings = {
+      phase: { from: { kind: 'issue', field: 'body.PHASE' } },
+    }
+    const bundle = runHostPipeline(graph, { fieldMappings })
+    expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.ticketFields!['phase']).toBe('alpha')
+  })
+
+  it('fieldMappings: no fieldMappings option → applyParsedFieldMappings not called (noop)', () => {
+    const n = node({ id: 'A', title: 'A', personas: [], ticketFields: { labels: ['persona:admin'] } })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const bundle = runHostPipeline(graph)  // no fieldMappings
+    // Without fieldMappings, personas stays at adapter placeholder []
+    expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.personas).toEqual([])
   })
 })

@@ -31,7 +31,7 @@ export function buildWizardConfigComments(scope: 'project' | 'repository'): stri
     '// Optional overrides (uncomment and customize as needed):',
     '// "priority" — map select/number field values to 1–9 (see DESIGN.md §4.6.3)',
     '// "isDeliverySlice" — label or field rule marking vertical slices',
-    '// "personas" — map labels like persona:pm to persona fields',
+    '// "personas" — default config uses "labels.persona" dot-notation; add more label sub-field mappings the same way',
   ]
   if (scope === 'repository') {
     lines.push(
@@ -47,7 +47,18 @@ export function buildWizardConfigComments(scope: 'project' | 'repository'): stri
 }
 
 function mergeIssueNativeDefaults(mappings: FieldMappings): FieldMappings {
-  return { ...ISSUE_NATIVE_MAPPINGS, ...mappings }
+  // Start with discovered mappings, then restore any issue-native default that was
+  // shadowed by a projectV2 discovery (e.g. audit finds a projectV2 "Labels" column
+  // and keys it as "labels", overwriting the more reliable issue-native resolver).
+  // Issue-native fields are always served better from the issue resolver than from
+  // board columns; a workspace config entry with kind:'issue' still wins over this.
+  const result = { ...mappings }
+  for (const [key, nativeEntry] of Object.entries(ISSUE_NATIVE_MAPPINGS)) {
+    if (!(key in result) || result[key].from.kind === 'projectV2') {
+      result[key] = nativeEntry
+    }
+  }
+  return result
 }
 
 /** User display groups from audited Status options (first → Raw, middle → In Progress; last is Done via node.isDone). */

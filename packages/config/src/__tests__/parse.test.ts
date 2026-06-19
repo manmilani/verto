@@ -122,4 +122,56 @@ describe('parseVertoConfig', () => {
     })
     expect(() => parseVertoConfig(jsonc)).toThrow()
   })
+
+  it('rejects isArray:true combined with type:"boolean"', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'owner', projectNumber: 1,
+        fieldMappings: {
+          isBackend: { from: { kind: 'issue', field: 'labels.backend' }, type: 'boolean', isArray: true },
+        },
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).toThrow(/isArray.*boolean|boolean.*isArray/i)
+  })
+
+  it('accepts isArray:true combined with type:"text"', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'owner', projectNumber: 1,
+        fieldMappings: {
+          tags: { from: { kind: 'issue', field: 'labels.tag' }, type: 'text', isArray: true },
+        },
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).not.toThrow()
+  })
+
+  it('accepts type:"boolean" alone (no isArray)', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'owner', projectNumber: 1,
+        fieldMappings: {
+          isBackend: { from: { kind: 'issue', field: 'labels.backend' }, type: 'boolean' },
+        },
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).not.toThrow()
+  })
+
+  it('accepts isArray on a non-dot entry (silently ignored)', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: {
+        scope: 'project', owner: 'owner', projectNumber: 1,
+        fieldMappings: {
+          labels: { from: { kind: 'issue', field: 'labels' }, isArray: true },
+        },
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).not.toThrow()
+  })
 })

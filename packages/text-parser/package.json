@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@verto/core": "workspace:*"
+    "@verto/core": "workspace:*",
+    "@verto/config": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

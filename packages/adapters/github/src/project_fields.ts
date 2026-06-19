@@ -1,6 +1,7 @@
 import type { VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
-import type { FieldMappings, FieldMappingEntry } from '@verto/config'
+import type { FieldMappings } from '@verto/config'
+import { coerceFieldValue } from '@verto/config'
 import type { GitHubIssue, GitHubProjectV2FieldValue, GitHubProjectV2Item } from './system_types.js'
 
 interface FieldAccessor {
@@ -41,10 +42,46 @@ const ISSUE_FIELD_RESOLVER: Record<string, (issue: GitHubIssue) => unknown> = {
 }
 
 export class ProjectFieldAccessor implements FieldAccessor {
+  private readonly autoIncludeBaseFields: Map<string, (issue: GitHubIssue) => unknown>
+  private readonly autoIncludeProjectV2BaseFields: Set<string>
+
   constructor(
     private readonly fieldMappings: FieldMappings,
     private readonly scope: 'project' | 'repository',
-  ) {}
+  ) {
+    // Pre-compute which base fields must be auto-included for dot-notation entries.
+    // A base field only needs auto-include if it isn't also directly mapped by its own entry.
+    const explicitIssueFields = new Set<string>()
+    const explicitProjectV2Fields = new Set<string>()
+    for (const entry of Object.values(fieldMappings)) {
+      if (entry.from.field.includes('.')) continue
+      if (entry.from.kind === 'issue') explicitIssueFields.add(entry.from.field)
+      else if (entry.from.kind === 'projectV2') explicitProjectV2Fields.add(entry.from.field.toLowerCase())
+    }
+
+    this.autoIncludeBaseFields = new Map()
+    this.autoIncludeProjectV2BaseFields = new Set()
+
+    for (const [key, entry] of Object.entries(fieldMappings)) {
+      const dot = entry.from.field.indexOf('.')
+      if (dot === -1) continue
+      const baseField = entry.from.field.slice(0, dot)
+
+      if (entry.from.kind === 'issue') {
+        if (!explicitIssueFields.has(baseField) && !this.autoIncludeBaseFields.has(baseField)) {
+          const resolver = ISSUE_FIELD_RESOLVER[baseField]
+            ?? ((i: GitHubIssue) => (i as unknown as Record<string, unknown>)[baseField] ?? null)
+          this.autoIncludeBaseFields.set(baseField, resolver)
+        }
+      } else if (entry.from.kind === 'projectV2') {
+        if (!explicitProjectV2Fields.has(baseField.toLowerCase())) {
+          this.autoIncludeProjectV2BaseFields.add(baseField)
+        }
+      } else {
+        console.warn(`[verto] fieldMappings["${key}"]: unknown kind '${entry.from.kind}', skipping`)
+      }
+    }
+  }
 
   toVertoNodeFields(issue: GitHubIssue, projectItem?: GitHubProjectV2Item): Partial<VertoNode> {
     const nodeFields: Partial<VertoNode> = {}
@@ -55,6 +92,10 @@ export class ProjectFieldAccessor implements FieldAccessor {
     for (const [key, entry] of Object.entries(this.fieldMappings)) {
       const { from, values, type: typeHint } = entry
       let rawValue: unknown = null
+
+      // Dot-notation entries (e.g. "labels.persona") are handled by @verto/text-parser;
+      // the adapter's job is only to ensure the base field is in ticketFields (see below).
+      if (from.field.includes('.')) continue
 
       // Mark before any early-continue so the flag is set even when the field is absent
       if (key === 'priority') priorityMappingExists = true
@@ -82,7 +123,7 @@ export class ProjectFieldAccessor implements FieldAccessor {
         }
       }
 
-      rawValue = coerceByType(rawValue, typeHint)
+      rawValue = coerceFieldValue(rawValue, typeHint)
 
       if (key === 'priority') {
         const clamped = clampPriority(rawValue)
@@ -109,6 +150,32 @@ export class ProjectFieldAccessor implements FieldAccessor {
       nodeFields.priority = 5
     }
 
+    // Auto-include base fields for dot-notation entries not covered by an explicit mapping.
+    // text-parser reads these from ticketFields to apply parsed sub-field extraction.
+    // Also fires when the field was explicitly mapped but produced null (e.g. a projectV2
+    // mapping for a built-in field like "Labels" that doesn't appear in fieldValues).
+    for (const [baseField, resolver] of this.autoIncludeBaseFields) {
+      if (!(baseField in ticketFields) || ticketFields[baseField] === null) {
+        const rawValue = resolver(issue)
+        if (rawValue !== null && rawValue !== undefined) {
+          ticketFields[baseField] = rawValue
+        }
+      }
+    }
+
+    // Auto-include projectV2 base fields for dot-notation entries with kind:'projectV2'.
+    if (this.scope !== 'repository' && projectItem) {
+      for (const baseField of this.autoIncludeProjectV2BaseFields) {
+        if (baseField in ticketFields && ticketFields[baseField] !== null) continue
+        const fv = projectItem.fieldValues.find(
+          f => f.fieldName.toLowerCase() === baseField.toLowerCase(),
+        )
+        if (fv) {
+          ticketFields[baseField] = resolveProjectV2Value(fv)
+        }
+      }
+    }
+
     if (Object.keys(ticketFields).length > 0) {
       nodeFields.ticketFields = { ...nodeFields.ticketFields, ...ticketFields }
     }
@@ -127,21 +194,6 @@ function resolveProjectV2Value(
     case 'text': return fv.value
     case 'date': return fv.value
     case 'iteration': return fv.title
-  }
-}
-
-function coerceByType(raw: unknown, typeHint: FieldMappingEntry['type']): unknown {
-  if (raw === null || raw === undefined) return null
-  switch (typeHint) {
-    case 'number': {
-      if (typeof raw === 'number') return raw
-      const n = Number(raw)
-      return isFinite(n) ? n : null
-    }
-    case 'text':
-      return typeof raw === 'string' ? raw : String(raw)
-    default:
-      return raw
   }
 }
 

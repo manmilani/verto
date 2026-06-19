@@ -1,7 +1,8 @@
 export interface FieldMappingEntry {
   from: { kind: 'issue' | 'projectV2'; field: string }
   values?: Record<string, unknown>
-  type?: 'text' | 'number' | 'date' | 'select' | 'iteration'
+  type?: 'text' | 'number' | 'boolean' | 'date' | 'select' | 'iteration'
+  isArray?: boolean
 }
 
 export type FieldMappings = Record<string, FieldMappingEntry>

@@ -30,7 +30,7 @@ export async function runPipeline(
     resolveProjectTitle(config, token),
     adapter.fetchStatusOptions?.(config) ?? Promise.resolve([]),
   ])
-  const bundle = runHostPipeline(graph, { parsedEnabled, priorityOverlay })
+  const bundle = runHostPipeline(graph, { parsedEnabled, priorityOverlay, fieldMappings })
   const displayStatusGroups = config.ui?.displayStatusGroups ?? []
   const statusUniverse = buildStatusUniverse(bundle.graph.nodes, auditedTicketStatuses)
   const showOthersColumn = shouldShowOthersColumn(
