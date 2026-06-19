@@ -200,6 +200,20 @@ describe('runHostPipeline', () => {
     expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.ticketFields!['phase']).toBe('alpha')
   })
 
+  it('fieldMappings: kind:projectV2 dot-notation flows through pipeline (adapter-produced ticketFields)', () => {
+    // Simulates what ProjectFieldAccessor produces for kind:'projectV2' dot-notation:
+    // auto-include puts the base field value (from fieldValues) into ticketFields,
+    // then runHostPipeline extracts the sub-field via applyParsedFieldMappings.
+    const body = 'PHASE:BEGIN\nbeta\nPHASE:END'
+    const n = node({ id: 'A', title: 'A', ticketFields: { body } })
+    const graph: VertoGraph = { nodes: [n], edges: [] }
+    const fieldMappings: FieldMappings = {
+      phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
+    }
+    const bundle = runHostPipeline(graph, { fieldMappings })
+    expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.ticketFields!['phase']).toBe('beta')
+  })
+
   it('fieldMappings: no fieldMappings option → applyParsedFieldMappings not called (noop)', () => {
     const n = node({ id: 'A', title: 'A', personas: [], ticketFields: { labels: ['persona:admin'] } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
