@@ -15,8 +15,7 @@ const base: VertoConfig = {
   },
   ui: {
     displayStatusGroups: [
-      { label: 'Done', sources: { ticket: { isDone: true } } },
-      { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+      { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
     ],
   },
 }
@@ -73,8 +72,8 @@ describe('mergeConfigs', () => {
 
   it('workspace ui.displayStatusGroups fully replaces defaults array (no append)', () => {
     const workspaceGroups: DisplayStatusGroup[] = [
-      { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
-      { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
+      { label: 'In Progress', sources: { ticket: { statuses: ['In Progress'] } } },
+      { label: 'Review', sources: { ticket: { statuses: ['Review'] } } },
     ]
     const workspace: Partial<VertoConfig> = {
       ui: { displayStatusGroups: workspaceGroups },

@@ -218,16 +218,17 @@ prior two-column / display-only body / `REQ:` markers design.
 
 | File | Purpose |
 |---|---|
-| `packages/config/src/types.ts` | `UiConfig` with `ui.displayStatusGroups` — source-aware display-status groups (`ticket` / `parsed`); optional `fieldMappings.personas` override (no default binding) |
-| `packages/config/src/schema.ts` | JSON Schema for `ui.displayStatusGroups`; `personas` allowed as optional `fieldMappings` key |
-| `packages/adapters/github/defaults.verto.config.jsonc` | Seed `ui.displayStatusGroups` (Done / raw); **no** default `personas` field binding (labels are the default source) |
+| `packages/config/src/types.ts` | `UiConfig` with `ui.displayStatusGroups` — `statuses`-only rules per `ticket` / `parsed`; system **Done** not in user config; optional `fieldMappings.personas` override |
+| `packages/config/src/schema.ts` | JSON Schema for `ui.displayStatusGroups` (`statuses` only; no `isDone` on groups); `personas` allowed as optional `fieldMappings` key |
+| `packages/config/src/displayStatusGroups.ts` | Matcher, validation, status universe, sufficiency (`showOthersColumn`), tooltips — exported as `@verto/config/display-status-groups` |
+| `packages/adapters/github/defaults.verto.config.jsonc` | Seed `ui.displayStatusGroups` (parsed **Raw** only; ticket groups from audit); system **Done** comment; **no** default `personas` binding |
 
 ### Deliverables — host load pipeline (shared)
 
 | File | Purpose |
 |---|---|
 | `scripts/load-project.mjs` | `adapter.loadProject()` → `runHostPipeline(graph, { parsedEnabled: !argv.noParsed })`; `--no-parsed` turns parsed nodes off |
-| `scripts/audit-github-project.mjs` | Seed `ui.displayStatusGroups` from discovered Status options + parsed raw/done rules |
+| `scripts/audit-github-project.mjs` | Seed `ui.displayStatusGroups` from discovered Status options (no **Done** group) + parsed `raw` on **Raw** |
 
 ### Decisions (resolved)
 
@@ -246,7 +247,7 @@ prior two-column / display-only body / `REQ:` markers design.
 - **`VertoEdge.reason`:** closed union including `'parsed-req'`.
 - **Child sort:** `implementationOrder` → `created_at` (canonical root; missing → last) → issue `id`.
 - **Completeness:** weighted — `deliveryCompleteness` uses `nodeWeight()`; parsed rows `isDone ? weight : 0`.
-- **Portfolio / UsageBar / gaps:** `ui.displayStatusGroups` — §4.6.3 DESIGN.md; unbucketed rows → implicit **Other** bucket.
+- **Portfolio / UsageBar / gaps:** `ui.displayStatusGroups` — §4.6.3 DESIGN.md; system **Done** (`isDone`); unmapped open statuses → **`others`**; column visibility from status-universe sufficiency; gaps = `!isDone`.
 - **`personas` (GitHub):** populated per-issue at map time on **all ticket nodes** whose issue carries `persona:<value>` labels (default) or a `fieldMappings.personas` binding — not gated on `isDeliverySlice`. Optional `fieldMappings.personas` override (not in defaults).
 - **Slice header (Phase 3 UI):** reads `personas[]` from the selected slice node + DESC outcome; black-box canvas section **removed**.
 
@@ -277,8 +278,8 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
 | `packages/extension/src/host/configLoader.ts` | Import `githubAdapterDefaults` from `@verto/adapter-github`; load `.vscode/verto.config.jsonc` via `@verto/config`; deep-merge (workspace wins) |
 | `packages/extension/src/host/adapterRegistry.ts` | Adapter selection by `config.adapter` using the shared `VertoAdapter` interface from `@verto/core`; initially only `"github"` |
 | `packages/extension/src/host/authProvider.ts` | VS Code built-in GitHub auth provider; injects token into `client.ts` |
-| `packages/extension/src/host/loadPipeline.ts` | Calls `adapter.loadProject()` then `runHostPipeline()` from `@verto/text-parser`; reads **Enable Parsed Requirements** from `workspaceState`; rebuilds on toggle change |
-| `packages/extension/src/host/panelManager.ts` | `WebviewPanel` lifecycle (editor tab); waits for webview `'ready'` then **strips `ticketFields.body`** from all nodes (body already parsed into `_note`/`_outcome`), then sends `'update'` (`bundle`, `displayStatusGroups`, `parsedEnabled`, `restoredState`); handles `'setParsedEnabled'` (update `workspaceState` + rebuild) and `'persistState'` from webview |
+| `packages/extension/src/host/loadPipeline.ts` | Calls `adapter.loadProject()` then `runHostPipeline()`; builds `displayStatusGroupTooltips`, `showOthersColumn`, status universe from graph + project Status options |
+| `packages/extension/src/host/panelManager.ts` | `WebviewPanel` lifecycle (editor tab); waits for webview `'ready'` then **strips `ticketFields.body`** from all nodes, then sends `'update'` (`bundle`, `displayStatusGroups`, `showOthersColumn`, `displayStatusGroupTooltips`, `parsedEnabled`, `restoredState`, …); handles `'setParsedEnabled'` and `'persistState'` |
 | Extension host build | **esbuild** bundles `packages/extension/src/` → `dist/extension.js` |
 
 ### Deliverables — webview (React)
@@ -306,7 +307,7 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
   - **Parsing:** `@verto/text-parser` (Phase 2.5); not extension `bodyParser`.
   - **Slice picker:** pills (deprecated canvas pattern); **neutral tone** in Phase 3 (completion-based colouring Phase 4).
   - **Portfolio table:** sort slices by `deliveryCompleteness[sliceId]` descending.
-  - **UsageBar / display-status groups:** configured `displayStatusGroups` (from `ui.displayStatusGroups` in config) plus implicit **Other** for unbucketed rows; segment value = sum of `weight` (default 1).
+  - **UsageBar / display-status groups:** system **Done** + configured groups + **`others`** when `showOthersColumn`; segment value = sum of `weight` (default 1). Legends/headers show status tooltips from `displayStatusGroupTooltips`.
   - **Empty states:** no children and toggle off / no raw lines → empty pipeline; no delivery slices → empty screen.
   - **Status:** children show canonical `status`; parsed rows show `raw` / `done`.
   - **Completeness (pipeline rows):** parsed — binary from `isDone` × `weight`; children — `deliveryCompleteness(childId)` (weighted).
@@ -317,8 +318,8 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
 - **Bundlers** — host: **esbuild**; webview: **Vite**.
 - **UI port fidelity** (§5.4) — Delivery Map canvas components required (§3.7); NCN pan/zoom Phase 4.
 - **NCN interaction** — React Flow pan/zoom **out** for Phase 3 (Phase 4).
-- **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` carries `'update'` (`bundle`, `displayStatusGroups`, `parsedEnabled`, `restoredState?`); `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`; `PersistedPanelState.focusedNode` = selected slice id; host waits for `'ready'` before sending first `'update'`.
-- **`displayStatusGroups` in webview payload** (§4.6.3) — sent in `'update'` message alongside `bundle` (sourced from `config.ui.displayStatusGroups`); not part of `DeliveryMapBundle`; keeps `@verto/core` free of config concerns.
+- **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` `'update'` carries `bundle`, `displayStatusGroups`, `showOthersColumn`, `displayStatusGroupTooltips`, `parsedEnabled`, `restoredState?`, …; `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`.
+- **Display status in webview payload** (§4.6.3) — user groups from `config.ui.displayStatusGroups`; matcher/tooltips/sufficiency from `@verto/config/display-status-groups`; thin webview wrapper in `displayStatusGroup.ts`; not part of `DeliveryMapBundle`.
 - **Enable Parsed Requirements toggle UI** (§5.2) — webview toolbar checkbox; sends `'setParsedEnabled'` to host; host updates `workspaceState`, rebuilds bundle, and sends new `'update'`.
 - **Adapter defaults export** (§4.6.3) — `@verto/adapter-github` exports `githubAdapterDefaults` from `src/defaults.ts` (re-exported via `src/index.ts`); `configLoader.ts` imports it directly; no filesystem reads at runtime.
 
@@ -408,15 +409,15 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 | NCN graph | `NcnGraph.tsx` — pan/zoom (`panOnScroll`, `zoomOnScroll`); journey highlight via `servedBySliceIds`; click-to-focus neighbourhood; status-group edge colouring; leverage badges |
 | NCN lens chrome | `NcnLens.tsx` — stats, journey selector, `FocusedNodeDetail`, table-view toggle (`Pill`), TOC callout |
 | Delivery Map polish | `DeliveryMap.tsx` — canvas-fidelity layout; completion-toned slice pills; **Primary user** portfolio column (`personas`); memoized `pipelinesBySliceId` |
-| Display status helpers | `displayStatusGroup.ts` — `resolveDisplayStatusGroup`, `pillToneForNode`, `isGap`, …; `theme.ts` palette by group index |
+| Display status | `@verto/config/display-status-groups` — matcher, validation, universe, sufficiency, tooltips; webview `displayStatusGroup.ts` re-exports; `theme.ts` palette by group index |
 | Shared webview UI | `components/ui.tsx` — `Pill`, `Stat`, `DataTableFrame`, `StatusDot`, table style helpers, `StatusLegend`, … |
 
 **Unlocks:** [Phase 4.5](#phase-45--setup-wizard--config-bootstrap) (setup wizard; audit library prerequisite met); Phase 5 (write-back).
 
-**Pre–Phase 4 (completed):** `portfolioColumns` renamed to `ui.displayStatusGroups`
-with types `DisplayStatusGroup` / `UiConfig`; webview matcher
-`resolveDisplayStatusGroup()`; `isDoneBucket` is a structural predicate on a group
-entry (gap callouts are one consumer).
+**Pre–Phase 4 (completed):** `portfolioColumns` renamed to `ui.displayStatusGroups`;
+matcher lives in `@verto/config/display-status-groups`. System **Done** is hardcoded
+(`isDone` only); user groups use `statuses` only; **`others`** for unmapped statuses;
+gaps = `!isDone`.
 
 ### Decisions (resolved for planning)
 
@@ -430,8 +431,8 @@ entry (gap callouts are one consumer).
   `runHostPipeline` → `applyPriorityOverlay` before bundle build.
 - **`applyPriorityOverlay` location** — pure function `applyPriorityOverlay(graph, overlay): VertoGraph` defined and exported from `@verto/text-parser` (alongside other graph transforms). Extension `priorityOverlay.ts` handles `workspaceState` persistence only; it does not define the transform.
 - **Priority column format** — `globalPriorityRanking[id]` displayed by stripping trailing zeros; UI prefixes with `P` (e.g. rank `13` → `P13`). Lower = higher priority; more digits = deeper priority chain.
-- **Status display rule** — `displayStatusGroup` label is the display vocabulary everywhere (column headers, legends, node colours, pill tones, UsageBar segments). Per-node status values: `”<displayStatusGroup> (<node.status>)”` when `node.status` is present; `”<displayStatusGroup>”` when absent. No group match: `”Other (<node.status>)”` if status present, else `”Other”`.
-- **`DisplayStatusGroup` config schema** — no new fields added in Phase 4. `weight` dropped entirely from the concept. `tone`/`chartColor` not added. Schema remains `label` + `sources` only. Palette baked into `theme.ts` by group array position.
+- **Status display rule** — `displayStatusGroup` label is the display vocabulary everywhere (column headers, legends, node colours, pill tones, UsageBar segments). Per-node status values: `"<displayStatusGroup> (<node.status>)"` when `node.status` is present; `"<displayStatusGroup>"` when absent. No user-group match: `"others (<node.status>)"` or `"others"`. Tooltips on legends/headers from `displayStatusGroupTooltips`.
+- **`DisplayStatusGroup` config schema** — `label` + `sources.<type>.statuses` only. No `isDone` on groups; reserved **Done** label rejected at parse. No `weight`/`tone`/`chartColor`. Palette baked into `theme.ts` by group array position (system **Done** = index 0).
 - **`servedBySliceIds` in `DeliveryMapBundle`** — `Record<string, string[]>` added in Phase 4; computed in `buildDeliveryMapBundle()` in `@verto/core`. For each node, lists the delivery-slice ids whose transitive closure contains it. Used by the implementation-order table “Serves” column and the NCN focused-node detail panel.
 
 ---
@@ -493,7 +494,9 @@ indented/prefixed child items. List APIs require **cursor pagination**.
 | `packages/adapters/github/src/discovery.ts` (new) | `listRepositories(token, owner)`, `listProjects(token, owner)` with cursor pagination; `resolveOwner(token, login)` (user → org). Throws on API failure (distinct from empty list). Wizard catches and shows an error notification + closes QuickPick gracefully — not an unhandled rejection / generic VS Code modal |
 | `packages/adapters/github/src/closure.ts` | **Upward parent closure** when `includeClosedAncestors !== false`: for each loaded issue whose `parent` is not in the graph, fetch parent recursively to root |
 | `packages/adapters/github/src/adapter.ts` | Call parent closure after `expandGraphClosure` in repository scope |
-| `packages/adapters/github/src/audit.ts` | Enhance output for wizard: merge issue-native defaults, `displayStatusGroups`, comment blocks, repo-scope `issueFilter` default + label suggestions |
+| `packages/adapters/github/src/audit.ts` | Wizard audit: merge issue-native defaults, `buildProjectDisplayStatusGroups` (no **Done** group), comment blocks, repo-scope `issueFilter` default + label suggestions |
+| `packages/adapters/github/src/statusOptions.ts` | `fetchProjectStatusOptions` — Status column options for universe / audit |
+| `packages/config/src/format.ts` | JSONC writer — system **Done** comment above `displayStatusGroups` |
 | `packages/adapters/github/defaults.verto.config.jsonc` | Document `includeClosedAncestors` and default `issueFilter` for repository scope |
 | `scripts/audit-github-project.mjs` | Use JSONC-aware writer |
 
@@ -598,7 +601,7 @@ Each is linked to the phase where it blocks progress.
 | GitHub pagination + ID cache strategy | Phase 2 | §5.3 |
 | Parsed requirements model — Option A orchestration, `VertoGraph` return type | Resolved Phase 2.5 | §4.6.5, §4.6.8 |
 | Delivery Map pipeline — single column, `ui.displayStatusGroups`, personas/outcome | Resolved Phase 2.5 | §3.7, §4.6.3 |
-| Display-status group matching algorithm | Resolved Phase 2.5 | §4.6.3, §5.2 |
+| Display-status group matching algorithm | Resolved Phase 2.5 (revised) | §4.6.3 — system **Done**, `statuses`-only user groups, **`others`**, universe sufficiency |
 | Personas source (GitHub `persona:` labels) | Resolved Phase 2.5 | §4.6.7, §5.3 |
 | `VertoEdge.reason` closed union + `prereqIds` validation | Resolved Phase 2.5 | §4.6.8, §5.1 |
 | Required-field fallback (Phase 2.5 fields) | Resolved Phase 2.5 | §4.6.5, §5.3 |
@@ -613,7 +616,7 @@ Each is linked to the phase where it blocks progress.
 | Raw requirements parsing — `RAW_REQ:BEGIN` / `RAW_REQ:END` | Resolved Phase 2.5 | §4.6.8 |
 | Enable Parsed Requirements toggle | Resolved Phase 2.5 | §4.6.8 |
 | Child sort tie-break — `implementationOrder` → `created_at` → issue `id` | Resolved Phase 2.5 / 3 | §3.7 |
-| Portfolio Other bucket — unbucketed rows | Resolved Phase 3 | §4.6.3, §3.7 |
+| Portfolio **`others`** bucket — unmapped statuses; column when config insufficient | Resolved Phase 3 (revised) | §4.6.3, §3.7 |
 | Weighted delivery completeness (`nodeWeight()`) | Resolved Phase 2.5 / 3 | §3.3, `completeness.ts` |
 | Portfolio sort — `deliveryCompleteness[sliceId]` desc; neutral pills Phase 3 | Resolved Phase 3 | §3.7 |
 | UI port fidelity (Delivery Map) — canvas components required | Resolved Phase 3 | §5.4, §3.7 |
@@ -627,7 +630,7 @@ Each is linked to the phase where it blocks progress.
 | `applyPriorityOverlay` location — in `@verto/text-parser`, not extension host | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Priority column format — strip trailing zeros, `P` prefix in UI | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Priority dropdown hints (`@verto/config/priority-hints`) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| Status display rule — `displayStatusGroup` everywhere; parenthetical for individual nodes | Resolved Phase 4 | §4.6.3, IMPLEMENTATION Phase 4 |
+| Status display rule + tooltips — `displayStatusGroup` everywhere; `displayStatusGroupTooltips` on legends/headers | Resolved Phase 4 | §4.6.3, IMPLEMENTATION Phase 4 |
 | `DisplayStatusGroup` config schema — no new fields; `weight` dropped; palette by array position | Resolved Phase 4 | §4.6.3, §5.4 |
 | `servedBySliceIds` in `DeliveryMapBundle` — delivery-slice closure membership per node | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Status/state node colouring (all nodes) — palette by group index | Resolved Phase 4 | §4.6.3, §4.8, §5.4 |

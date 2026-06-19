@@ -4,9 +4,9 @@ import type { DisplayStatusGroup } from '@verto/config'
 import { buildPipelineForSlice } from '../pipelineRows.js'
 import {
   resolveDisplayStatusGroupIndex,
-  isGap, groupLabelsForDisplay, OTHER_DISPLAY_STATUS_GROUP,
+  isGap, groupLabelsForDisplay,
   countByDisplayStatusGroup, weightByDisplayStatusGroup, formatDisplayGroupCounts,
-  pillToneForNode, formatDisplayGroupsProse, shouldShowOtherColumn,
+  pillToneForNode, formatDisplayGroupsProse, columnColorIndex,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
@@ -22,6 +22,8 @@ import {
 interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
+  showOthersColumn: boolean
+  displayStatusGroupTooltips: Record<string, string>
   projectName: string
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
@@ -29,7 +31,7 @@ interface Props {
 }
 
 export function DeliveryMap({
-  bundle, displayStatusGroups, projectName, focusedNode, setFocusedNode, onHighlightSlice,
+  bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, focusedNode, setFocusedNode, onHighlightSlice,
 }: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
@@ -44,13 +46,8 @@ export function DeliveryMap({
   }, [graph, implOrder])
 
   const allGroups = useMemo(
-    () => groupLabelsForDisplay(displayStatusGroups, graph.nodes),
-    [displayStatusGroups, graph.nodes],
-  )
-
-  const showOtherLegend = useMemo(
-    () => shouldShowOtherColumn(displayStatusGroups, graph.nodes),
-    [graph.nodes, displayStatusGroups],
+    () => groupLabelsForDisplay(displayStatusGroups, showOthersColumn),
+    [displayStatusGroups, showOthersColumn],
   )
 
   const slices = useMemo(
@@ -79,8 +76,8 @@ export function DeliveryMap({
   )
 
   const gaps = useMemo(
-    () => pipeline.filter(row => isGap(row, displayStatusGroups)),
-    [pipeline, displayStatusGroups],
+    () => pipeline.filter(row => isGap(row)),
+    [pipeline],
   )
 
   if (slices.length === 0) {
@@ -132,7 +129,11 @@ export function DeliveryMap({
         }}
       >
         <Text size="small" weight="semibold" tone="secondary">Legend</Text>
-        <StatusLegend displayStatusGroups={displayStatusGroups} showOther={showOtherLegend} />
+        <StatusLegend
+          displayStatusGroups={displayStatusGroups}
+          displayStatusGroupTooltips={displayStatusGroupTooltips}
+          showOther={showOthersColumn}
+        />
         <Spacer />
         <Text size="small" tone="quaternary">Live data from your tracker</Text>
       </Row>
@@ -177,7 +178,12 @@ export function DeliveryMap({
             <Text italic tone="secondary">{slice._outcome}</Text>
           )}
 
-          <UsageBar pipeline={pipeline} allNodes={graph.nodes} displayStatusGroups={displayStatusGroups} />
+          <UsageBar
+            pipeline={pipeline}
+            displayStatusGroups={displayStatusGroups}
+            showOthersColumn={showOthersColumn}
+            displayStatusGroupTooltips={displayStatusGroupTooltips}
+          />
 
           <Divider />
 
@@ -241,10 +247,11 @@ export function DeliveryMap({
                 {['Vertical delivery', 'Primary user', 'Build', ...allGroups].map((h, i) => (
                   <th
                     key={h}
+                    title={displayStatusGroupTooltips[h]}
                     style={{
                       ...dataTableThStyle,
                       ...(i > 1 ? dataTableThCompactStyle : undefined),
-                      ...(i > 1 ? { textAlign: 'right' } : undefined),
+                      ...(i > 1 ? { textAlign: 'right', cursor: displayStatusGroupTooltips[h] ? 'help' : undefined } : undefined),
                     }}
                   >
                     {h}
@@ -325,7 +332,7 @@ function PipelineStep({
 }) {
   const groupIdx = resolveDisplayStatusGroupIndex(row, displayStatusGroups)
   const dotColor = statusGroupColor(groupIdx)
-  const isMissing = isGap(row, displayStatusGroups)
+  const isMissing = isGap(row)
 
   return (
     <Row gap={12} align="stretch">
@@ -387,17 +394,18 @@ function PipelineStep({
   )
 }
 
-function UsageBar({ pipeline, allNodes, displayStatusGroups }: {
+function UsageBar({ pipeline, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips }: {
   pipeline: VertoNode[]
-  allNodes: VertoNode[]
   displayStatusGroups: DisplayStatusGroup[]
+  showOthersColumn: boolean
+  displayStatusGroupTooltips: Record<string, string>
 }) {
-  const allGroups = groupLabelsForDisplay(displayStatusGroups, allNodes)
+  const allGroups = groupLabelsForDisplay(displayStatusGroups, showOthersColumn)
   const weights = weightByDisplayStatusGroup(pipeline, displayStatusGroups)
-  const total = Object.values(weights).reduce((a, b) => a + b, 0)
-  if (total === 0) return null
+  const visibleTotal = allGroups.reduce((sum, col) => sum + (weights[col] ?? 0), 0)
+  if (visibleTotal === 0) return null
 
-  const weightSummary = formatDisplayGroupCounts(weights, displayStatusGroups)
+  const weightSummary = formatDisplayGroupCounts(weights, displayStatusGroups, showOthersColumn)
 
   return (
     <div>
@@ -411,14 +419,12 @@ function UsageBar({ pipeline, allNodes, displayStatusGroups }: {
         {allGroups.map(col => {
           const w = weights[col]
           if (w === 0) return null
-          const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
-            ? -1
-            : displayStatusGroups.findIndex(g => g.label === col)
+          const groupIdx = columnColorIndex(col, displayStatusGroups)
           return (
             <div
               key={col}
-              title={`${col}: ${w}`}
-              style={{ flex: w / total, background: statusGroupColor(groupIdx), minWidth: 2 }}
+              title={`${col}: ${w}${displayStatusGroupTooltips[col] ? ` — ${displayStatusGroupTooltips[col]}` : ''}`}
+              style={{ flex: w / visibleTotal, background: statusGroupColor(groupIdx), minWidth: 2 }}
             />
           )
         })}
@@ -427,14 +433,14 @@ function UsageBar({ pipeline, allNodes, displayStatusGroups }: {
         {allGroups.map(col => {
           const w = weights[col]
           if (w === 0) return null
-          const groupIdx = col === OTHER_DISPLAY_STATUS_GROUP
-            ? -1
-            : displayStatusGroups.findIndex(g => g.label === col)
+          const groupIdx = columnColorIndex(col, displayStatusGroups)
           return (
-            <Row key={col} gap={4}>
+            <span key={col} title={displayStatusGroupTooltips[col]} style={{ display: 'inline-flex', cursor: displayStatusGroupTooltips[col] ? 'help' : undefined }}>
+              <Row gap={4}>
               <div style={{ width: 8, height: 8, borderRadius: 2, background: statusGroupColor(groupIdx) }} />
               <Text size="small" tone="tertiary">{col}</Text>
-            </Row>
+              </Row>
+            </span>
           )
         })}
       </Row>

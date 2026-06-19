@@ -482,19 +482,15 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 
 **Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
 
-- **Portfolio** — per slice, bucket Requirements using `ui.displayStatusGroups` (§4.6.3).
+- **Portfolio** — per slice, bucket Requirements by display group: system **Done**
+  (`isDone`), then user-configured groups from `ui.displayStatusGroups`, then
+  **`others`** when the status universe is not fully covered (§4.6.3). Column
+  headers show status tooltips (`displayStatusGroupTooltips`).
   **Sort:** delivery slices by `deliveryCompleteness[sliceId]` descending (highest
   completeness first). **Primary user** column — `personas` joined (`' / '`) per slice.
   **Slice picker pills:** completion-toned via `buildTone(deliveryCompleteness)` (Phase 4).
-- **UsageBar** — same display-status groups as the portfolio table plus an implicit **Other** bucket;
-  segment value = **sum of `weight`** (default 1) of requirements in that bucket.
-  With default weights this equals a count.
-- **Gaps** — requirements that do **not** match any **satisfied group** (`isDoneBucket` —
-  §4.6.3). A display-status group is a satisfied group when **any** of its `sources`
-  entries has `isDone: true` (for `ticket` and/or `parsed`). A requirement matches a
-  group when it satisfies that group's `sources` rules (§4.6.3). **Gaps** = pipeline
-  rows that match no satisfied group. (A row with `isDone: true` but a non-Done
-  workflow `status` still counts as satisfied if it matches via `isDone: true`.)
+- **UsageBar** — same display-status groups as the portfolio table plus an implicit **`others`** bucket when config does not account for every status in the current **status universe** (§4.6.3); segment value = **sum of `weight`** (default 1) of requirements in that bucket. With default weights this equals a count.
+- **Gaps** — pipeline rows with **`!isDone`** (not yet satisfied). Display grouping is separate: a done node always displays as system **Done** regardless of workflow `status`.
 - **Removed:** deprecated canvas “The biggest black boxes” section. Term **black box**
   is not used in Verto; unchecked raw status is **`raw`**.
 
@@ -819,67 +815,151 @@ labels (`buildPriorityOptionHints`, `formatPriorityOptionLabel`, …) — export
 so the webview bundle does not pull in `node:fs` via the main `@verto/config` parse path.
 
 **`ui.displayStatusGroups` (Phase 2.5; renamed from `portfolioColumns`).** UI-layer
-config under the root **`ui`** key. Defines how canonical node fields (`nodeType`,
-`isDone`, `status`) map to simplified **display group labels** for presentation —
-not canonical workflow status (that remains `node.status` from `fieldMappings`).
-Resolved in the webview via `resolveDisplayStatusGroup()`; not part of
-`DeliveryMapBundle`.
+config under the root **`ui`** key. Maps open nodes' workflow **`status`** values
+(and parsed `raw` / `done`) to human-readable **display group labels** for the
+portfolio table, legends, UsageBar, NCN colouring, and status pills. Canonical
+completion is **`node.isDone`** (graph math + system **Done** display bucket) —
+**not** configured here.
 
-Shape:
+Resolved in the webview via `resolveDisplayStatusGroup()` in
+`@verto/config/display-status-groups` (re-exported by the extension webview);
+not part of `DeliveryMapBundle`.
+
+#### System-reserved **Done** group
+
+- **Always present**, always evaluated **first**, never listed in user config.
+- **Match rule:** `row.isDone === true` only (no `statuses` predicate).
+- **Display label:** `"Done"`.
+- **Source of `isDone`:** adapter / `fieldMappings` (default GitHub: native
+  `issue.closed`). To treat specific workflow statuses as done, add a standard
+  `fieldMappings.isDone` entry — display and graph math stay aligned.
+- **Config validation** rejects any user group whose `label` is `Done` or `done`
+  (case-insensitive) with an error pointing at `fieldMappings` / `isDone`.
+
+Generated JSONC includes a comment above `displayStatusGroups` explaining that
+system **Done** is reserved (see `stringifyVertoConfig` / setup wizard output).
+
+#### User-configured groups
+
+**Shape** (user config only — no `Done` entry):
 
 ```jsonc
 {
   "ui": {
+  // System-reserved display group "Done" matches node.isDone (ticket open/close via fieldMappings).
+  // It is always evaluated first and is not listed below.
     "displayStatusGroups": [
-      { "label": "Done", "sources": { "ticket": { "isDone": true, "statuses": ["Closed"] }, "parsed": { "isDone": true } } },
-      { "label": "Raw", "sources": { "parsed": { "isDone": false, "statuses": ["raw"] } } }
+      { "label": "In Progress", "sources": { "ticket": { "statuses": ["Doing", "Review"] } } },
+      { "label": "Raw", "sources": { "ticket": { "statuses": ["Draft"] }, "parsed": { "statuses": ["raw"] } } }
     ]
   }
 }
 ```
 
-- Each group has a **`label`** (display name) and **`sources`** keyed by node kind:
-  **`ticket`** (child sub-issues) and/or **`parsed`** (raw requirement nodes).
-- **Satisfied group (`isDoneBucket`):** any group where `sources.ticket.isDone === true`
-  and/or `sources.parsed.isDone === true`. Used for gap detection among other consumers.
-  Label `"Done"` is conventional only — detection is structural.
-- **Done group:** matches `isDone: true` and/or listed workflow **`statuses`** (e.g.
-  map GitHub `Closed` → Done). Default seeds include ProjectV2 Status options from audit.
-- **Non-done groups:** only nodes with **`!isDone`** whose `status` is in the group's
-  `statuses` list (parsed: `raw` / `done`).
-- **Consumers (Phase 3):** portfolio table headers/counts, UsageBar segments, gap
-  callouts. **Phase 4** adds NCN node colouring, pipeline status column,
-  implementation-order status column, slice/node pills — same matcher throughout.
-- **Presentation fields (resolved, Phase 4):** `DisplayStatusGroup` has **no**
-  presentation fields. `tone`, `chartColor`, and `weight` are **not** added to the
-  config schema. `weight` is dropped from the concept entirely. Status-based colouring
-  is baked into the webview by group **array position** — the nth group maps to the
-  nth slot in a fixed VS Code theme variable palette in `theme.ts`. The config remains
-  purely semantic: `label` + `sources` only.
-- **Status display rule (resolved, Phase 4):** `displayStatusGroup` is the display
-  vocabulary used **everywhere** — column headers, legends, node colouring, pill tones,
-  UsageBar segment labels. When showing an individual node's status value (table cell,
-  node label): `"<displayStatusGroup> (<node.status>)"` when `node.status` is present;
-  `"<displayStatusGroup>"` when absent. If the node matches no group:
-  `"Other (<node.status>)"` when `node.status` is present, else `"Other"`.
-- **UsageBar** — same groups plus implicit **Other**; segment value = **sum of
-  `weight`** (default 1) of requirements in that group.
-- **Gaps** — pipeline rows matching **no** satisfied group (one consumer of
-  `isDoneBucket`).
-- **Group assignment (matching algorithm):** for each node, walk `displayStatusGroups`
-  **in array order**; assign the **first** group whose `sources` entry for that node's
-  `nodeType` (`ticket` or `parsed`) matches. Skip groups with no rule for that source
-  type. Unmatched nodes → implicit **Other** (portfolio table and UsageBar only — not
-  gap detection).
-- **Within a `sources.<type>` block:** let `row` be the node. Match if **any**
-  specified predicate holds: (`isDone` is present in config and
-  `row.isDone === config.isDone`) **or** (`statuses` is present and
-  `row.status` is in `statuses`). If only one predicate is present, that predicate
-  alone decides. **Non-done groups** additionally require `row.isDone === false`
-  before evaluating `statuses`.
-- **Merge behaviour:** `mergeConfigs` shallow-merges `ui`; workspace `ui: {}` preserves
-  defaults' `displayStatusGroups`; an explicit workspace `ui.displayStatusGroups` array
-  fully replaces the defaults array.
+- Each group has a **`label`** and **`sources`** keyed by node kind: **`ticket`**
+  and/or **`parsed`**.
+- Each source rule contains **`statuses` only** (non-empty string array). The
+  `isDone` predicate is **not** allowed on display groups — open nodes are
+  implied (`!row.isDone`) because **Done** short-circuits first.
+- **Validation** (`validateUserDisplayStatusGroups`, run from `parseVertoConfig`):
+  reject reserved **Done** label; reject reserved **`others`** label; reject duplicate labels; reject empty `statuses`;
+  reject the same status string in more than one group **per source type**
+  (`ticket` vs `parsed` overlaps are independent).
+- **Merge behaviour:** `mergeConfigs` shallow-merges `ui`; workspace `ui: {}`
+  preserves defaults' `displayStatusGroups`; an explicit workspace
+  `ui.displayStatusGroups` array fully replaces the defaults array.
+
+#### Implicit **`others`** bucket
+
+- **Label:** `"others"` (lowercase; not a configured group).
+- **Runtime assignment:** after **Done**, walk user `displayStatusGroups` in array
+  order; first group whose `sources.<nodeType>.statuses` contains `row.status`
+  wins. If no match (including `status: undefined` or a new board value) → **`others`**.
+- **Column / legend visibility:** the **`others`** column and legend entry appear
+  only when the current **status universe** has at least one status not **accounted
+  for** by config (see below). Recomputed on every panel refresh (`Verto: Refresh`,
+  config save, parsed toggle, etc.). Host sends `showOthersColumn: boolean` in the
+  `'update'` message.
+
+#### Status universe and sufficiency (accounted statuses)
+
+On each load, build the **status universe**:
+
+| Source type | Universe = union of |
+|---|---|
+| **ticket** | Project audit Status options (`fetchProjectStatusOptions` on project scope) **∪** distinct `node.status` on ticket nodes in the loaded graph |
+| **parsed** | Distinct `node.status` on parsed nodes in the loaded graph (typically `raw` and/or `done`) |
+
+A status is **accounted for** when it appears in:
+
+| Source type | Accounted set = |
+|---|---|
+| **ticket** | Union of all `ticket.statuses` across user groups **∪** status strings mapped to `true` in `fieldMappings.isDone.values` (if present) |
+| **parsed** | Union of all `parsed.statuses` across user groups **∪** `{ "done" }` (parsed completion is structural: checklist → `status: "done"`, `isDone: true`) |
+
+`showOthersColumn` is `true` when either source type has a universe status outside
+its accounted set. **Ticket and parsed sufficiency are independent** — either can
+trigger the **`others`** column.
+
+**Parsed `isDone`:** materialized by `@verto/text-parser` as
+`status: checked ? 'done' : 'raw'` and `isDone: status === 'done'` (not
+user field-mapped). Display **Done** for parsed rows follows `isDone`, same as tickets.
+
+#### Group assignment (matching algorithm)
+
+1. If `row.isDone` → system **Done** (stop).
+2. Else walk user `displayStatusGroups` **in array order**; skip groups with no
+   rule for `row.nodeType`. Assign the **first** group whose `statuses` list
+   contains `row.status` (requires `row.status` defined).
+3. Else → **`others`**.
+
+Palette index: **Done** = 0; user group *n* = *n*+1; **`others`** = −1
+(`theme.ts` / `resolveDisplayStatusGroupIndex`).
+
+#### Status display rule (Phase 4)
+
+`displayStatusGroup` is the display vocabulary everywhere — column headers,
+legends, node colouring, pill tones, UsageBar segments. Per-node labels:
+`"<group> (<node.status>)"` when `node.status` is present; `"<group>"` when absent.
+No user-group match: `"others (<node.status>)"` or `"others"`.
+
+**Tooltips** (legends, portfolio column headers, UsageBar mini-legend): host builds
+`displayStatusGroupTooltips` on each refresh (`buildDisplayStatusGroupTooltips`):
+- **Done** — default `issue.closed` criterion, or listed `fieldMappings.isDone`
+  status values when configured.
+- **User groups** — `Tickets: …` and/or `Parsed: …` status lists.
+- **`others`** — unaccounted statuses in the current universe (when column shown).
+
+#### Consumers
+
+- **Portfolio table** — column headers and per-slice counts per display group.
+- **UsageBar** — weighted segments per group (plus **`others`** when visible).
+- **Gap callouts** — rows with `!isDone` (independent of display bucket).
+- **NCN** — node colouring, status column, legend (Phase 4).
+- **Gaps ≠ `others`:** a row can be a gap (not done) while displaying **In Progress**
+  or **`others`** depending on `status`.
+
+#### Presentation (no config fields)
+
+`DisplayStatusGroup` has **no** `tone`, `chartColor`, or `weight`. Colouring is
+by **group index** in a fixed VS Code theme palette (`theme.ts`). Config is
+purely semantic: `label` + `sources.statuses` only.
+
+#### Audit / wizard seeding (§4.6.6, §4.6.9)
+
+`buildProjectDisplayStatusGroups(statusOptions)` seeds **user groups only** (no
+**Done**): first Status option → **Raw** (`ticket`); middle options → **In Progress**
+(`ticket`); last option is omitted from user groups (typically satisfied via
+`issue.closed` → **Done**). Always includes `parsed: { statuses: ["raw"] }` on
+**Raw** when ticket statuses are seeded. JSONC writer emits the system **Done**
+comment above the array.
+
+#### Migration (configs with legacy **Done** group)
+
+Configs that list a **Done** display group and/or `isDone` predicates on group
+rules will **fail validation** at parse time. Remove the **Done** entry; map
+completion via native `issue.closed` (default) or `fieldMappings.isDone`. User
+groups should list only open workflow **`statuses`** per source type.
 
 #### 4.6.4 Field mapping and the `FieldAccessor` contract
 
@@ -1107,7 +1187,9 @@ fields, options, issue types) and produces a **draft** `.vscode/verto.config.jso
    not on the board).
 4. Emit a draft config using **names only**; ID caches are populated at runtime on
    first load.
-5. Preserve **JSONC comments** on write (setup wizard and tooling use an AST-aware
+5. Seed **`ui.displayStatusGroups`** (user groups only — no **Done**; see §4.6.3):
+   `buildProjectDisplayStatusGroups` from Status column options.
+6. Preserve **JSONC comments** on write (setup wizard and tooling use an AST-aware
    writer — not `JSON.stringify`).
 
 **Interim tooling:** [`scripts/sync-github-project-fields.mjs`](./scripts/sync-github-project-fields.mjs)
@@ -1429,7 +1511,7 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
-| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `parsedEnabled: boolean`; `priorityOverlayActive: boolean`; `projectName: string`; `journeyPriorityOverlay: Record<string, number>`; `priorityOptionHints: PriorityOptionHints`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, or priority overlay change |
+| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `showOthersColumn: boolean`; `displayStatusGroupTooltips: Record<string, string>`; `parsedEnabled: boolean`; `priorityOverlayActive: boolean`; `projectName: string`; `journeyPriorityOverlay: Record<string, number>`; `priorityOptionHints: PriorityOptionHints`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, or priority overlay change |
 
 *Webview → host:*
 
@@ -1440,8 +1522,11 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 | `'setPriority'` | `sliceId: string; priority: number \| null` (`null` clears the override) | User edits priority on a delivery slice; host updates overlay + rebuilds bundle |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN highlight/focus, or table-view toggle (debounced) |
 
-`displayStatusGroups` travels in `'update'` alongside the bundle — **not** inside
-`DeliveryMapBundle` — keeping `@verto/core` free of config concerns.
+`displayStatusGroups`, `showOthersColumn`, and `displayStatusGroupTooltips` travel
+in `'update'` alongside the bundle — **not** inside `DeliveryMapBundle` — keeping
+`@verto/core` free of config concerns. User groups come from `config.ui.displayStatusGroups`;
+tooltips and **`others`** visibility are computed in `loadPipeline` from config,
+the loaded graph, project Status options, and `fieldMappings`.
 
 **Adapter defaults programmatic export.** `configLoader.ts` imports adapter defaults
 directly as a JS object rather than reading files at runtime (safe for the bundled
@@ -1541,9 +1626,9 @@ the body sections cited — this list is the index.
   default on, `workspaceState`; filter graph when off — §3.7, §4.6.8.
 - ~~**Portfolio columns / UsageBar / gaps.**~~ **Closed (Phase 2.5; renamed)** —
   `ui.displayStatusGroups` — §4.6.3.
-- ~~**Portfolio column matching algorithm.**~~ **Closed (Phase 2.5)** — first matching
-  group in config order; per-source OR between `isDone` predicate and `statuses`
-  list; non-done groups require `!isDone`; satisfied groups structural (`isDoneBucket`) —
+- ~~**Portfolio column matching algorithm.**~~ **Closed (Phase 2.5; revised)** —
+  system **Done** first (`isDone` only); user groups match `statuses` in config order;
+  **`others`** for unmapped statuses; column visibility from status-universe sufficiency —
   §4.6.3.
 - ~~**DESC blocks (outcome & child notes).**~~ **Closed (Phase 2.5)** —
   `computeBodyFields` in `@verto/text-parser` sets `_outcome` (first DESC paragraph) on

@@ -42,17 +42,41 @@ describe('parseVertoConfig', () => {
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
       ui: {
         displayStatusGroups: [
-          { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
-          { label: 'In Progress', sources: { ticket: { isDone: false, statuses: ['In Progress'] } } },
-          { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+          { label: 'In Progress', sources: { ticket: { statuses: ['In Progress'] } } },
+          { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
         ],
       },
     })
     const config = parseVertoConfig(jsonc)
-    expect(config.ui?.displayStatusGroups).toHaveLength(3)
-    expect(config.ui?.displayStatusGroups![0].label).toBe('Done')
-    expect(config.ui?.displayStatusGroups![0].sources.ticket?.isDone).toBe(true)
-    expect(config.ui?.displayStatusGroups![2].sources.parsed?.statuses).toEqual(['raw'])
+    expect(config.ui?.displayStatusGroups).toHaveLength(2)
+    expect(config.ui?.displayStatusGroups![0].label).toBe('In Progress')
+    expect(config.ui?.displayStatusGroups![1].sources.parsed?.statuses).toEqual(['raw'])
+  })
+
+  it('rejects reserved Done label in displayStatusGroups', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: { scope: 'project', owner: 'owner', projectNumber: 1 },
+      ui: {
+        displayStatusGroups: [
+          { label: 'Done', sources: { ticket: { statuses: ['Closed'] } } },
+        ],
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).toThrow(/system-reserved/i)
+  })
+
+  it('rejects reserved others label in displayStatusGroups', () => {
+    const jsonc = JSON.stringify({
+      adapter: 'github',
+      github: { scope: 'project', owner: 'owner', projectNumber: 1 },
+      ui: {
+        displayStatusGroups: [
+          { label: 'others', sources: { ticket: { statuses: ['Backlog'] } } },
+        ],
+      },
+    })
+    expect(() => parseVertoConfig(jsonc)).toThrow(/system-reserved/i)
   })
 
   it('throws on invalid displayStatusGroups shape (missing label)', () => {
@@ -60,7 +84,7 @@ describe('parseVertoConfig', () => {
       adapter: 'github',
       github: { scope: 'project', owner: 'owner', projectNumber: 1 },
       ui: {
-        displayStatusGroups: [{ sources: { ticket: { isDone: true } } }],
+        displayStatusGroups: [{ sources: { ticket: { statuses: ['Open'] } } }],
       },
     })
     expect(() => parseVertoConfig(jsonc)).toThrow(/label/)

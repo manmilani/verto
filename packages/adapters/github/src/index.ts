@@ -12,3 +12,14 @@ export {
 export type { ResolvedOwner, RepositorySummary, ProjectSummary } from './discovery.js'
 export { expandParentClosure } from './closure.js'
 export { resolveProjectName } from './projectName.js'
+export { fetchProjectStatusOptions } from './statusOptions.js'
+export {
+  resolveProjectV2FieldName,
+  seedCanonicalProjectV2FieldMapping,
+  statusOptionsFromProjectFields,
+  singleSelectOptionsFromProjectField,
+  resolveStatusProjectV2FieldName,
+  projectFieldNamesMatch,
+  type ProjectFieldNode,
+  type SeedProjectV2MappingOptions,
+} from './projectField.js'

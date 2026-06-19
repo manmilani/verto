@@ -26,6 +26,8 @@ interface VertoState {
   isRefreshing: boolean
   bundle?: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
+  showOthersColumn: boolean
+  displayStatusGroupTooltips: Record<string, string>
   parsedEnabled: boolean
   priorityOverlayActive: boolean
   journeyPriorityOverlay: Record<string, number>
@@ -45,6 +47,8 @@ export function useVertoState() {
     status: 'loading',
     isRefreshing: false,
     displayStatusGroups: [],
+    showOthersColumn: false,
+    displayStatusGroupTooltips: {},
     parsedEnabled: true,
     priorityOverlayActive: false,
     journeyPriorityOverlay: {},
@@ -131,6 +135,8 @@ export function useVertoState() {
             isRefreshing: false,
             bundle: msg.bundle,
             displayStatusGroups: msg.displayStatusGroups,
+            showOthersColumn: msg.showOthersColumn,
+            displayStatusGroupTooltips: msg.displayStatusGroupTooltips,
             parsedEnabled: msg.parsedEnabled,
             priorityOverlayActive: msg.priorityOverlayActive,
             journeyPriorityOverlay: msg.journeyPriorityOverlay,

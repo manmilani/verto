@@ -13,7 +13,7 @@ export function countDirectDependents(bundle: DeliveryMapBundle, nodeId: string)
 
 export function deliveryMapStats(
   bundle: DeliveryMapBundle,
-  displayStatusGroups: DisplayStatusGroup[],
+  _displayStatusGroups: DisplayStatusGroup[],
   pipelinesBySliceId?: ReadonlyMap<string, VertoNode[]>,
 ) {
   const slices = bundle.graph.nodes.filter(n => n.isDeliverySlice)
@@ -29,7 +29,7 @@ export function deliveryMapStats(
     if (comp >= 0.7) built70 += 1
     const pipeline = pipelinesBySliceId?.get(slice.id)
       ?? buildPipelineForSlice(slice.id, bundle.graph, implOrder)
-    gapCount += pipeline.filter(row => isGap(row, displayStatusGroups)).length
+    gapCount += pipeline.filter(row => isGap(row)).length
   }
 
   const overall = slices.length > 0 ? weightedSum / slices.length : 0

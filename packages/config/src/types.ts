@@ -24,8 +24,7 @@ export type GitHubConfig = GitHubScopeVariant & {
 }
 
 export interface DisplayStatusGroupSourceRule {
-  isDone?: boolean
-  statuses?: string[]
+  statuses: string[]
 }
 
 export interface DisplayStatusGroup {

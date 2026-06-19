@@ -16,6 +16,8 @@ export interface PersistedPanelState {
 
 export type HostToWebviewMessage =
   | { type: 'update'; bundle: DeliveryMapBundle; displayStatusGroups: DisplayStatusGroup[];
+      showOthersColumn: boolean;
+      displayStatusGroupTooltips: Record<string, string>;
       parsedEnabled: boolean; priorityOverlayActive: boolean; projectName: string;
       journeyPriorityOverlay: Record<string, number>;
       priorityOptionHints: PriorityOptionHints;

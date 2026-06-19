@@ -24,7 +24,11 @@ function formatFieldMappings(mappings: Record<string, FieldMappingEntry>, level:
 }
 
 function formatDisplayStatusGroups(groups: DisplayStatusGroup[], level: number): string[] {
-  const lines: string[] = [`${i(level)}"displayStatusGroups": [`]
+  const lines: string[] = [
+    `${i(level)}// System-reserved display group "Done" matches node.isDone (ticket open/close via fieldMappings).`,
+    `${i(level)}// It is always evaluated first and is not listed below.`,
+    `${i(level)}"displayStatusGroups": [`,
+  ]
   groups.forEach((group, idx) => {
     const comma = idx < groups.length - 1 ? ',' : ''
     lines.push(`${i(level + 1)}${compact(group)}${comma}`)

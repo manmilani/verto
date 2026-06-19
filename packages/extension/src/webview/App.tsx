@@ -6,7 +6,7 @@ import { vscode } from './vscodeApi.js'
 
 export default function App() {
   const {
-    status, isRefreshing, bundle, displayStatusGroups, parsedEnabled,
+    status, isRefreshing, bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, parsedEnabled,
     projectName,
     lens, focusedNode, errorMessage, setupRequired,
     ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive,
@@ -90,6 +90,8 @@ export default function App() {
           <DeliveryMap
             bundle={bundle}
             displayStatusGroups={displayStatusGroups}
+            showOthersColumn={showOthersColumn}
+            displayStatusGroupTooltips={displayStatusGroupTooltips}
             projectName={projectName}
             focusedNode={focusedNode}
             setFocusedNode={setFocusedNode}
@@ -99,6 +101,8 @@ export default function App() {
           <NcnLens
             bundle={bundle}
             displayStatusGroups={displayStatusGroups}
+            showOthersColumn={showOthersColumn}
+            displayStatusGroupTooltips={displayStatusGroupTooltips}
             projectName={projectName}
             priorityOverlayActive={priorityOverlayActive}
             journeyPriorityOverlay={journeyPriorityOverlay}

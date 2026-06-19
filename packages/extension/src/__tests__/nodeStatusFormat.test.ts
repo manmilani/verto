@@ -3,8 +3,7 @@ import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus, formatPriority } from '../webview/nodeStatusFormat.js'
 
 const defaultGroups: DisplayStatusGroup[] = [
-  { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
-  { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
+  { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
 ]
 
 describe('formatNodeStatus', () => {
@@ -15,14 +14,14 @@ describe('formatNodeStatus', () => {
     )).toBe('Raw (raw)')
   })
 
-  it('matched group + no raw status → "<group>"', () => {
+  it('done ticket → system Done label', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: true, status: undefined },
       defaultGroups,
     )).toBe('Done')
   })
 
-  it('undone ticket with workflow status → Other', () => {
+  it('undone ticket with workflow status → others', () => {
     expect(formatNodeStatus(
       { nodeType: 'ticket', isDone: false, status: 'Backlog' },
       defaultGroups,
@@ -36,11 +35,9 @@ describe('formatNodeStatus', () => {
     )).toBe('others')
   })
 
-  it('falls to others when no group has a rule for this nodeType', () => {
-    // Groups with only ticket rules — parsed nodes fall to others
+  it('parsed node with no matching parsed rule → others', () => {
     const ticketOnlyGroups: DisplayStatusGroup[] = [
-      { label: 'Done', sources: { ticket: { isDone: true } } },
-      { label: 'In Progress', sources: { ticket: { isDone: false } } },
+      { label: 'Doing', sources: { ticket: { statuses: ['Doing'] } } },
     ]
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: false, status: 'custom' },
@@ -48,7 +45,7 @@ describe('formatNodeStatus', () => {
     )).toBe('others (custom)')
   })
 
-  it('parsed done node matches Done group', () => {
+  it('parsed done node → Done (system)', () => {
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: true, status: 'done' },
       defaultGroups,
@@ -84,7 +81,6 @@ describe('formatPriority', () => {
   })
 
   it('all zeros after stripping → "—" (e.g. value of 0 would be edge case)', () => {
-    // In practice ranking is always > 0, but guard the replace edge case
     expect(formatPriority(0)).toBe('—')
   })
 

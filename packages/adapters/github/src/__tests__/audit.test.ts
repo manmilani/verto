@@ -43,9 +43,123 @@ describe('audit enrichment', () => {
     expect(discovered.github?.fieldMappings?.type).toBeDefined()
     expect(discovered.github?.fieldMappings?.status).toBeDefined()
     expect(discovered.github?.fieldMappings?.priority).toBeDefined()
-    expect(discovered.ui?.displayStatusGroups?.map(g => g.label)).toEqual(['Done', 'In Progress', 'Raw'])
+    expect(discovered.ui?.displayStatusGroups?.map(g => g.label)).toEqual(['In Progress', 'Raw'])
     const inProgress = discovered.ui?.displayStatusGroups?.find(g => g.label === 'In Progress')
     expect(inProgress?.sources.ticket?.statuses).toEqual(['Doing'])
+  })
+
+  it('auditProjectScope seeds displayStatusGroups from configured status field name', async () => {
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              {
+                name: 'Workflow Status',
+                dataType: 'SINGLE_SELECT',
+                options: [{ name: 'Draft' }, { name: 'Doing' }, { name: 'Closed' }],
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'project',
+        owner: 'acme',
+        projectNumber: 1,
+        fieldMappings: {
+          status: { from: { kind: 'projectV2', field: 'Workflow Status' }, type: 'select' },
+        },
+      },
+    }
+    const { discovered } = await auditProjectScope('token', config)
+    expect(discovered.ui?.displayStatusGroups?.map(g => g.label)).toEqual(['In Progress', 'Raw'])
+    const inProgress = discovered.ui?.displayStatusGroups?.find(g => g.label === 'In Progress')
+    expect(inProgress?.sources.ticket?.statuses).toEqual(['Doing'])
+  })
+
+  it('auditProjectScope seeds status from case-insensitive Status column match', async () => {
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              {
+                name: 'status',
+                dataType: 'SINGLE_SELECT',
+                options: [{ name: 'Draft' }, { name: 'Doing' }, { name: 'Closed' }],
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: { scope: 'project', owner: 'acme', projectNumber: 1 },
+    }
+    const { discovered } = await auditProjectScope('token', config)
+    expect(discovered.github?.fieldMappings?.status?.from.field).toBe('status')
+    expect(discovered.ui?.displayStatusGroups?.find(g => g.label === 'In Progress')?.sources.ticket?.statuses)
+      .toEqual(['Doing'])
+  })
+
+  it('auditProjectScope seeds priority via case-insensitive Priority match', async () => {
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              {
+                name: 'Status',
+                dataType: 'SINGLE_SELECT',
+                options: [{ name: 'Open' }, { name: 'Closed' }],
+              },
+              { name: 'priority', dataType: 'NUMBER' },
+            ],
+          },
+        },
+      },
+    })
+
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: { scope: 'project', owner: 'acme', projectNumber: 1 },
+    }
+    const { discovered, warnings } = await auditProjectScope('token', config)
+    expect(discovered.github?.fieldMappings?.priority?.from.field).toBe('priority')
+    expect(discovered.github?.fieldMappings?.priority?.type).toBe('number')
+    expect(warnings.some(w => w.includes('priority'))).toBe(false)
+  })
+
+  it('auditProjectScope warns when no priority mapping can be seeded', async () => {
+    gqlFn.mockResolvedValue({
+      user: {
+        projectV2: {
+          fields: {
+            nodes: [
+              {
+                name: 'Status',
+                dataType: 'SINGLE_SELECT',
+                options: [{ name: 'Open' }],
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: { scope: 'project', owner: 'acme', projectNumber: 1 },
+    }
+    const { warnings } = await auditProjectScope('token', config)
+    expect(warnings.some(w => w.includes('No priority field mapping'))).toBe(true)
   })
 
   it('auditRepositoryScope seeds issueFilter when seedRepoDefaults is true', async () => {

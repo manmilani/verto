@@ -1,5 +1,6 @@
 import Ajv from 'ajv'
 import type { VertoConfig } from './types.js'
+import { validateUserDisplayStatusGroups } from './displayStatusGroups.js'
 
 const ajv = new Ajv({ allErrors: true })
 
@@ -58,10 +59,14 @@ const githubConfigSchema = {
 
 const displayStatusGroupSourceRuleSchema = {
   type: 'object',
+  required: ['statuses'],
   additionalProperties: false,
   properties: {
-    isDone: { type: 'boolean' },
-    statuses: { type: 'array', items: { type: 'string', minLength: 1 } },
+    statuses: {
+      type: 'array',
+      minItems: 1,
+      items: { type: 'string', minLength: 1 },
+    },
   },
 }
 
@@ -120,5 +125,10 @@ export function validateVertoConfig(raw: unknown): VertoConfig {
     throw new Error(`Invalid VertoConfig: ${msg}`)
   }
 
-  return raw as unknown as VertoConfig
+  const config = raw as unknown as VertoConfig
+  if (config.ui?.displayStatusGroups) {
+    validateUserDisplayStatusGroups(config.ui.displayStatusGroups)
+  }
+
+  return config
 }

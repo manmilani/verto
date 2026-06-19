@@ -5,8 +5,7 @@ export const githubAdapterDefaults: VertoConfig = {
 
   ui: {
     displayStatusGroups: [
-      { label: 'Done',        sources: { ticket: { isDone: true },  parsed: { isDone: true } } },
-      { label: 'Raw',         sources: { parsed:  { isDone: false, statuses: ['raw'] } } },
+      { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
     ],
   },
 

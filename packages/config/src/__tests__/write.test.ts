@@ -158,13 +158,14 @@ describe('writeVertoConfigFile / mergeIntoJsoncFile', () => {
       },
       ui: {
         displayStatusGroups: [
-          { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true } } },
+          { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
         ],
       },
     })
     const text = await readFile(path, 'utf8')
     expect(text).toContain('"status": {"from":{"kind":"projectV2","field":"Status"},"type":"select"}')
-    expect(text).toContain('{"label":"Done","sources":')
+    expect(text).toContain('{"label":"Raw","sources":')
+    expect(text).toContain('System-reserved display group "Done"')
   })
 })
 

@@ -61,8 +61,8 @@ export function parseRawReqBlock(body: string, parentId: string): ParsedRawReq[]
       id: `${parentId}#raw-req-${n}`,
       name,
       note,
-      isDone: checked,
       status: checked ? 'done' : 'raw',
+      isDone: (checked ? 'done' : 'raw') === 'done',
     })
   }
 

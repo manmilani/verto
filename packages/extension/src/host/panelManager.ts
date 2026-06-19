@@ -187,7 +187,7 @@ export class PanelManager {
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, displayStatusGroups, projectName, priorityOptionHints } = await runPipeline(config, token, parsedEnabled, this.overlay)
+      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints } = await runPipeline(config, token, parsedEnabled, this.overlay)
       if (seq !== this.fetchSeq) return
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
@@ -201,6 +201,8 @@ export class PanelManager {
         type: 'update',
         bundle,
         displayStatusGroups,
+        showOthersColumn,
+        displayStatusGroupTooltips,
         parsedEnabled,
         priorityOverlayActive,
         projectName,

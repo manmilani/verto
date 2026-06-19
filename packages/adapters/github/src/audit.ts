@@ -3,6 +3,7 @@ import { mergeConfigs } from '@verto/config'
 import { requireGitHubConfig } from './githubConfig.js'
 import { githubAdapterDefaults } from './defaults.js'
 import { gqlRequest } from './gqlRequest.js'
+import { statusOptionsFromProjectFields, seedCanonicalProjectV2FieldMapping, resolveProjectV2FieldName } from './projectField.js'
 
 export interface AuditOptions {
   /** When true, seed repository-scope issueFilter / includeClosedAncestors if absent. */
@@ -49,41 +50,29 @@ function mergeIssueNativeDefaults(mappings: FieldMappings): FieldMappings {
   return { ...ISSUE_NATIVE_MAPPINGS, ...mappings }
 }
 
-/** At most three display-status groups from audited Status column options (last → Done, middle → In Progress, first → Raw). */
+/** User display groups from audited Status options (first → Raw, middle → In Progress; last is Done via node.isDone). */
 export function buildProjectDisplayStatusGroups(statusOptions: string[]): DisplayStatusGroup[] {
   if (statusOptions.length === 0) {
-    return [
-      { label: 'Done', sources: { ticket: { isDone: true }, parsed: { isDone: true, statuses: ['done'] } } },
-      { label: 'Raw', sources: { parsed: { isDone: false, statuses: ['raw'] } } },
-    ]
+    return [{ label: 'Raw', sources: { parsed: { statuses: ['raw'] } } }]
   }
 
   const first = statusOptions[0]!
-  const last = statusOptions[statusOptions.length - 1]!
   const middle = statusOptions.length > 2 ? statusOptions.slice(1, -1) : []
 
-  const groups: DisplayStatusGroup[] = [
-    {
-      label: 'Done',
-      sources: {
-        ticket: { isDone: true, statuses: [last] },
-        parsed: { isDone: true, statuses: ['done'] },
-      },
-    },
-  ]
+  const groups: DisplayStatusGroup[] = []
 
   if (middle.length > 0) {
     groups.push({
       label: 'In Progress',
-      sources: { ticket: { isDone: false, statuses: middle } },
+      sources: { ticket: { statuses: middle } },
     })
   }
 
   groups.push({
     label: 'Raw',
     sources: {
-      ticket: { isDone: false, statuses: [first] },
-      parsed: { isDone: false, statuses: ['raw'] },
+      ticket: { statuses: [first] },
+      parsed: { statuses: ['raw'] },
     },
   })
 
@@ -141,7 +130,6 @@ export async function auditProjectScope(
   }
 
   const fieldMappings: FieldMappings = {}
-  let statusOptions: string[] = []
 
   for (const field of project.fields.nodes) {
     if (!field.name || field.name === 'Title') continue
@@ -151,17 +139,17 @@ export async function auditProjectScope(
     if (field.dataType === 'DATE') entry.type = 'date'
     if (field.dataType === 'ITERATION') entry.type = 'iteration'
     fieldMappings[field.name.toLowerCase().replace(/\s+/g, '_')] = entry
-    if (field.name === 'Status' && Array.isArray(field.options)) {
-      statusOptions = field.options.map((o: { name: string }) => o.name)
-    }
   }
 
-  if (!fieldMappings.status && githubAdapterDefaults.github?.fieldMappings?.status) {
-    fieldMappings.status = githubAdapterDefaults.github.fieldMappings.status
-  }
+  seedCanonicalProjectV2FieldMapping(fieldMappings, project.fields.nodes, 'status', github.fieldMappings)
+  seedCanonicalProjectV2FieldMapping(fieldMappings, project.fields.nodes, 'priority', github.fieldMappings, {
+    bootstrapFieldName: 'Priority',
+  })
 
-  if (!fieldMappings.priority) {
-    warnings.push('No Priority field found — nodes will default to priority 5')
+  const statusOptions = statusOptionsFromProjectFields(project.fields.nodes, fieldMappings)
+
+  if (!resolveProjectV2FieldName(fieldMappings, 'priority')) {
+    warnings.push('No priority field mapping — nodes will default to priority 5')
   }
 
   const displayStatusGroups = buildProjectDisplayStatusGroups(statusOptions)

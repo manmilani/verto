@@ -11,11 +11,12 @@ import {
   StatusLegend, Spacer, Pill,
 } from '../components/ui.js'
 import { ncnStats } from '../bundleMetrics.js'
-import { shouldShowOtherColumn } from '../displayStatusGroup.js'
 
 interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
+  showOthersColumn: boolean
+  displayStatusGroupTooltips: Record<string, string>
   projectName: string
   priorityOverlayActive: boolean
   journeyPriorityOverlay: Record<string, number>
@@ -30,7 +31,7 @@ interface Props {
 }
 
 export function NcnLens({
-  bundle, displayStatusGroups, projectName, priorityOverlayActive,
+  bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOverlayActive,
   journeyPriorityOverlay, priorityOptionHints,
   tableView, onTableViewChange,
   highlightedSliceId, focusedNcnNodeId,
@@ -43,7 +44,7 @@ export function NcnLens({
     ? graph.nodes.find(n => n.id === focusedNcnNodeId)
     : undefined
 
-  const showOtherLegend = shouldShowOtherColumn(displayStatusGroups, graph.nodes)
+  const showOtherLegend = showOthersColumn
 
   return (
     <Stack gap={20} style={{ padding: 24, maxWidth: 1320, margin: '0 auto' }}>
@@ -96,7 +97,12 @@ export function NcnLens({
           </select>
         </Row>
         <Spacer />
-        <StatusLegend displayStatusGroups={displayStatusGroups} showOther={showOtherLegend} showReadyBorder />
+        <StatusLegend
+          displayStatusGroups={displayStatusGroups}
+          displayStatusGroupTooltips={displayStatusGroupTooltips}
+          showOther={showOtherLegend}
+          showReadyBorder
+        />
       </Row>
 
       {(focusedNode || highlightedSliceId) && (

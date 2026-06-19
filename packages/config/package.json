@@ -7,6 +7,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./display-status-groups": {
+      "import": "./dist/displayStatusGroups.js",
+      "types": "./dist/displayStatusGroups.d.ts"
+    },
     "./priority-hints": {
       "import": "./dist/priorityHints.js",
       "types": "./dist/priorityHints.d.ts"

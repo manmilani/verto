@@ -15,9 +15,10 @@
   "adapter": "github",
 
   "ui": {
+    // System-reserved display group "Done" matches node.isDone (ticket open/close via fieldMappings).
+    // It is always evaluated first and is not listed below.
     "displayStatusGroups": [
-      { "label": "Done",        "sources": { "ticket": { "isDone": true }, "parsed": { "isDone": true } } },
-      { "label": "Raw",         "sources": { "parsed":  { "isDone": false, "statuses": ["raw"] } } }
+      { "label": "Raw", "sources": { "parsed": { "statuses": ["raw"] } } }
     ]
   },
 

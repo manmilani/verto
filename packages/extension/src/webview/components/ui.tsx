@@ -1,7 +1,7 @@
 import React from 'react'
 import type { DisplayStatusGroup } from '@verto/config'
 import { statusGroupColor } from '../theme.js'
-import { OTHER_DISPLAY_STATUS_GROUP, type PillTone, type StatTone, type TextTone } from '../displayStatusGroup.js'
+import { OTHER_DISPLAY_STATUS_GROUP, SYSTEM_DONE_DISPLAY_GROUP_LABEL, type PillTone, type StatTone, type TextTone } from '../displayStatusGroup.js'
 
 const TEXT_TONE: Record<TextTone, string> = {
   primary: 'var(--vscode-foreground)',
@@ -260,12 +260,15 @@ export function Pill({
 export function LegendDot({
   label,
   color,
+  title,
 }: {
   label: string
   color: string
+  title?: string
 }) {
   return (
-    <Row gap={6}>
+    <span title={title} style={{ display: 'inline-flex', cursor: title ? 'help' : undefined }}>
+      <Row gap={6}>
       <div
         style={{
           width: 10,
@@ -276,25 +279,44 @@ export function LegendDot({
         }}
       />
       <Text size="small" tone="secondary">{label}</Text>
-    </Row>
+      </Row>
+    </span>
   )
 }
 
 export function StatusLegend({
   displayStatusGroups,
+  displayStatusGroupTooltips = {},
   showOther = false,
   showReadyBorder = false,
 }: {
   displayStatusGroups: DisplayStatusGroup[]
+  displayStatusGroupTooltips?: Record<string, string>
   showOther?: boolean
   showReadyBorder?: boolean
 }) {
   return (
     <Row gap={14} wrap>
+      <LegendDot
+        label={SYSTEM_DONE_DISPLAY_GROUP_LABEL}
+        color={statusGroupColor(0)}
+        title={displayStatusGroupTooltips[SYSTEM_DONE_DISPLAY_GROUP_LABEL]}
+      />
       {displayStatusGroups.map((g, i) => (
-        <LegendDot key={g.label} label={g.label} color={statusGroupColor(i)} />
+        <LegendDot
+          key={g.label}
+          label={g.label}
+          color={statusGroupColor(i + 1)}
+          title={displayStatusGroupTooltips[g.label]}
+        />
       ))}
-      {showOther && <LegendDot label={OTHER_DISPLAY_STATUS_GROUP} color={statusGroupColor(-1)} />}
+      {showOther && (
+        <LegendDot
+          label={OTHER_DISPLAY_STATUS_GROUP}
+          color={statusGroupColor(-1)}
+          title={displayStatusGroupTooltips[OTHER_DISPLAY_STATUS_GROUP]}
+        />
+      )}
       {showReadyBorder && (
         <Row gap={6}>
           <div
