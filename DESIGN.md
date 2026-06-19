@@ -420,7 +420,7 @@ The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey)
 - **Persona** — `personas: string[]` (canonical root field; default `[]`). **Population
   (load time):** populated by the standard parsed sub-field mapping `"labels.persona"` —
   see §4.6.4 (parsed sub-field mappings). The GitHub adapter default config includes
-  `personas: { from: { kind: 'issue', field: 'labels.persona' } }`, which extracts all
+  `personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true }`, which extracts all
   `persona:<value>` labels via `@verto/text-parser`. Workspace config may override this
   entry like any other `fieldMappings` entry; if no `personas` entry is present at all,
   `mapper.ts` falls back to direct label extraction. See §4.6.7. **Display (Phase 3
@@ -1071,7 +1071,7 @@ in `fieldMappings`. These are **always** populated outside `fieldMappings` and a
 may be overridden via an optional `fieldMappings` entry. `priority` and `status`
 require user-configured `fieldMappings` bindings when the tracker exposes those
 fields (`status` may be absent — see §4.6.5). **`personas`:** the GitHub adapter
-default config includes `personas: { from: { kind: 'issue', field: 'labels.persona' } }`;
+default config includes `personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true }`;
 `@verto/text-parser` extracts persona values from `ticketFields.labels` and writes them
 to `node.personas`. When no `fieldMappings.personas` entry is present, `mapper.ts`
 falls back to direct `persona:<value>` label extraction. If neither applies, **`[]`**.
@@ -1244,7 +1244,7 @@ Grounded in GitHub GraphQL capabilities documented under
 | **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
 | **Raw requirements** | Issue body `RAW_REQ:BEGIN` / `RAW_REQ:END` block; materialized by `@verto/text-parser` |
-| **Personas** (`personas`) | Default config: `personas: { from: { kind: 'issue', field: 'labels.persona' } }` — dot-notation parsed sub-field; `@verto/text-parser` extracts `persona:<value>` labels → `string[]`. Workspace config may override. When no `personas` entry at all: `mapper.ts` label-extraction fallback. |
+| **Personas** (`personas`) | Default config: `personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true }` — dot-notation parsed sub-field; `@verto/text-parser` extracts `persona:<value>` labels → `string[]`. Workspace config may override. When no `personas` entry at all: `mapper.ts` label-extraction fallback. |
 | **Labels** (`ticketFields.labels`) | Native issue labels — passthrough includes all labels; also the base field for `labels.persona` sub-field extraction |
 | **AI SDLC metadata** (`ticketFields.*`) | ProjectV2 custom TEXT/NUMBER fields (`specified_by`, `planned_by`, …) — see recommended field names in `types.ts` `ticketFields` comment. Stored as comma-separated TEXT in GitHub — **values must not contain commas** (IDs, session IDs, model names are safe; arbitrary free text is not). Document this constraint at write time. |
 | **Assignee, timestamps, body** (`ticketFields.*`) | Native issue / built-in ProjectV2 fields — non-canonical passthrough; `type` hints as appropriate |

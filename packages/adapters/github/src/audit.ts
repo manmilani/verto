@@ -31,7 +31,7 @@ export function buildWizardConfigComments(scope: 'project' | 'repository'): stri
     '// Optional overrides (uncomment and customize as needed):',
     '// "priority" — map select/number field values to 1–9 (see DESIGN.md §4.6.3)',
     '// "isDeliverySlice" — label or field rule marking vertical slices',
-    '// "personas" — default config uses "labels.persona" dot-notation; add more label sub-field mappings the same way',
+    '// "personas" — default config uses "labels.persona" dot-notation with isArray:true; add more label sub-field mappings the same way',
   ]
   if (scope === 'repository') {
     lines.push(

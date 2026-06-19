@@ -191,7 +191,7 @@ describe('mapIssuesToGraph', () => {
     const graph = mapIssuesToGraph([issue], new Map(), config)
     const n = graph.nodes[0]
     // Adapter skips the dot-notation entry → personas placeholder is [] (hasPersonaMapping path)
-    // text-parser (applyParsedFieldMappings) will extract ['admin'] from ticketFields.labels
+    // text-parser (applyParsedFieldMappings) will extract ['admin'] from ticketFields.labels (with isArray:true on the fieldMapping)
     expect(n.personas).toEqual([])
     // labels base field present in ticketFields for text-parser to consume
     expect(n.ticketFields!['labels']).toEqual(['persona:admin', 'bug'])

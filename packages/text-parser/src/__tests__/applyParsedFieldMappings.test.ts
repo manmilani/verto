@@ -245,7 +245,7 @@ describe('applyParsedFieldMappings', () => {
     expect(result.nodes[0].ticketFields!['isBackend']).toBe(false)
   })
 
-  it('labels.backend type:boolean — label present → false on canonical root (boolean + canonical = written)', () => {
+  it('labels.backend type:boolean — label present → true on canonical root (boolean + canonical = written)', () => {
     const fm: FieldMappings = {
       isDone: { from: { kind: 'issue', field: 'labels.close' }, type: 'boolean' },
     }
