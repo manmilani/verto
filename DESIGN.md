@@ -1717,8 +1717,8 @@ the body sections cited — this list is the index.
 - ~~**NCN pan/zoom (Phase 3).**~~ **Closed (Phase 4)** — enabled in `NcnGraph.tsx`.
 - ~~**Theming.**~~ **Closed (Phase 4)** — Status-based colouring uses VS Code theme
   variables throughout. Palette mapped by display-status-group **array position** in
-  `theme.ts` (not user-configurable; no config changes). `pillToneForNode()` maps group
-  index to pill tones in tables. See §4.6.3.
+  `theme.ts` (not user-configurable; no config changes). Display-status pills and dots
+  use `statusGroupColor(groupIndex)` everywhere (legend, bar, pipeline, tables, graph).
 - **Large-graph performance.** Deferred — evaluate after Phase 4 when the
   interactive graph can be dogfooded (see IMPLEMENTATION.md unplanned backlog).
 - ~~**Where the panel lives.**~~ **Closed (Phase 3)** — **editor tab**

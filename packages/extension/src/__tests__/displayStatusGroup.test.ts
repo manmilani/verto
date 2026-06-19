@@ -7,7 +7,7 @@ import {
   countByDisplayStatusGroup,
   formatDisplayGroupCounts,
   summarizePipelineByDisplayGroup,
-  pillToneForNode,
+  displayStatusGroupColorForNode,
 } from '../webview/displayStatusGroup.js'
 import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
@@ -58,13 +58,22 @@ describe('extension displayStatusGroup wrappers', () => {
     expect(weights).toEqual({ Done: 2, Raw: 0, others: 1 })
   })
 
-  it('pillToneForNode uses display group index for open nodes', () => {
+  it('displayStatusGroupColorForNode matches statusGroupColor index', () => {
     const groups: DisplayStatusGroup[] = [
       { label: 'In Progress', sources: { ticket: { statuses: ['Todo'] } } },
       { label: 'Raw', sources: { parsed: { statuses: ['raw'] } } },
     ]
-    expect(pillToneForNode({ nodeType: 'ticket', isDone: true, status: 'Todo' }, groups)).toBe('success')
-    expect(pillToneForNode({ nodeType: 'ticket', isDone: false, status: 'Todo' }, groups)).toBe('info')
-    expect(pillToneForNode({ nodeType: 'ticket', isDone: false, status: 'Mystery' }, groups)).toBe('neutral')
+    expect(displayStatusGroupColorForNode(
+      { nodeType: 'ticket', isDone: true, status: 'Todo' },
+      groups,
+    )).toBe('var(--vscode-charts-blue)')
+    expect(displayStatusGroupColorForNode(
+      { nodeType: 'ticket', isDone: false, status: 'Todo' },
+      groups,
+    )).toBe('var(--vscode-charts-orange)')
+    expect(displayStatusGroupColorForNode(
+      { nodeType: 'ticket', isDone: false, status: 'Mystery' },
+      groups,
+    )).toBe('var(--vscode-descriptionForeground)')
   })
 })

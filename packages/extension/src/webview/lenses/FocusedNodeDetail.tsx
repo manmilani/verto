@@ -2,7 +2,7 @@ import React from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
-import { pillToneForNode, resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
+import { displayStatusGroupColorForNode, resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import {
   Stack, Row, Text, Pill, BorderedBox,
@@ -46,7 +46,11 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
               ? <a href={node.ticketUrl} target="_blank" rel="noreferrer" style={linkStyle}>{node.title}</a>
               : node.title}
           </Text>
-          <Pill size="sm" tone={pillToneForNode(node, displayStatusGroups)} active>
+          <Pill
+            size="sm"
+            color={displayStatusGroupColorForNode(node, displayStatusGroups)}
+            active
+          >
             {formatNodeStatus(node, displayStatusGroups)}
           </Pill>
           <Pill size="sm" tone={isReady ? 'success' : 'neutral'}>

@@ -1,6 +1,6 @@
 import React from 'react'
 import type { DisplayStatusGroup } from '@verto/config'
-import { statusGroupColor } from '../theme.js'
+import { statusGroupColor, statusGroupPillColors } from '../theme.js'
 import { OTHER_DISPLAY_STATUS_GROUP, SYSTEM_DONE_DISPLAY_GROUP_LABEL, type PillTone, type StatTone, type TextTone } from '../displayStatusGroup.js'
 
 const TEXT_TONE: Record<TextTone, string> = {
@@ -205,6 +205,7 @@ export function Stat({
 export function Pill({
   children,
   tone = 'neutral',
+  color,
   active,
   size = 'md',
   multiline = false,
@@ -214,6 +215,8 @@ export function Pill({
 }: {
   children: React.ReactNode
   tone?: PillTone
+  /** Display-status group colour — overrides tone when set (matches legend / progress bar). */
+  color?: string
   active?: boolean
   size?: 'sm' | 'md'
   /** Allow text to wrap inside the pill (for long work-item titles in tables). */
@@ -222,7 +225,7 @@ export function Pill({
   title?: string
   style?: React.CSSProperties
 }) {
-  const colors = PILL_TONE[tone]
+  const colors = color ? statusGroupPillColors(color, active) : PILL_TONE[tone]
   const Tag = onClick ? 'button' : 'span'
   return (
     <Tag
@@ -239,8 +242,8 @@ export function Pill({
         fontSize: size === 'sm' ? 11 : 12,
         fontWeight: active ? 600 : 500,
         cursor: onClick ? 'pointer' : undefined,
-        border: `1px solid ${active ? 'var(--vscode-focusBorder)' : colors.border}`,
-        background: active ? colors.bg : 'var(--vscode-editor-background)',
+        border: `1px solid ${colors.border}`,
+        background: color ? colors.bg : (active ? colors.bg : 'var(--vscode-editor-background)'),
         color: colors.fg,
         overflow: multiline ? 'visible' : 'hidden',
         textOverflow: multiline ? undefined : 'ellipsis',

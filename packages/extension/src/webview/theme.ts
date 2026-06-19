@@ -19,3 +19,17 @@ export function statusGroupColor(groupIndex: number): string {
   if (groupIndex < 0) return OTHER_GROUP_COLOR
   return CHART_COLORS[groupIndex % CHART_COLORS.length]
 }
+
+/** Pill chrome derived from a display-group chart colour (legend / bar palette). */
+export function statusGroupPillColors(
+  chartColor: string,
+  active = false,
+): { bg: string; fg: string; border: string } {
+  return {
+    bg: `color-mix(in srgb, ${chartColor} 22%, transparent)`,
+    fg: 'var(--vscode-foreground)',
+    border: active
+      ? 'var(--vscode-focusBorder)'
+      : `color-mix(in srgb, ${chartColor} 55%, transparent)`,
+  }
+}

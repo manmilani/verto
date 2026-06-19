@@ -14,6 +14,7 @@ import {
   buildStatusUniverse,
   type StatusUniverse,
 } from '@verto/config/display-status-groups'
+import { statusGroupColor } from './theme.js'
 
 export {
   SYSTEM_DONE_DISPLAY_GROUP_LABEL,
@@ -85,16 +86,11 @@ export function formatDisplayGroupCounts(
     .join(' · ')
 }
 
-export function pillToneForNode(
+export function displayStatusGroupColorForNode(
   node: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
   userGroups: DisplayStatusGroup[],
-): PillTone {
-  if (node.isDone) return 'success'
-  const idx = resolveDisplayStatusGroupIndex(node, userGroups)
-  if (idx < 0) return 'neutral'
-  if (idx === 0) return 'warning'
-  if (idx === 1) return 'info'
-  return 'info'
+): string {
+  return statusGroupColor(resolveDisplayStatusGroupIndex(node, userGroups))
 }
 
 export function columnColorIndex(col: string, userGroups: DisplayStatusGroup[]): number {

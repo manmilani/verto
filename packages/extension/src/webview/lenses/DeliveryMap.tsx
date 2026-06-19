@@ -6,7 +6,8 @@ import {
   resolveDisplayStatusGroupIndex,
   isGap, groupLabelsForDisplay,
   countByDisplayStatusGroup, weightByDisplayStatusGroup, formatDisplayGroupCounts,
-  pillToneForNode, formatDisplayGroupsProse, columnColorIndex,
+  formatDisplayGroupsProse, columnColorIndex,
+  displayStatusGroupColorForNode,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
@@ -382,7 +383,11 @@ function PipelineStep({
       >
         <Row gap={8} align="center">
           <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{row.title}</Text>
-          <Pill size="sm" tone={pillToneForNode(row, displayStatusGroups)} active>
+          <Pill
+            size="sm"
+            color={displayStatusGroupColorForNode(row, displayStatusGroups)}
+            active
+          >
             {formatNodeStatus(row, displayStatusGroups)}
           </Pill>
         </Row>

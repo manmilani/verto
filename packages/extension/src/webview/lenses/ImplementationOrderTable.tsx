@@ -4,7 +4,8 @@ import type { DisplayStatusGroup } from '@verto/config'
 import type { NcnTableView } from '../../shared/protocol.js'
 import { formatNodeStatus, formatPriority } from '../nodeStatusFormat.js'
 import {
-  pillToneForNode, resolveDisplayStatusGroupIndex,
+  resolveDisplayStatusGroupIndex,
+  displayStatusGroupColorForNode,
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { countDirectDependents } from '../bundleMetrics.js'
@@ -59,7 +60,7 @@ function WorkItemPill({
   return (
     <Pill
       multiline
-      tone={pillToneForNode(node, displayStatusGroups)}
+      color={displayStatusGroupColorForNode(node, displayStatusGroups)}
       active={isFocused}
       title={node.title}
       onClick={e => { e.stopPropagation(); onFocus() }}
