@@ -9,7 +9,7 @@ user-invocable: true
 
 GraphQL ref (read on demand): [github-issues-graphql.md](github-issues-graphql.md) · ProjectV2: [projectv2.md](projectv2.md) · Body template: [ticket-body-template.md](ticket-body-template.md)
 
-**Auth:** `GITHUB_TOKEN` or `GITHUB_PERSONAL_ACCESS_TOKEN` (never log/commit). Scopes: `repo` / `public_repo`; ProjectV2 also needs `project`.
+**Auth:** `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, else the GitHub CLI login (`gh auth token`) (never log/commit). Scopes: `repo` / `public_repo`; ProjectV2 also needs `project`.
 
 **Target repo:** `--owner`/`--repo` · `GITHUB_OWNER`+`GITHUB_REPO` · `GITHUB_REPOSITORY` · else `git remote origin`.
 

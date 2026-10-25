@@ -1,14 +1,32 @@
 #!/usr/bin/env node
 /**
  * GitHub Issues CLI — read, create, update, list, search via GraphQL.
- * Auth: GITHUB_PERSONAL_ACCESS_TOKEN or GITHUB_TOKEN
+ * Auth: GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_TOKEN, or the GitHub CLI login (`gh auth token`)
  */
 
 import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const TOKEN =
-  process.env.GITHUB_PERSONAL_ACCESS_TOKEN ?? process.env.GITHUB_TOKEN;
+function resolveToken() {
+  if (process.env.GITHUB_PERSONAL_ACCESS_TOKEN) {
+    return { token: process.env.GITHUB_PERSONAL_ACCESS_TOKEN, source: 'GITHUB_PERSONAL_ACCESS_TOKEN' };
+  }
+  if (process.env.GITHUB_TOKEN) {
+    return { token: process.env.GITHUB_TOKEN, source: 'GITHUB_TOKEN' };
+  }
+  try {
+    const token = execSync('gh auth token', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (token) return { token, source: 'gh auth token' };
+  } catch {
+    /* gh not installed or not logged in */
+  }
+  return { token: undefined, source: undefined };
+}
+
+const { token: TOKEN, source: TOKEN_SOURCE } = resolveToken();
 
 function usage() {
   console.error(`Usage:
@@ -22,6 +40,8 @@ function usage() {
   gh-issues.mjs projects  --number N [--owner O] [--repo R] [--json]
   gh-issues.mjs project fields [--project-id ID] [--project-owner U] [--project-number N] [--org]
   gh-issues.mjs project items  [--project-id ID] [--project-owner U] [--project-number N] [--org] [--limit N] [--json]
+
+Auth (first match wins): GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_TOKEN, \`gh auth token\`
 
 Repo resolution (first match wins):
   --owner / --repo flags
@@ -70,20 +90,49 @@ function inferRepoFromGit() {
 
 async function graphql(query, variables = {}) {
   if (!TOKEN) {
-    console.error('Missing GITHUB_PERSONAL_ACCESS_TOKEN or GITHUB_TOKEN');
+    console.error(
+      'No GitHub token found. Set GITHUB_PERSONAL_ACCESS_TOKEN or GITHUB_TOKEN, or log in with `gh auth login`.'
+    );
     process.exit(1);
   }
-  const res = await fetch('https://api.github.com/graphql', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  const json = await res.json();
+  let res;
+  try {
+    res = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (err) {
+    console.error(`Network error calling GitHub GraphQL API: ${err.message}`);
+    process.exit(1);
+  }
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    console.error(`GitHub returned HTTP ${res.status} with a non-JSON body:\n${text.slice(0, 500)}`);
+    process.exit(1);
+  }
+  if (!res.ok) {
+    const hint =
+      res.status === 401
+        ? ` The token from ${TOKEN_SOURCE} is invalid or expired.`
+        : res.status === 403
+          ? ` The token from ${TOKEN_SOURCE} lacks permission, or the rate limit was hit.`
+          : '';
+    console.error(`GitHub API error (HTTP ${res.status}): ${json.message ?? text}.${hint}`);
+    process.exit(1);
+  }
   if (json.errors?.length) {
     console.error('GraphQL errors:', JSON.stringify(json.errors, null, 2));
+    process.exit(1);
+  }
+  if (!json.data) {
+    console.error(`GitHub returned no data:\n${text.slice(0, 500)}`);
     process.exit(1);
   }
   return json.data;

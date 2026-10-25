@@ -2,14 +2,14 @@
   "version": 1,
   "hooks": {
     "sessionStart": [
-      { "command": "bash .env_to_json.sh" }
+      { "command": "node .cursor/hooks/env.js session" }
     ],
     "beforeSubmitPrompt": [
       { "command": "node .cursor/hooks/worktime-hook.js" }
     ],
     "preToolUse": [
       {
-        "command": "bash .cursor/hooks/.env.pretool-wrap-shell.sh",
+        "command": "node .cursor/hooks/env.js shell",
         "matcher": "Shell"
       }
     ],
