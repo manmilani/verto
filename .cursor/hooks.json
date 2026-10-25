@@ -4,11 +4,23 @@
     "sessionStart": [
       { "command": "bash .env_to_json.sh" }
     ],
+    "beforeSubmitPrompt": [
+      { "command": "node .cursor/hooks/worktime-hook.js" }
+    ],
     "preToolUse": [
       {
         "command": "bash .cursor/hooks/.env.pretool-wrap-shell.sh",
         "matcher": "Shell"
       }
+    ],
+    "postToolUse": [
+      { "command": "node .cursor/hooks/worktime-hook.js" }
+    ],
+    "postToolUseFailure": [
+      { "command": "node .cursor/hooks/worktime-hook.js" }
+    ],
+    "stop": [
+      { "command": "node .cursor/hooks/worktime-hook.js" }
     ]
   }
 }

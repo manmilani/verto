@@ -14,12 +14,15 @@ json_escape() {
 }
 
 unescape_json_string() {
-  local s=$1
+  # Park escaped backslashes first, so "\\r" (a literal backslash + r) never becomes a carriage return.
+  local s=$1 bs=$'\x01'
+  s="${s//\\\\/$bs}"
   s="${s//\\\"/\"}"
-  s="${s//\\\\/\\}"
+  s="${s//\\\//\/}"
   s="${s//\\n/$'\n'}"
   s="${s//\\r/$'\r'}"
   s="${s//\\t/$'\t'}"
+  s="${s//$bs/\\}"
   printf '%s' "$s"
 }
 
@@ -88,8 +91,11 @@ if $use_powershell_wrap; then
   root_ps="$root"
   if command -v wslpath >/dev/null 2>&1; then
     root_ps="$(wslpath -w "$root")"
+  elif command -v cygpath >/dev/null 2>&1; then
+    root_ps="$(cygpath -w "$root")"
   fi
-  loader="\$env:CURSOR_ENV_LOADED='1'; Set-Location '$root_ps'; if (Test-Path '.env') { Get-Content '.env' | ForEach-Object { \$t = \$_.Trim(); if (\$t -and -not \$t.StartsWith('#') -and \$t -match '^([^=]+)=(.*)$') { \$k = \$matches[1].Trim(); \$v = \$matches[2].Trim().Trim('\"').Trim(\"'\"); Set-Item -Path env:\$k -Value \$v } } }"
+  root_ps="${root_ps//\'/\'\'}"   # escape for a PowerShell single-quoted literal
+  loader="\$env:CURSOR_ENV_LOADED='1'; if (Test-Path '$root_ps\.env') { Get-Content '$root_ps\.env' | ForEach-Object { \$t = \$_.Trim(); if (\$t -and -not \$t.StartsWith('#') -and \$t -match '^([^=]+)=(.*)$') { \$k = \$matches[1].Trim(); \$v = \$matches[2].Trim().Trim('\"').Trim(\"'\"); Set-Item -Path env:\$k -Value \$v } } }"
   wrapped="${loader}; ${command}"
 else
   wrapped="bash -lc 'set -a; source \"${root}/.env.sh\"; set +a; ${command//\'/\'\\\'\'}'"
