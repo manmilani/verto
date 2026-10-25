@@ -27,8 +27,8 @@ describe('parseVertoConfig', () => {
   })
 
   it('parses non-github adapter without github block', () => {
-    const config = parseVertoConfig('{ "adapter": "beans" }')
-    expect(config.adapter).toBe('beans')
+    const config = parseVertoConfig('{ "adapter": "fissue" }')
+    expect(config.adapter).toBe('fissue')
     expect(config.github).toBeUndefined()
   })
 

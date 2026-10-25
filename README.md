@@ -15,12 +15,12 @@ All paths below are relative to this folder (the **Verto project root**).
 
 | Path | Purpose |
 |------|---------|
-| [DESIGN.md](./DESIGN.md) | Living design document — source of truth for thinking and decisions |
+| [DESIGN.md](./DESIGN.md) | Living design document — source of truth for the current design |
+| [DESIGN-History.md](./DESIGN-History.md) | Origin, retired and rejected designs, resolved knowledge gaps |
 | [IMPLEMENTATION.md](./IMPLEMENTATION.md) | Implementation plan — phases, deliverables, and open decisions |
 | [graphql/github_issues_graphql.agent_prompt.md](./graphql/github_issues_graphql.agent_prompt.md) | GitHub GraphQL reference for the GitHub adapter |
-| [graphql/hmans_beans_graphql.agent_prompt.md](./graphql/hmans_beans_graphql.agent_prompt.md) | hmans/beans GraphQL reference for the beans adapter |
 | [deprecated_original_canvas/](./deprecated_original_canvas/) | Deprecated Rustybu canvas + chat archive — **initial migration aid only**; see [deprecated_original_canvas/README.md](./deprecated_original_canvas/README.md) |
 
-**Status:** Phases 0–3 complete (monorepo scaffold, `@verto/core`, GitHub adapter, `@verto/text-parser`, canonical schema, host pipeline, VS Code extension read-only panel). Next: **Phase 4** (full UI fidelity).
+**Status:** Phases 0–4 complete (monorepo scaffold, `@verto/core`, GitHub adapter, `@verto/text-parser`, canonical schema, host pipeline, VS Code extension read-only panel, full UI fidelity). Next: **Phase 4.5** (setup wizard); Phase 6 adds the [fissue](https://github.com/manmilani/fissue) adapter.
 
 **First shell:** Verto for VS Code (and Cursor) — extension **Verto** (`manmilani.verto`), distributed as private `.vsix`. Core library: `@verto/core` (monorepo-only).

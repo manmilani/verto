@@ -18,7 +18,7 @@
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | Complete |
 | 4.5 | [Setup wizard & config bootstrap](#phase-45--setup-wizard--config-bootstrap) | First-run QuickPick wizard; audit-seeded `verto.config.jsonc`; repository ancestor closure | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
-| 6 | [Beans (file-system) adapter](#phase-6--beans-file-system-adapter) | Second adapter; Verto manages its own backlog with itself | |
+| 6 | [fissue adapter](#phase-6--fissue-adapter) | Second adapter (local file-based tickets); Verto manages its own backlog with itself | |
 
 ---
 
@@ -159,7 +159,7 @@ mutations (Phase 5), and the audit script.
 
 ### Decisions to resolve before this phase
 
-- **`VertoConfig` TypeScript + JSON Schema** (§5.3 "VertoConfig schema") — exact shape of
+- **`VertoConfig` TypeScript + JSON Schema** (DESIGN-History §6.3 "VertoConfig schema") — exact shape of
   `fieldMappings` entries (`from.kind` variants, value-map syntax, validation rules), and
   scope-conditional required fields (`repository` vs `owner` + `projectNumber`). Resolved by
   implementing `packages/config/` (`@verto/config`) as the first deliverables in this phase.
@@ -295,11 +295,11 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
 
 ### Decisions (resolved)
 
-- **Panel location** (§5.4) — **editor tab** (`WebviewPanel` / `createWebviewPanel`).
-- **DAG layout** (§5.4) — **@xyflow/react** (React Flow) for graph UI; **ELK** (`elkjs`) for layout.
-- **Extension identifiers** (§5.5) — publisher `manmilani`; extension id `manmilani.verto`;
+- **Panel location** (DESIGN-History §6.4) — **editor tab** (`WebviewPanel` / `createWebviewPanel`).
+- **DAG layout** (DESIGN-History §6.4) — **@xyflow/react** (React Flow) for graph UI; **ELK** (`elkjs`) for layout.
+- **Extension identifiers** (DESIGN-History §6.5) — publisher `manmilani`; extension id `manmilani.verto`;
   `@verto/*` npm scope monorepo-only (no publish).
-- **Delivery Map layout** (§5.2) — see DESIGN.md §3.7:
+- **Delivery Map layout** (DESIGN-History §6.2) — see DESIGN.md §3.7:
   - **Terminology:** deprecated canvas `steps[]` = union of child tickets + raw requirement lines (`RAW_REQ` block).
   - **Pipeline:** single column — children first, then raw lines; no dedupe; no linking.
   - **Child ordering:** `implementationOrder` → `created_at` on node root (oldest first; missing → last) → issue `id` (alphanumeric ascending).
@@ -312,15 +312,15 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
   - **Status:** children show canonical `status`; parsed rows show `raw` / `done`.
   - **Completeness (pipeline rows):** parsed — binary from `isDone` × `weight`; children — `deliveryCompleteness(childId)` (weighted).
   - **Canvas fidelity:** persona/outcome, portfolio table, UsageBar, gaps — **required** in Phase 3.
-- **Enable Parsed Requirements** (§5.2) — global toggle, default on, host rebuilds bundle (Phase 2.5 pipeline).
-- **Distribution** (§5.5) — private `.vsix` only.
+- **Enable Parsed Requirements** (DESIGN-History §6.2) — global toggle, default on, host rebuilds bundle (Phase 2.5 pipeline).
+- **Distribution** (DESIGN-History §6.5) — private `.vsix` only.
 - **Extension display name** — **Verto**.
 - **Bundlers** — host: **esbuild**; webview: **Vite**.
-- **UI port fidelity** (§5.4) — Delivery Map canvas components required (§3.7); NCN pan/zoom Phase 4.
+- **UI port fidelity** (DESIGN-History §6.4) — Delivery Map canvas components required (§3.7); NCN pan/zoom Phase 4.
 - **NCN interaction** — React Flow pan/zoom **out** for Phase 3 (Phase 4).
 - **Host↔webview message protocol** (§4.8) — typed in `shared/protocol.ts`; `HostToWebviewMessage` `'update'` carries `bundle`, `displayStatusGroups`, `showOthersColumn`, `displayStatusGroupTooltips`, `parsedEnabled`, `restoredState?`, …; `WebviewToHostMessage` carries `'ready'` / `'setParsedEnabled'` / `'persistState'`.
 - **Display status in webview payload** (§4.6.3) — user groups from `config.ui.displayStatusGroups`; matcher/tooltips/sufficiency from `@verto/config/display-status-groups`; thin webview wrapper in `displayStatusGroup.ts`; not part of `DeliveryMapBundle`.
-- **Enable Parsed Requirements toggle UI** (§5.2) — webview toolbar checkbox; sends `'setParsedEnabled'` to host; host updates `workspaceState`, rebuilds bundle, and sends new `'update'`.
+- **Enable Parsed Requirements toggle UI** (DESIGN-History §6.2) — webview toolbar checkbox; sends `'setParsedEnabled'` to host; host updates `workspaceState`, rebuilds bundle, and sends new `'update'`.
 - **Adapter defaults export** (§4.6.3) — `@verto/adapter-github` exports `githubAdapterDefaults` from `src/defaults.ts` (re-exported via `src/index.ts`); `configLoader.ts` imports it directly; no filesystem reads at runtime.
 
 **Unlocks:** Phase 4 (UI features are layered on top of this working foundation).
@@ -566,26 +566,33 @@ tickets from the Verto panel, and those changes propagate to GitHub.
 
 ---
 
-## Phase 6 — Beans (file-system) adapter
+## Phase 6 — fissue adapter
 
-**Goal:** A second adapter for local Beans-format ticket stores, enabling Verto to load and
-display its own development backlog (`backlog/`) with itself.
+**Depends on:** the fissue extension's programmatic API (fissue's own phases 1–3); the
+write-back part depends on Phase 5.
+
+**Goal:** A second adapter that loads tickets from a local
+[fissue](https://github.com/manmilani/fissue) project, so Verto can display its own
+development backlog with itself. Design: DESIGN.md §4.6.10; fissue DESIGN.md §7.
 
 ### Deliverables
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| `packages/adapters/beans/system_types.ts` | Typed shapes for Beans tasks (frontmatter fields, dependency links, milestone refs) |
-| `packages/adapters/beans/client.ts` | File-system reads (and optionally Beans GraphQL — [`graphql/hmans_beans_graphql.agent_prompt.md`](./graphql/hmans_beans_graphql.agent_prompt.md)) |
-| `packages/adapters/beans/mapper.ts` | Beans task → `VertoNode` + `VertoEdge`; maps `dependencies:` to `prereqIds`, `priority:` to 1–9 |
-| `packages/adapters/beans/adapter.ts` | `loadProject(config): VertoGraph` *(host pipeline builds bundle — same as GitHub after Phase 2.5)* |
-| `packages/adapters/beans/defaults.verto.config.jsonc` | Shipped defaults for Beans field names and priority values |
+| `packages/adapters/fissue/src/system_types.ts` | Ticket and field-definition shapes as returned by fissue's API |
+| `packages/adapters/fissue/src/client.ts` | Reads tickets and field definitions through the fissue API object passed in (`apiVersion` check); no `vscode` dependency |
+| Extension host / scripts | Host obtains the API from the fissue extension at runtime (soft dependency); `scripts/load-project.mjs` uses fissue's core library |
+| `packages/adapters/fissue/src/mapper.ts` | Ticket → `VertoNode` + `VertoEdge`: system mappings (DESIGN §4.6.10) plus `fieldMappings` (`issue` / `issueField`) |
+| `packages/adapters/fissue/src/adapter.ts` | `checkFields(config)` against fissue's `config.json`; `loadProject(config): VertoGraph` *(host pipeline builds bundle — same as GitHub)* |
+| `packages/adapters/fissue/defaults.verto.config.jsonc` | Default mappings and the fields Verto registers in fissue (e.g. `priority`) |
+| `@verto/config` | `adapter: "fissue"` with an adapter-conditional `fissue` block (type + JSON Schema) |
+| Extension setup wizard | "fissue" adapter option: detect the extension (offer install), pick an existing project or run fissue init |
+| Write-back (after Phase 5) | Changes written through fissue's API |
 
 ### Decisions to resolve before this phase
 
-- On-disk format details and dependency/priority conventions (§5.3 "Beans or Backlog.md /
-  file-system shape") — the planned `backlog/tasks/*.md` frontmatter and `.beans.yml` format
-  give a starting point but need an explicit decision before the adapter contract can be written.
+- Exact shape of the `fissue` config block.
+- When Verto registers the fields it needs in fissue (at setup only, or checked on every load).
 
 ---
 
@@ -596,31 +603,31 @@ Each is linked to the phase where it blocks progress.
 
 | Decision | Blocks / Resolved during | Reference |
 |---|---|---|
-| `VertoConfig` TypeScript + JSON Schema shape — finalized in Phase 2 as `packages/config/` (`@verto/config`) | Resolved during Phase 2 | §5.3 |
+| `VertoConfig` TypeScript + JSON Schema shape — finalized in Phase 2 as `packages/config/` (`@verto/config`) | Resolved during Phase 2 | DESIGN-History §6.3 |
 | GitHub adapter scope (`"repository"` vs `"project"`) — finalized in Phase 2 as `github.scope` in `@verto/config` | Resolved during Phase 2 | §4.6.7 |
 | GitHub pagination + ID cache strategy | Phase 2 | §5.3 |
 | Parsed requirements model — Option A orchestration, `VertoGraph` return type | Resolved Phase 2.5 | §4.6.5, §4.6.8 |
 | Delivery Map pipeline — single column, `ui.displayStatusGroups`, personas/outcome | Resolved Phase 2.5 | §3.7, §4.6.3 |
 | Display-status group matching algorithm | Resolved Phase 2.5 (revised) | §4.6.3 — system **Done**, `statuses`-only user groups, **`others`**, universe sufficiency |
-| Personas source (GitHub `persona:` labels) | Resolved Phase 2.5 | §4.6.7, §5.3 |
-| `VertoEdge.reason` closed union + `prereqIds` validation | Resolved Phase 2.5 | §4.6.8, §5.1 |
-| Required-field fallback (Phase 2.5 fields) | Resolved Phase 2.5 | §4.6.5, §5.3 |
+| Personas source (GitHub `persona:` labels) | Resolved Phase 2.5 | §4.6.7; DESIGN-History §6.3 |
+| `VertoEdge.reason` closed union + `prereqIds` validation | Resolved Phase 2.5 | §4.6.8; DESIGN-History §6.1 |
+| Required-field fallback (Phase 2.5 fields) | Resolved Phase 2.5 | §4.6.5; DESIGN-History §6.3 |
 | Canonical schema — `status`, `nodeType`, `nodeOrigin`, `personas`, `created_at`, `weight`, `_rawReqIds`, `_note`, `_outcome` | Resolved Phase 2.5 | §4.4, `types.ts` |
-| Extension identifiers — `manmilani.verto`, publisher `manmilani`, `@verto/*` monorepo-only | Resolved Phase 3 | §5.5 |
+| Extension identifiers — `manmilani.verto`, publisher `manmilani`, `@verto/*` monorepo-only | Resolved Phase 3 | DESIGN-History §6.5 |
 | Extension display name — **Verto** | Resolved Phase 3 | §4.8 |
-| Distribution — private `.vsix` | Resolved Phase 3 | §5.5 |
-| Panel location — editor tab (`WebviewPanel`) | Resolved Phase 3 | §5.4 |
-| DAG layout — @xyflow/react + ELK | Resolved Phase 3 | §5.4 |
+| Distribution — private `.vsix` | Resolved Phase 3 | DESIGN-History §6.5 |
+| Panel location — editor tab (`WebviewPanel`) | Resolved Phase 3 | DESIGN-History §6.4 |
+| DAG layout — @xyflow/react + ELK | Resolved Phase 3 | DESIGN-History §6.4 |
 | Bundlers — esbuild (host), Vite (webview) | Resolved Phase 3 | §4.8 |
-| Delivery Map layout — pipeline, portfolio, UsageBar, gaps, pill selector | Resolved Phase 2.5 / 3 | §5.2, §3.7 |
+| Delivery Map layout — pipeline, portfolio, UsageBar, gaps, pill selector | Resolved Phase 2.5 / 3 | §3.7; DESIGN-History §6.2 |
 | Raw requirements parsing — `RAW_REQ:BEGIN` / `RAW_REQ:END` | Resolved Phase 2.5 | §4.6.8 |
 | Enable Parsed Requirements toggle | Resolved Phase 2.5 | §4.6.8 |
 | Child sort tie-break — `implementationOrder` → `created_at` → issue `id` | Resolved Phase 2.5 / 3 | §3.7 |
 | Portfolio **`others`** bucket — unmapped statuses; column when config insufficient | Resolved Phase 3 (revised) | §4.6.3, §3.7 |
 | Weighted delivery completeness (`nodeWeight()`) | Resolved Phase 2.5 / 3 | §3.3, `completeness.ts` |
 | Portfolio sort — `deliveryCompleteness[sliceId]` desc; neutral pills Phase 3 | Resolved Phase 3 | §3.7 |
-| UI port fidelity (Delivery Map) — canvas components required | Resolved Phase 3 | §5.4, §3.7 |
-| NCN pan/zoom — out for Phase 3 | Resolved Phase 3 | §5.4 |
+| UI port fidelity (Delivery Map) — canvas components required | Resolved Phase 3 | §3.7; DESIGN-History §6.2 |
+| NCN pan/zoom — out for Phase 3 | Resolved Phase 3 | DESIGN-History §6.4 |
 | Extract audit into `@verto/adapter-github` | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Adapter-conditional `github` config block | Resolved Phase 4 | `VertoConfig.github?`; JSON Schema requires `github` only when `adapter === "github"`; `requireGitHubConfig` in adapter |
 | Priority edit scope — delivery slices only (overlay) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
@@ -631,17 +638,17 @@ Each is linked to the phase where it blocks progress.
 | Priority column format — strip trailing zeros, `P` prefix in UI | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Priority dropdown hints (`@verto/config/priority-hints`) | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Status display rule + tooltips — `displayStatusGroup` everywhere; `displayStatusGroupTooltips` on legends/headers | Resolved Phase 4 | §4.6.3, IMPLEMENTATION Phase 4 |
-| `DisplayStatusGroup` config schema — no new fields; `weight` dropped; palette by array position | Resolved Phase 4 | §4.6.3, §5.4 |
+| `DisplayStatusGroup` config schema — no new fields; `weight` dropped; palette by array position | Resolved Phase 4 | §4.6.3; DESIGN-History §6.4 |
 | `servedBySliceIds` in `DeliveryMapBundle` — delivery-slice closure membership per node | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| Status/state node colouring (all nodes) — palette by group index | Resolved Phase 4 | §4.6.3, §4.8, §5.4 |
+| Status/state node colouring (all nodes) — palette by group index | Resolved Phase 4 | §4.6.3, §4.8; DESIGN-History §6.4 |
 | NCN pan/zoom and focus | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
-| UI port fidelity (NCN + tables) | Resolved Phase 4 | §5.4 |
+| UI port fidelity (NCN + tables) | Resolved Phase 4 | DESIGN-History §6.4 |
 | Slice-level delivery completeness display | Resolved Phase 4 | Stat + completion-toned slice pills (not a separate progress-bar widget) |
 | `resolveProjectTitle` — adapter-aware panel title | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
 | First-run setup wizard | Resolved Phase 4.5 | §4.6.9, IMPLEMENTATION Phase 4.5 |
 | Write-back conflict policy | Phase 5 | §5.3 |
-| Beans on-disk format + dep/priority conventions | Phase 6 | §5.3 |
+| fissue config block shape + field registration timing | Phase 6 | §5.3, §4.6.10 |
 
 ---
 

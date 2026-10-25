@@ -38,7 +38,7 @@ export const CANONICAL_VERTO_NODE_KEYS = new Set<string>([
 ]);
 
 export interface VertoNode {
-  /** Stable adapter-scoped identifier (e.g. GitHub issue node ID, Beans NanoID). */
+  /** Stable adapter-scoped identifier (e.g. GitHub issue node ID, fissue ticket ID). */
   id: string;
 
   /** Human-readable short title. */
