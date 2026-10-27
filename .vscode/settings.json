@@ -40,7 +40,5 @@
         "args": ["for /f %i in (${workspaceFolder}\\.env) do @set %i"]
         // "path": "powershell.exe",
         // "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
-    },
-
-    "beans.ai.enabled": false
+    }
 }

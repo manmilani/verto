@@ -1,8 +1,0 @@
-[submodule ".cursor"]
-	path = .cursor
-	url = https://github.com/manmilani/dot_cursor.git
-	branch = main
-[submodule ".claude"]
-	path = .claude
-	url = https://github.com/manmilani/dot_claude.git
-	branch = unified_review_skills
