@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { parse as parseJsonc } from 'comment-json'
+import { applyEdits, modify, parse as parseJsoncTree, printParseErrorCode, type ParseError } from 'jsonc-parser'
 import { validateVertoConfig } from './schema.js'
 import type { VertoConfig } from './types.js'
 import { extractLeadingComments, stringifyVertoConfig } from './format.js'
@@ -64,6 +65,34 @@ export async function writeVertoConfigFile(path: string, content: VertoConfig): 
   validateVertoConfig(content)
   await mkdir(dirname(path), { recursive: true })
   const text = stringifyVertoConfig(content as unknown as Record<string, unknown>)
+  await writeFile(path, text, 'utf8')
+}
+
+/**
+ * Add `fieldMappings` entries to the adapter block of an existing workspace file, editing the text in
+ * place so the user's comments and layout survive (unlike `mergeIntoJsoncFile`, which rewrites the file).
+ */
+export async function insertFieldMappings(
+  path: string,
+  adapter: string,
+  entries: Record<string, unknown>,
+): Promise<void> {
+  let text = await readFile(path, 'utf8')
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lineIndent = (offset: number) => /^[ \t]*/.exec(text.slice(text.lastIndexOf('\n', offset - 1) + 1))![0]
+  for (const [key, value] of Object.entries(entries)) {
+    // Unformatted edits touch nothing else; an entry after a sibling goes on its own line at its indent.
+    const edits = modify(text, [adapter, 'fieldMappings', key], value, {}).map(e =>
+      e.content.startsWith(',') ? { ...e, content: `,${eol}${lineIndent(e.offset)}${e.content.slice(1)}` } : e,
+    )
+    text = applyEdits(text, edits)
+  }
+  const errors: ParseError[] = []
+  const parsed = parseJsoncTree(text, errors, { allowTrailingComma: true })
+  if (errors.length > 0) {
+    throw new Error(`the edited file would not parse (${errors.map(e => `${printParseErrorCode(e.error)} at ${e.offset}`).join(', ')})`)
+  }
+  validateVertoConfig(parsed)
   await writeFile(path, text, 'utf8')
 }
 

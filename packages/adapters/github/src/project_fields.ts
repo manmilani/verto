@@ -1,7 +1,7 @@
 import type { VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
 import type { FieldMappingEntry, FieldMappings } from '@verto/config'
-import { applyMappingTail } from '@verto/config'
+import { applyMappingTail, clampPriority } from '@verto/config'
 import type {
   GitHubIssue,
   GitHubProjectV2FieldValue,
@@ -203,7 +203,3 @@ function resolveProjectV2Value(fv: GitHubProjectV2FieldValue): unknown {
   }
 }
 
-function clampPriority(raw: unknown): number | null {
-  if (typeof raw !== 'number' || !isFinite(raw)) return null
-  return Math.min(9, Math.max(1, Math.round(raw)))
-}

@@ -26,7 +26,7 @@ describe('runHostPipeline', () => {
   it('parsedEnabled:true (default) → bundle includes parsed nodes', () => {
     const n = node({ id: 'A', title: 'A', ticketFields: { body: BODY_WITH_REQS } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph)
+    const bundle = runHostPipeline(graph).bundle
     const parsedNodes = bundle.graph.nodes.filter(nd => nd.nodeType === 'parsed')
     expect(parsedNodes).toHaveLength(2)
   })
@@ -34,7 +34,7 @@ describe('runHostPipeline', () => {
   it('parsedEnabled:false → parsed nodes filtered out before bundle', () => {
     const n = node({ id: 'A', title: 'A', ticketFields: { body: BODY_WITH_REQS } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph, { parsedEnabled: false })
+    const bundle = runHostPipeline(graph, { parsedEnabled: false }).bundle
     const parsedNodes = bundle.graph.nodes.filter(nd => nd.nodeType === 'parsed')
     expect(parsedNodes).toHaveLength(0)
   })
@@ -42,7 +42,7 @@ describe('runHostPipeline', () => {
   it('returns a DeliveryMapBundle with required fields', () => {
     const n = node({ id: 'A', title: 'A' })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph)
+    const bundle = runHostPipeline(graph).bundle
     expect(bundle).toHaveProperty('graph')
     expect(bundle).toHaveProperty('implementationOrder')
   })
@@ -50,7 +50,7 @@ describe('runHostPipeline', () => {
   it('throws on invalid graph (dangling prereq)', () => {
     const n = node({ id: 'A', title: 'A', prereqIds: ['MISSING'], childIds: ['MISSING'] })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    expect(() => runHostPipeline(graph)).toThrow('Graph validation failed')
+    expect(() => runHostPipeline(graph).bundle).toThrow('Graph validation failed')
   })
 
   it('warnings are emitted via console.warn but do not throw', () => {
@@ -77,7 +77,7 @@ describe('runHostPipeline', () => {
       nodes: [parent, parsedNode],
       edges: [{ from: 'P1', to: 'A', reason: 'parsed-req' }],
     }
-    const bundle = runHostPipeline(graph)
+    const bundle = runHostPipeline(graph).bundle
     expect(warnSpy).toHaveBeenCalledWith('[verto]', expect.stringContaining('P1'))
     expect(bundle).toHaveProperty('graph')
     warnSpy.mockRestore()
@@ -95,7 +95,7 @@ describe('runHostPipeline', () => {
     ].join('\n')
     const n = node({ id: 'A', title: 'A', ticketFields: { body } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph)
+    const bundle = runHostPipeline(graph).bundle
     const resultNode = bundle.graph.nodes.find(nd => nd.id === 'A')!
     expect(resultNode._note).toBe('First paragraph of outcome.')
     expect(resultNode._outcome).toBe('First paragraph of outcome.')
@@ -104,45 +104,70 @@ describe('runHostPipeline', () => {
   it('_note and _outcome are undefined when no DESC block present', () => {
     const n = node({ id: 'A', title: 'A', ticketFields: { body: 'No desc block here.' } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph)
+    const bundle = runHostPipeline(graph).bundle
     const resultNode = bundle.graph.nodes.find(nd => nd.id === 'A')!
     expect(resultNode._note).toBeUndefined()
     expect(resultNode._outcome).toBeUndefined()
   })
 
-  it('priorityOverlay: overridden slice priority is reflected in bundle', () => {
+  it('changes: the draft is applied and reported per change', () => {
     const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 5 })
     const graph: VertoGraph = { nodes: [s], edges: [] }
-    const bundleDefault = runHostPipeline(graph)
-    const bundleOverlay = runHostPipeline(graph, { priorityOverlay: { S: 2 } })
-    // globalPriorityRanking is computed from priority, so the overlay-modified bundle should differ
-    expect(bundleOverlay.graph.nodes.find(n => n.id === 'S')!.priority).toBe(2)
-    expect(bundleOverlay.globalPriorityRanking!['S']).not.toBe(bundleDefault.globalPriorityRanking!['S'])
+    const before = runHostPipeline(graph).bundle
+    const { bundle, changeStates } = runHostPipeline(graph, {
+      changes: [
+        { type: 'set', nodeId: 'S', key: 'priority', value: 2 },
+        { type: 'set', nodeId: 'S', key: 'title', value: 'Slice' },
+        { type: 'set', nodeId: 'X', key: 'title', value: 'x' },
+      ],
+    })
+    expect(bundle.graph.nodes.find(n => n.id === 'S')!.priority).toBe(2)
+    expect(bundle.globalPriorityRanking!['S']).not.toBe(before.globalPriorityRanking!['S'])
+    expect(changeStates).toEqual([{ state: 'applied' }, { state: 'noop' }, { state: 'notLoaded' }])
+    expect(graph.nodes[0]!.priority).toBe(5)
   })
 
-  it('priorityOverlay: empty overlay is a no-op — same result as no overlay', () => {
-    const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 5 })
-    const graph: VertoGraph = { nodes: [s], edges: [] }
-    const bundleDefault = runHostPipeline(graph)
-    const bundleEmptyOverlay = runHostPipeline(graph, { priorityOverlay: {} })
-    expect(bundleEmptyOverlay.graph.nodes[0].priority)
-      .toBe(bundleDefault.graph.nodes[0].priority)
-    expect(bundleEmptyOverlay.globalPriorityRanking!['S'])
-      .toBe(bundleDefault.globalPriorityRanking!['S'])
+  it('changes: applied after parsed mappings, so a drafted personas value wins', () => {
+    const n = node({ id: 'A', title: 'A', ticketFields: { labels: ['persona:engineer'] } })
+    const fieldMappings: FieldMappings = {
+      personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
+    }
+    const { bundle } = runHostPipeline({ nodes: [n], edges: [] }, {
+      fieldMappings,
+      changes: [{ type: 'set', nodeId: 'A', key: 'personas', value: ['pm'] }],
+    })
+    expect(bundle.graph.nodes[0]!.personas).toEqual(['pm'])
   })
 
-  it('priorityOverlay: null value in overlay leaves original priority unchanged', () => {
-    const s = node({ id: 'S', title: 'Slice', isDeliverySlice: true, priority: 3 })
-    const graph: VertoGraph = { nodes: [s], edges: [] }
-    const bundle = runHostPipeline(graph, { priorityOverlay: { S: null } })
-    expect(bundle.graph.nodes.find(n => n.id === 'S')!.priority).toBe(3)
+  it('changes: a set moves the other keys mapped from the same tracker field', () => {
+    const n = node({ id: 'A', title: 'A', status: 'Todo', isDone: false })
+    const fieldMappings: FieldMappings = {
+      status: { from: { kind: 'issueField', field: 'status' } },
+      isDone: { from: { kind: 'issueField', field: 'status' }, values: { Todo: false, Done: true }, type: 'boolean' },
+    }
+    const run = (key: 'status' | 'isDone', value: string | boolean) =>
+      runHostPipeline({ nodes: [n], edges: [] }, { fieldMappings, changes: [{ type: 'set', nodeId: 'A', key, value }] })
+        .bundle.graph.nodes[0]!
+    expect(run('status', 'Done')).toMatchObject({ status: 'Done', isDone: true })
+    expect(run('isDone', true)).toMatchObject({ status: 'Done', isDone: true })
+    expect(run('status', 'Doing')).toMatchObject({ status: 'Doing', isDone: false })
   })
 
-  it('priorityOverlay: non-slice nodes are not affected even if present in overlay', () => {
-    const t = node({ id: 'T', title: 'Task', isDeliverySlice: false, priority: 5 })
-    const graph: VertoGraph = { nodes: [t], edges: [] }
-    const bundle = runHostPipeline(graph, { priorityOverlay: { T: 1 } })
-    expect(bundle.graph.nodes.find(n => n.id === 'T')!.priority).toBe(5)
+  it('changes: a draft that breaks validation falls back to its longest valid prefix', () => {
+    const a = node({ id: 'A', title: 'A' })
+    const b = node({ id: 'B', title: 'B', prereqIds: ['A'] })
+    const graph: VertoGraph = { nodes: [a, b], edges: [{ from: 'A', to: 'B', reason: 'blocking' }] }
+    const { bundle, changeStates } = runHostPipeline(graph, {
+      changes: [
+        { type: 'set', nodeId: 'A', key: 'priority', value: 1 },
+        { type: 'link', nodeId: 'A', blockerId: 'B', add: true },
+        { type: 'set', nodeId: 'B', key: 'priority', value: 2 },
+      ],
+    })
+    expect(changeStates.map(s => s.state)).toEqual(['applied', 'invalid', 'invalid'])
+    expect(changeStates[1]!.error).toContain('cycle')
+    expect(bundle.graph.nodes.find(n => n.id === 'A')!.priority).toBe(1)
+    expect(bundle.graph.nodes.find(n => n.id === 'B')!.priority).toBe(5)
   })
 
   it('fieldMappings: personas populated from labels.persona via two-phase pipeline', () => {
@@ -157,7 +182,7 @@ describe('runHostPipeline', () => {
     const fieldMappings: FieldMappings = {
       personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
     }
-    const bundle = runHostPipeline(graph, { fieldMappings })
+    const bundle = runHostPipeline(graph, { fieldMappings }).bundle
     const result = bundle.graph.nodes.find(nd => nd.id === 'A')!
     expect(result.personas).toEqual(['engineer', 'designer'])
   })
@@ -173,7 +198,7 @@ describe('runHostPipeline', () => {
     const fieldMappings: FieldMappings = {
       personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
     }
-    const bundle = runHostPipeline(graph, { fieldMappings })
+    const bundle = runHostPipeline(graph, { fieldMappings }).bundle
     const result = bundle.graph.nodes.find(nd => nd.id === 'A')!
     expect(Array.isArray(result.personas)).toBe(true)
     expect(result.personas).toEqual(['admin'])
@@ -185,7 +210,7 @@ describe('runHostPipeline', () => {
     const fieldMappings: FieldMappings = {
       personas: { from: { kind: 'issue', field: 'labels.persona' }, isArray: true },
     }
-    const bundle = runHostPipeline(graph, { fieldMappings })
+    const bundle = runHostPipeline(graph, { fieldMappings }).bundle
     expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.personas).toEqual([])
   })
 
@@ -196,7 +221,7 @@ describe('runHostPipeline', () => {
     const fieldMappings: FieldMappings = {
       phase: { from: { kind: 'issue', field: 'body.PHASE' } },
     }
-    const bundle = runHostPipeline(graph, { fieldMappings })
+    const bundle = runHostPipeline(graph, { fieldMappings }).bundle
     expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.ticketFields!['phase']).toBe('alpha')
   })
 
@@ -210,14 +235,14 @@ describe('runHostPipeline', () => {
     const fieldMappings: FieldMappings = {
       phase: { from: { kind: 'projectV2', field: 'body.PHASE' } },
     }
-    const bundle = runHostPipeline(graph, { fieldMappings })
+    const bundle = runHostPipeline(graph, { fieldMappings }).bundle
     expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.ticketFields!['phase']).toBe('beta')
   })
 
   it('fieldMappings: no fieldMappings option → applyParsedFieldMappings not called (noop)', () => {
     const n = node({ id: 'A', title: 'A', personas: [], ticketFields: { labels: ['persona:admin'] } })
     const graph: VertoGraph = { nodes: [n], edges: [] }
-    const bundle = runHostPipeline(graph)  // no fieldMappings
+    const bundle = runHostPipeline(graph).bundle  // no fieldMappings
     // Without fieldMappings, personas stays at adapter placeholder []
     expect(bundle.graph.nodes.find(nd => nd.id === 'A')!.personas).toEqual([])
   })

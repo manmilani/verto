@@ -1,4 +1,12 @@
-import type { VertoConfig } from '@verto/config'
+import type { FieldMappings, VertoConfig } from '@verto/config'
+
+/**
+ * Default write mappings (DESIGN.md §4.6.11): how an unmapped key is written. Writing through one adds it
+ * to the workspace config, so the next load reads what was written.
+ */
+export const fissueWriteMappings: FieldMappings = {
+  priority: { from: { kind: 'issueField', field: 'priority' }, type: 'number' },
+}
 
 export const fissueAdapterDefaults: VertoConfig = {
   adapter: 'fissue',

@@ -16,5 +16,6 @@ describe('ticketUri', () => {
     expect(ticketUri('javascript:alert(1)')).toBeNull()
     expect(ticketUri('command:workbench.action.quit')).toBeNull()
     expect(ticketUri('not a url')).toBeNull()
+    expect(ticketUri('verto-draft:new:1')).toBeNull()
   })
 })

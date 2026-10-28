@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import type { MissingField, VertoAdapter, VertoGraph } from '@verto/core'
+import type { MissingField, VertoAdapter, VertoChange, VertoGraph, WriteHooks, WriteResult } from '@verto/core'
 import { validateVertoConfig } from '@verto/config'
 import type { VertoConfig } from '@verto/config'
 import { FissueClient } from './client.js'
@@ -7,8 +7,9 @@ import { checkFieldsAgainst } from './fields.js'
 import { requireFissueConfig } from './fissueConfig.js'
 import { mapTicketsToGraph } from './mapper.js'
 import type { FissueApiV1 } from './system_types.js'
+import { checkChange, writeChanges } from './writer.js'
 
-/** Read-only fissue adapter (DESIGN.md §4.6.10). Create one per load: it reads the project once. */
+/** fissue adapter (DESIGN.md §4.6.10). Create one per load: it reads the project once. */
 export class FissueAdapter implements VertoAdapter<VertoConfig> {
   private readonly client: FissueClient
 
@@ -46,5 +47,17 @@ export class FissueAdapter implements VertoAdapter<VertoConfig> {
     validateVertoConfig(config)
     const { state } = await this.client.state(config)
     return mapTicketsToGraph(state, config)
+  }
+
+  /** Checked against the project as this instance read it. */
+  async checkChange(config: VertoConfig, change: VertoChange, draft: VertoChange[] = []): Promise<string | null> {
+    const { state } = await this.client.state(config)
+    return checkChange(requireFissueConfig(config).fieldMappings ?? {}, state, change, draft)
+  }
+
+  /** Writes against the project as this instance read it (the host reloads with a fresh adapter first). */
+  async writeBack(config: VertoConfig, changes: VertoChange[], hooks: WriteHooks): Promise<WriteResult> {
+    const { root, state } = await this.client.state(config)
+    return writeChanges(this.client.api, root, requireFissueConfig(config).fieldMappings ?? {}, state, changes, hooks)
   }
 }

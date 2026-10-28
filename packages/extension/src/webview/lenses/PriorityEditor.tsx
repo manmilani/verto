@@ -8,36 +8,33 @@ import {
   formatPriorityOptionLabel,
 } from '@verto/config/priority-hints'
 import {
-  Stack, Row, Text, BorderedBox,
+  Stack, Row, Text, BorderedBox, Pill,
 } from '../components/ui.js'
+import { isLevelDisabled, pendingSet, useEditing } from '../editing.js'
 
 interface Props {
   bundle: DeliveryMapBundle
-  priorityOverlayActive: boolean
-  journeyPriorityOverlay: Record<string, number>
-  priorityOptionHints: PriorityOptionHints
-  onSetPriority: (sliceId: string, priority: number | null) => void
 }
 
-function compareSlicePriority(
-  a: VertoNode,
-  b: VertoNode,
-  overlay: Record<string, number>,
-): number {
-  const pa = overlay[a.id] ?? Infinity
-  const pb = overlay[b.id] ?? Infinity
+/** Journeys with a drafted priority first (by it), then by priority, then title. */
+function compareSlicePriority(a: VertoNode, b: VertoNode, pending: Set<string>): number {
+  const pa = pending.has(a.id) ? 0 : 1
+  const pb = pending.has(b.id) ? 0 : 1
   if (pa !== pb) return pa - pb
   if (a.priority !== b.priority) return a.priority - b.priority
   return a.title.localeCompare(b.title)
 }
 
-export function PriorityEditor({
-  bundle, priorityOverlayActive, journeyPriorityOverlay, priorityOptionHints, onSetPriority,
-}: Props) {
+export function PriorityEditor({ bundle }: Props) {
+  const { draft, edit, discard } = useEditing()
+  const pending = useMemo(
+    () => new Set(draft.entries.flatMap(e => (e.change.type === 'set' && e.change.key === 'priority' ? [e.change.nodeId] : []))),
+    [draft],
+  )
   const slices = useMemo(
     () => [...bundle.graph.nodes.filter(n => n.isDeliverySlice)]
-      .sort((a, b) => compareSlicePriority(a, b, journeyPriorityOverlay)),
-    [bundle, journeyPriorityOverlay],
+      .sort((a, b) => compareSlicePriority(a, b, pending)),
+    [bundle, pending],
   )
 
   if (slices.length === 0) return null
@@ -48,48 +45,49 @@ export function PriorityEditor({
         <Row gap={10} wrap align="flex-start">
           <Stack gap={2} style={{ flex: 1, minWidth: 240 }}>
             <Text weight="bold" style={{ fontSize: 16 }}>
-              Custom journey priorities (market demand)
+              Journey priorities (market demand)
             </Text>
             <Text size="small" tone="tertiary">
-              Rank only the journeys that matter most to customers. Each prioritised journey lifts its entire dependency
-              chain — its deliverables and everything they transitively need — and the list below turns into a build
-              execution order that delivers those journeys fastest. Unlisted journeys stay at the same baseline.
+              Rank the journeys that matter most to customers (1–9, lower = more important). Each journey lifts its
+              entire dependency chain — its deliverables and everything they transitively need — and the table below
+              turns into a build execution order that delivers those journeys fastest.
+            </Text>
+            <Text size="small" tone="quaternary">
+              {draft.canWrite
+                ? 'Priorities are written to the tickets (Write back, or right away in immediate mode). — discards a pending change.'
+                : `${draft.adapter} write-back is not supported yet: priorities are kept as a local preview. — discards a pending change.`}
             </Text>
           </Stack>
         </Row>
 
-        {!priorityOverlayActive ? (
-          <Text size="small" tone="quaternary">
-            No custom priorities set — every journey is weighted equally. Select a priority (1–9, lower = more important)
-            for any journey to lift its closure.
-          </Text>
-        ) : (
-          <Text size="small" tone="tertiary">
-            Priorities active — the implementation order table reflects your prioritised journeys.
-          </Text>
-        )}
-
         <Stack gap={6}>
-          {slices.map(s => (
-            <Row
-              key={s.id}
-              gap={10}
-              align="center"
-              style={{
-                padding: '6px 10px',
-                border: '1px solid var(--vscode-panel-border)',
-                borderRadius: 8,
-              }}
-            >
-              <PrioritySelect
-                sliceId={s.id}
-                overlayValue={journeyPriorityOverlay[s.id]}
-                priorityOptionHints={priorityOptionHints}
-                onSetPriority={onSetPriority}
-              />
-              <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{s.title}</Text>
-            </Row>
-          ))}
+          {slices.map(s => {
+            const entry = pendingSet(draft, s.id, 'priority')
+            return (
+              <Row
+                key={s.id}
+                gap={10}
+                align="center"
+                style={{
+                  padding: '6px 10px',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: 8,
+                }}
+              >
+                <PrioritySelect
+                  value={s.priority}
+                  pending={Boolean(entry)}
+                  disabled={draft.writing}
+                  onChoose={level => {
+                    if (level !== null) edit({ type: 'set', nodeId: s.id, key: 'priority', value: level })
+                    else if (entry) discard([entry.change])
+                  }}
+                />
+                <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{s.title}</Text>
+                {entry && <Pill size="sm" tone={entry.error ? 'danger' : 'info'} title={entry.error}>pending</Pill>}
+              </Row>
+            )
+          })}
         </Stack>
       </Stack>
     </BorderedBox>
@@ -117,17 +115,23 @@ function PriorityOptionLabel({
   )
 }
 
-function PrioritySelect({
-  sliceId,
-  overlayValue,
-  priorityOptionHints,
-  onSetPriority,
+/**
+ * A priority picker: `value` is the current priority (draft applied), `pending` marks a drafted one.
+ * Choosing "—" (offered while pending) passes null. Levels the tracker can't hold are disabled.
+ */
+export function PrioritySelect({
+  value,
+  pending,
+  disabled,
+  onChoose,
 }: {
-  sliceId: string
-  overlayValue?: number
-  priorityOptionHints: PriorityOptionHints
-  onSetPriority: (sliceId: string, priority: number | null) => void
+  value: number
+  pending: boolean
+  disabled?: boolean
+  onChoose: (level: number | null) => void
 }) {
+  const editing = useEditing()
+  const { priorityOptionHints } = editing
   const [open, setOpen] = useState(false)
   const [hoveredOption, setHoveredOption] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -144,8 +148,8 @@ function PrioritySelect({
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [open])
 
-  function choose(value: number | null) {
-    onSetPriority(sliceId, value)
+  function choose(level: number | null) {
+    onChoose(level)
     setOpen(false)
   }
 
@@ -153,16 +157,17 @@ function PrioritySelect({
     <div ref={rootRef} style={{ position: 'relative', flexShrink: 0, minWidth: 168 }}>
       <button
         type="button"
-        title="Priority 1–9 (lower = more important); — = not prioritised"
-        style={triggerStyle}
+        title="Priority 1–9 (lower = more important)"
+        style={{ ...triggerStyle, ...(pending ? { borderColor: 'var(--vscode-focusBorder)' } : {}), ...(disabled ? { opacity: 0.5, cursor: 'default' } : {}) }}
+        disabled={disabled}
         onClick={() => setOpen(v => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <PriorityOptionLabel
-          level={overlayValue ?? null}
-          priorityOptionHints={priorityOptionHints}
-        />
+        <span>
+          <PriorityOptionLabel level={value} priorityOptionHints={priorityOptionHints} />
+          {pending && <Text as="span" tone="tertiary"> •</Text>}
+        </span>
         <span style={{ marginLeft: 8, opacity: 0.6 }} aria-hidden>▾</span>
       </button>
 
@@ -172,28 +177,33 @@ function PrioritySelect({
           style={menuStyle}
           onMouseLeave={() => setHoveredOption(null)}
         >
-          <button
-            type="button"
-            role="option"
-            aria-selected={overlayValue === undefined}
-            style={optionStyle(overlayValue === undefined, hoveredOption === 'none')}
-            onMouseEnter={() => setHoveredOption('none')}
-            onClick={() => choose(null)}
-          >
-            <Text as="span" tone="quaternary">—</Text>
-          </button>
+          {pending && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={false}
+              title="Discard the pending priority"
+              style={optionStyle(false, hoveredOption === 'none')}
+              onMouseEnter={() => setHoveredOption('none')}
+              onClick={() => choose(null)}
+            >
+              <Text as="span" tone="quaternary">—</Text>
+            </button>
+          )}
           {allPriorityLevels().map(level => {
             const key = String(level)
+            const off = isLevelDisabled(editing, level)
             return (
               <button
                 key={level}
                 type="button"
                 role="option"
-                aria-selected={overlayValue === level}
-                style={optionStyle(overlayValue === level, hoveredOption === key)}
+                aria-selected={value === level}
+                disabled={off}
+                style={{ ...optionStyle(value === level, hoveredOption === key), ...(off ? { opacity: 0.4, cursor: 'default' } : {}) }}
                 onMouseEnter={() => setHoveredOption(key)}
                 onClick={() => choose(level)}
-                title={formatPriorityOptionLabel(level, priorityOptionHints)}
+                title={off ? 'No tracker value reads back as this level' : formatPriorityOptionLabel(level, priorityOptionHints)}
               >
                 <PriorityOptionLabel level={level} priorityOptionHints={priorityOptionHints} />
               </button>

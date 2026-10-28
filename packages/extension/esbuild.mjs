@@ -7,5 +7,7 @@ await esbuild.build({
   target: 'node20',
   format: 'cjs',
   external: ['vscode'],
+  // ESM builds first: UMD builds (e.g. jsonc-parser's `main`) hide their internal requires from esbuild.
+  mainFields: ['module', 'main'],
   sourcemap: true,
 })

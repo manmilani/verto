@@ -953,14 +953,13 @@ compose them uniformly:
 
 ```ts
 // Conceptual — exact signatures live in the adapter package
-// FieldWritePayload: to be defined when write-back is designed (§4.6.5).
 interface FieldAccessor {
   readonly kind: 'system' | 'project';
   getDefinitions(): FieldDefinition[];
   readFromIssue(raw: unknown): Record<string, unknown>;
   toVertoNodeFields(values: Record<string, unknown>): Partial<VertoNode>;
-  fromVertoNode(node: VertoNode): FieldWritePayload[];  // write-back — payload TBD
 }
+// Write-back works per change, not per node: §4.6.11.
 ```
 
 - **System accessors** — backed by typed `system_types` and fixed mapping rules for
@@ -1070,7 +1069,7 @@ and drafts the mapping section.
 |---|---|
 | **`client.ts`** | All I/O with the data source: auth, pagination, rate limits, GraphQL/REST calls. Returns tracker-native shapes (`system_types`). Unrestricted by `FieldAccessor`. |
 | **`mapper.ts`** | Two-way translation between tracker-native data and `VertoNode` / `VertoEdge`, composing system and project `FieldAccessor`s and applying `fieldMappings` (field + value). Applies **required-field fallback policy** (below). May delegate to accessors; split into sub-modules later if it grows. |
-| **`adapter.ts`** | `checkFields(config)` — the load-time field check (§4.6.4). `loadProject(config)` orchestrates: load effective config → `client` read → `mapper` → **`VertoGraph`** (ticket nodes only). Does **not** call `@verto/text-parser` or `buildDeliveryMapBundle()`. Write-back (later): canonical change → `mapper` reverse → `client` mutations. |
+| **`adapter.ts`** | `checkFields(config)` — the load-time field check (§4.6.4). `loadProject(config)` orchestrates: load effective config → `client` read → `mapper` → **`VertoGraph`** (ticket nodes only). Does **not** call `@verto/text-parser` or `buildDeliveryMapBundle()`. Optional write-back: `checkChange(config, change)` and `writeBack(config, changes, hooks)` (§4.6.11). |
 
 **Host load pipeline** (extension `loadPipeline.ts`, `scripts/load-project.mjs`) —
 not inside adapters:
@@ -1080,14 +1079,19 @@ registry: adapter = ADAPTERS[config.adapter].create(env)   // env: workspace fol
 adapter.checkFields?(config) → MissingField[]   // §4.6.4; skip or cancel, config = withoutMappings(config, keys)
 adapter.loadProject(config) → VertoGraph
 adapter.projectTitle?(config) ?? config.adapter   // panel title
-  → runHostPipeline(graph, { parsedEnabled?, priorityOverlay?, fieldMappings? })
+  → runHostPipeline(graph, { parsedEnabled?, changes?, fieldMappings? }) → { bundle, changeStates }
        → materializeParsedRequirements(graph)
        → computeBodyFields(graph)
+       → applyParsedFieldMappings(graph, fieldMappings)
+       → applyChanges(graph, draft)        // §4.6.11; longest valid prefix if the draft breaks validation
        → filterParsedNodes(graph)          // when !parsedEnabled / --no-parsed
        → validateGraph(graph)
-       → applyPriorityOverlay(graph, overlay?)   // Phase 4; slice ids only
        → buildDeliveryMapBundle(graph)
 ```
+
+`loadPipeline.ts` splits this into `loadProjectGraph` (check, skip, load: the kept load)
+and `buildView(load, changes, parsedEnabled)` (pure; rebuilt on every edit);
+`runPipeline` composes them without a draft for the load script.
 
 **Adapter registry** (`packages/extension/src/host/adapterRegistry.ts`, no `vscode`):
 one entry per adapter id, `{ defaults, create(env), setup? }`. `env` gives what an
@@ -1117,9 +1121,6 @@ required but may have no mapped ticket field. The mapper must behave consistentl
 Parsed nodes (`nodeType: 'parsed'`) are created only by `@verto/text-parser`; they
 are not subject to adapter fallback policy.
 
-**`FieldWritePayload`** (used by `FieldAccessor.fromVertoNode`) is **to be defined
-when write-back is designed** — not required for read-only MVP.
-
 **Read path (adapter):**
 
 ```
@@ -1132,10 +1133,10 @@ Tracker → client.ts → tracker-native types → mapper.ts (+ FieldAccessors) 
 VertoGraph → @verto/text-parser (materialize / filter) → validateGraph → buildDeliveryMapBundle → DeliveryMapBundle
 ```
 
-**Write path (future):**
+**Write path (§4.6.11):**
 
 ```
-UI / core change → mapper.ts (reverse) → client.ts mutations → Tracker
+panel edit → VertoChange in the draft → adapter.writeBack (reverse mapping → client writes) → Tracker → reload
 ```
 
 #### 4.6.6 Project audit and config bootstrap
@@ -1306,16 +1307,20 @@ these from the live project schema.
 4. **`parseDescBlock(body)`** — low-level helper: extract the first paragraph of the
    `DESC:BEGIN` / `DESC:END` block (strip HTML comments, split on blank line, take
    first paragraph). Called by `computeBodyFields`; not for direct use in the webview.
-5. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`);
-   `opts.priorityOverlay` (Phase 4, slice ids only): `materializeParsedRequirements`
-   → `computeBodyFields` → `filterParsedNodes` when `parsedEnabled` is `false` →
-   `validateGraph` → `applyPriorityOverlay` when overlay present →
-   `buildDeliveryMapBundle`; returns `DeliveryMapBundle`. Shared by
-   `scripts/load-project.mjs` and extension `loadPipeline.ts`.
+5. **`runHostPipeline(graph, opts?)`** — `opts.parsedEnabled` (default `true`),
+   `opts.changes` (the write-back draft, §4.6.11), `opts.fieldMappings`:
+   `materializeParsedRequirements` → `computeBodyFields` → `applyParsedFieldMappings` →
+   `applyChanges` (after parsed mappings, so a drafted `personas` isn't overwritten by
+   labels) → `filterParsedNodes` when `parsedEnabled` is `false` → `validateGraph` →
+   `buildDeliveryMapBundle`; returns `{ bundle, changeStates }`. If the draft breaks
+   validation, the longest valid prefix is used and the rest are `invalid` (with the
+   validation message); a graph that is invalid without the draft throws. Pure: the
+   input graph is not changed. Shared by `scripts/load-project.mjs` and extension
+   `loadPipeline.ts`.
 
-**Body stripping (Phase 3, `panelManager.ts`):** After `runHostPipeline` returns the
-bundle, `panelManager.ts` removes `ticketFields.body` from every node before sending
-the `'update'` message to the webview. `_note` and `_outcome` are already on the node
+**Body stripping (`panelManager.ts`):** Before sending the `'update'` message,
+`panelManager.ts` sends a copy of each node without `ticketFields.body` (the kept load,
+rebuilt on every edit, keeps its bodies). `_note` and `_outcome` are already on the node
 root; the raw body is not needed by the webview and is stripped to reduce payload size.
 
 **Orchestration** — single owner: **`runHostPipeline`** in `@verto/text-parser`
@@ -1442,7 +1447,7 @@ The authenticated user may configure Verto for another owner's project/repo when
 **Re-audit.** Deferred beyond initial wizard. When added, merge must not blindly
 overwrite user-edited `fieldMappings` entries or `displayStatusGroups`.
 
-**Not configured by setup.** Parsed-requirements toggle, priority overlay, panel lens
+**Not configured by setup.** Parsed-requirements toggle, write-back draft, panel lens
 state — `workspaceState` at runtime.
 
 #### 4.6.10 Second adapter: fissue
@@ -1455,7 +1460,7 @@ single-user. Its full design is in
 integration: §7). The Verto side:
 
 Package `@verto/adapter-fissue` (`packages/adapters/fissue`, same layout as GitHub's,
-§4.6.2). Read-only today; write-back comes later.
+§4.6.2). Reads and writes (write-back below and §4.6.11).
 
 - **Access:** in-process through fissue's API object, passed into the adapter, so the
   adapter package depends on neither `vscode` nor fissue: it declares structurally the
@@ -1508,8 +1513,144 @@ Package `@verto/adapter-fissue` (`packages/adapters/fissue`, same layout as GitH
 - **Status options** for the status universe (§4.6.3) are the options of the `select`
   field that `fieldMappings.status` maps to.
 - **Panel title:** `fissue: <project root folder name>`.
-- **Write-back** (later) goes through the same API; registering the fields Verto needs
-  (e.g. `priority`) in fissue is part of it, since it is a write.
+- **Write-back** (§4.6.11) goes through the same API: `updateTicket(root, id, { set,
+  add, remove })`, `createTicket(root, { title, parent })`, `addField(root, name, def)`;
+  fissue's own `sync` completes inverse links (`blocking`, `subIssues`). Writes use the
+  instance's one `projectState` read (the host's pre-write reload).
+  - **Resolve** (shared by `checkChange` and `writeBack`): a mapped key writes through
+    its mapping (`projectV2` refused); a dot entry (e.g. `labels.persona`) becomes
+    `remove`/`add` on its base list (`dotItemsDiff`; a text base such as `body` is
+    refused); a direct field gets `set` of the reverse-mapped value. Unmapped:
+    `title` → `title`; `isDone` → `state` `CLOSED`/`OPEN`; `personas` → as
+    `labels.persona`; other keys → their **default write mapping**
+    (`fissueWriteMappings`: `priority` ← `issueField priority`, number), else refused.
+    Links → `add`/`remove` on `blockedBy`.
+  - **Writable** = the value reads back through the mapping (§4.6.11) **and** fissue's
+    field takes it (its type by fissue's interpretation rules; `select` options). A
+    missing field is fine (it is registered); a missing **system** field (`title`,
+    `state`, `labels`, `blockedBy`, `parent`, `subIssues`) fails the change.
+  - **Registration:** a missing field gets `kind` = the mapping's (`issue` stays
+    `issue`, else `issueField`); `values` present → `select` with the `values` keys as
+    options; else the entry `type` (`select`/`iteration` → `text`), else the key's
+    canonical type (`priority` number, `isDone` boolean, else text); `isArray` from the
+    entry (a dot base: list of text).
+  - **Order:** resolve all → fail conflicts and changes depending on a refused create →
+    one confirmation (fields to register + mappings to add) → `addField` each → creates
+    in draft order (parents remapped) → one `updateTicket` per ticket.
+    `changed-on-disk` is retried once. A create that throws is counted as created when
+    a fresh `projectState` holds a new ticket (not in the pre-write state, not already
+    claimed) with its title and parent; else it fails, with every change that refers
+    to its temp id.
+  - With `isDone` mapped from `status`, closing writes `status` only (fissue `state`
+    untouched), and reopening needs a `values` entry that reads as `false` (else set`n    `status` instead). A failed title rename after fissue wrote the values isn't retried (the
+    retry finds nothing to change).
+
+#### 4.6.11 Write-back
+
+Edits made in the panel are written to the tracker through the adapter. The shared part
+(change model, draft, preview, host flow) is adapter-neutral; an adapter opts in with
+`checkChange` + `writeBack`. fissue writes (§4.6.10); GitHub doesn't yet, so its edits
+stay a local preview.
+
+**Editable:** `title`, `priority`, `status`, `isDone` (done/reopen), `personas`,
+blocking links (add/remove), new child tickets. Parsed nodes, deletions, bodies and
+`stateReason` are not editable.
+
+**Change model** (`@verto/core` `changes.ts`):
+
+```ts
+type EditableKey = 'title' | 'priority' | 'status' | 'isDone' | 'personas'
+type VertoChange =
+  | { type: 'set'; nodeId; key: EditableKey; value }
+  | { type: 'link'; nodeId; blockerId; add: boolean }      // blockerId blocks nodeId
+  | { type: 'create'; nodeId: 'new:<n>'; parentId; title } // temp id until written
+type ChangeState = 'applied' | 'noop' | 'notLoaded' | 'invalid'
+```
+
+Helpers: `sameTarget`, `upsertChange`, `discardChanges` (dropping a create drops every
+change referring to its temp id, transitively), `nextTempId`, `remapNodeIds`,
+`applyChanges(graph, changes, implied?) → { graph, states }` (`implied`: the other keys a
+`set` moves, rule 3), `parseChange` (webview input).
+`applyChanges` is pure and changes ticket nodes only: `set` (priority clamped 1–9),
+`link` (blocking edge + `prereqIds`; removing keeps the prereq if it is also a child or
+raw requirement; no-op judged on the blocking edge), `create` (a child node with
+priority 5, the parent's `nodeOrigin`, `ticketUrl: 'verto-draft:<tempId>'`, plus the
+parent's `childIds`/`prereqIds` and a `parent-child` edge).
+
+**Rules:**
+
+1. **One draft per project.** The draft is an ordered list of changes in
+   `workspaceState` (`verto.drafts`), keyed by adapter id + the adapter block without
+   `fieldMappings` (merged config). Each entry keeps its own last write error.
+   **Immediate mode** (`verto.writeBack.mode`, default `draft`) is the same draft,
+   written after each accepted edit.
+2. **One change per target** (same type, node and key / blocker; creates by temp id).
+3. **Preview = the loaded graph with the draft applied**, in order. A `set` also moves
+   every other node key mapped from the same tracker field, read back from the value it
+   writes (e.g. `status` = Done flips an `isDone` mapped from `status`); one that reads as
+   null is left as it was.
+4. **No-op changes disappear** from the draft on every view build (e.g. add then remove a
+   link; personas compare as sets; priority 5 on a ticket without one).
+5. **An edit is accepted only if valid now:** every node it refers to is a ticket node
+   of the preview (loaded or new), titles are non-empty, the adapter (if it writes)
+   accepts it (`checkChange`, which includes a conflict with another draft change,
+   rule 11), and the preview still validates (e.g. no cycle). A
+   refused edit leaves the draft as it was and shows why.
+6. **An invalid draft never locks the panel:** the view uses the longest draft prefix
+   that validates; the rest are marked `invalid` and can be discarded. Nothing is
+   written while an entry is invalid, and every write first reloads the tracker and
+   rebuilds the preview, aborting if it no longer validates.
+7. **Changes for nodes not loaded are kept** (`notLoaded`), not applied.
+8. **Reverse mapping mirrors the read path.** A value is writable if it **reads back**
+   as itself (`readBack` = the mapping tail, then priority's clamp) and the tracker
+   field accepts it. With `values`, the first tracker value that reads back is written
+   (`reverseMappedValue`); none → refused. An unmapped key writes its system field, or
+   its adapter's default write mapping.
+9. **A write through a default mapping adds it to the workspace config**
+   (`insertFieldMappings`, a formatting-preserving `jsonc-parser` edit; on failure the
+   error names the entry to add by hand), so the next load reads what was written. One
+   modal asks for it together with any field registration; a decline fails those changes
+   and is remembered until the next Write back click.
+10. **Writing:** the whole draft is sent; every change not reported failed was written
+    and leaves the draft; failed ones stay with their error, which is shown only when it
+    differs from the stored one. Written creates' temp ids are remapped in what remains.
+11. **Conflict policy: last write wins** per change, no merging with tracker-side edits.
+    A tracker concurrency error fails just that change (kept for retry). Changes on one
+    ticket merge into one update unless they **conflict** — two `set`s of one field
+    with different values, an item one adds and another removes, or a `set` with an
+    `add`/`remove` of the same field (a dot entry counts as a `set` of its dot path) —
+    then both fail ("conflicting changes to <field>").
+12. **Discarding a create discards the changes that refer to its temp id.**
+
+**Adapter contract** (§4.6.5): `checkChange?(config, change, draft) → string | null`
+(edit-time, conflicts with `draft` included, no writes; a missing tracker field is not a reason) and `writeBack?(config, changes,
+hooks) → { failed, createdIds, addMappings }`, with `hooks.confirm({ register,
+addMappings })` for the one setup prompt. Both get the full config (before any
+load-time skip).
+
+**Config helpers** (`@verto/config` `mapping.ts`): `readBack`, `reverseMappedValue`,
+`dotItemsDiff` (the reverse of the labels path of `applyParsedFieldMappings`: removes
+other `sub:` items and bare `sub`, adds the missing ones — written as `remove` + `add`, so
+other labels survive), `statusOptionsFor` (tracker options read through the status
+mapping: the values the panel offers), `writableLevels` (priority levels some tracker
+value reads back as; `null` = all).
+
+**Host flow** (`panelManager.ts`, `draftSession.ts`, `draftStore.ts`):
+`loadProjectGraph` keeps the last load (adapter included) and `buildView(load, changes)`
+rebuilds the view from it, so edits don't reload the tracker; `body` is stripped from
+the **sent** bundle by copy. Edits, discards and writes run one at a time; while a
+write runs, edit controls are disabled and an edit that still arrives is refused with a
+warning. **Write back** → reload (missing mappings skipped without a prompt) → rebuild
+with the draft (invalid → abort) → `adapter.writeBack` → add mappings → keep the failed
+changes → reload. The old Phase 4 priority overlay (`verto.priorityOverlay`) is moved
+once into the first loaded project's draft (ids in that graph only).
+
+**Webview:** a toolbar **draft bar** (N pending, list with state/error and discard ×,
+**Write back** — disabled with the reason when the adapter can't write or the draft is
+invalid — and **Discard all**); a **node editor** in the NCN focused-node detail
+(title, status — a select of `statusOptions` — done, priority, personas, blockers ×/+,
+new child; an "edited" pill on nodes with pending changes); the journey priority editor
+shows each slice's priority with the draft applied and a pending marker ("—" discards).
 
 ### 4.7 State: tickets vs. workspace
 
@@ -1525,8 +1666,8 @@ Package `@verto/adapter-fissue` (`packages/adapters/fissue`, same layout as GitH
   such as `isDeliverySlice` and `isDone`); optional runtime ID caches. Rule of thumb:
   *if it's "how this workspace is wired to its tracker," it's workspace config.*
 - **In workspace/global editor state (transient UI):** refresh interval, selected
-  vertical, current lens, graph pan/zoom, **custom journey priority overlay** (Phase 4,
-  `workspaceState` until Phase 5 write-back), NCN highlight/focus and table-view
+  vertical, current lens, graph pan/zoom, **the write-back draft** (pending edits not yet
+  written, per project, §4.6.11), NCN highlight/focus and table-view
   preference — not committed to `verto.config.jsonc` unless we later decide otherwise.
 - **Secrets** (GitHub PAT, etc.): editor or environment settings — **never** in
   `verto.config.jsonc`.
@@ -1550,15 +1691,18 @@ Package `@verto/adapter-fissue` (`packages/adapters/fissue`, same layout as GitH
   authentication provider** for the GitHub adapter.
 - **Host responsibilities:** all I/O (adapter calls, GitHub GraphQL, file reads),
   auth, secrets, **host load pipeline** (`adapter.checkFields` → `adapter.loadProject` → `@verto/text-parser`
-  → filter → validate → optional **priority overlay** (Phase 4) →
-  `buildDeliveryMapBundle` — §4.6.5, §4.6.8), **Enable Parsed
-  Requirements** toggle persistence, and UI state. Adapters do **not** materialize
-  parsed nodes or build bundles.
+  → draft changes → filter → validate →
+  `buildDeliveryMapBundle` — §4.6.5, §4.6.8), the write-back draft and writes
+  (§4.6.11), **Enable Parsed Requirements** toggle persistence, and UI state. Adapters
+  do **not** materialize parsed nodes or build bundles.
+- **Settings:** `verto.writeBack.mode` — `draft` (default: edits collect until
+  **Write back**) or `immediate` (each accepted edit is written right away).
 - **Webview responsibilities:** a view of the `DeliveryMapBundle`, config payload,
-  and host-derived metadata (`projectName`, `priorityOptionHints`, overlay state).
+  and host-derived metadata (`projectName`, `priorityOptionHints`, `statusOptions`,
+  `writableLevels`, the draft).
   **Delivery Map** and **NCN graph** lenses with shared chrome
   (`components/ui.tsx`: pills, stats, data tables, status dots/legend). **Phase 4:**
-  slice priority editor (dropdown), implementation-order / leverage table toggle,
+  journey priority editor (dropdown), implementation-order / leverage table toggle,
   NCN pan/zoom/focus, status-group colouring on all nodes via `displayStatusGroup.ts`
   + `theme.ts`. Panel state uses a thin hook over `postMessage` + host persistence.
   Theme via VS Code CSS variables.
@@ -1575,7 +1719,7 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
-| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `showOthersColumn: boolean`; `displayStatusGroupTooltips: Record<string, string>`; `parsedEnabled: boolean`; `priorityOverlayActive: boolean`; `projectName: string`; `journeyPriorityOverlay: Record<string, number>`; `priorityOptionHints: PriorityOptionHints`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, or priority overlay change |
+| `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `showOthersColumn: boolean`; `displayStatusGroupTooltips: Record<string, string>`; `parsedEnabled: boolean`; `projectName: string`; `priorityOptionHints: PriorityOptionHints`; `statusOptions: string[]`; `writableLevels: number[] \| null`; `draft: { entries: { change, state, error?, label }[]; canWrite; mode; writing; adapter }`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, draft change, write, or mode change |
 
 *Webview → host:*
 
@@ -1583,7 +1727,9 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 |---|---|---|
 | `'ready'` | — | Webview mounted; host holds the first `'update'` until this arrives |
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
-| `'setPriority'` | `sliceId: string; priority: number \| null` (`null` clears the override) | User edits priority on a delivery slice; host updates overlay + rebuilds bundle |
+| `'edit'` | `change: VertoChange` (a create's `nodeId` is ignored; the host assigns the temp id) | User edits a ticket; host checks it (§4.6.11 rule 5), adds it to the draft, rebuilds; immediate mode writes |
+| `'discard'` | `changes?: VertoChange[]` (none = all) | User discards pending changes |
+| `'writeBack'` | — | User clicks **Write back** |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN highlight/focus, or table-view toggle (debounced) |
 | `'openTicket'` | `url: string` (a node's `ticketUrl`) | User clicks a ticket title link. The host opens `ticketUri(url)` with `vscode.open`: only `http`/`https` (browser) and `file:` (editor, fragment dropped — e.g. a parsed node's `#raw-req-n`); anything else is ignored and logged |
 
@@ -1624,8 +1770,7 @@ not a separate user-editable project file in the ticket-first workflow.
 ### 4.10 Future extensibility
 
 - Additional **adapters** (Jira, others) behind the same interface.
-- **Write-back** from the UI to the tracker (set status, add/remove blocking
-  links, create child tickets when decomposing scope).
+- **Write-back for more adapters** (GitHub next; the shared part is in §4.6.11).
 - Additional **lenses** (e.g. timeline, risk heatmap, sprint/board views) over
   the same core.
 - **Multi-project** support via workspace config.
@@ -1666,8 +1811,6 @@ the body sections cited — this list is the index.
 
 ### 5.3 Adapters & data
 
-- **Write-back conflict policy.** Concurrency/merge rules when the UI and the
-  tracker disagree.
 - **GitHub operational details.** ID cache: in-memory only for Phase 2 (workspace-
   persisted deferred to Phase 5). Rate-limit: exponential backoff (100 ms × 2ⁿ, max 3
   retries). Pagination: cursor-based, fetch all pages (top-level + nested connections).
@@ -1678,7 +1821,7 @@ the body sections cited — this list is the index.
   a specific error when `github` is missing for the GitHub adapter.
 - **GitHub issue fields in setup and write-back.** The audit and setup wizard
   (§4.6.6, §4.6.9) do not yet discover org issue fields or seed `issueField` mappings;
-  writing issue-field values back belongs to Phase 5 design. The field check covers
+  GitHub write-back (issue fields included) is not designed yet. The field check covers
   only the configured owner's org, so issue fields of issues from other orgs (e.g. in a
   user-owned project) are not yet readable.
 - **Status options beyond ProjectV2.** The status universe (§4.6.3) takes ticket
@@ -1722,5 +1865,5 @@ Summary of phases:
 | 3 | VS Code extension — read-only panel |
 | 4 | Full UI fidelity |
 | 4.5 | Setup wizard & config bootstrap |
-| 5 | Write-back |
-| 6 | fissue adapter |
+| 5 | Write-back (shared framework; GitHub write-back remaining) |
+| 6 | fissue adapter (read + write) |

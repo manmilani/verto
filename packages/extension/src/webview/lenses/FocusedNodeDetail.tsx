@@ -8,6 +8,8 @@ import { vscode } from '../vscodeApi.js'
 import {
   Stack, Row, Text, Pill, BorderedBox,
 } from '../components/ui.js'
+import { entriesFor, useEditing } from '../editing.js'
+import { NodeEditor } from './NodeEditor.js'
 
 interface Props {
   node: VertoNode
@@ -18,6 +20,8 @@ interface Props {
 
 export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNode }: Props) {
   const { graph } = bundle
+  const { draft } = useEditing()
+  const edits = entriesFor(draft, node.id)
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
   const groupIdx = resolveDisplayStatusGroupIndex(node, displayStatusGroups)
   const barColor = statusGroupColor(groupIdx)
@@ -73,6 +77,11 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
           <Pill size="sm" tone={isReady ? 'success' : 'neutral'}>
             {isReady ? 'Ready to start' : node.isDone ? 'Done' : 'Blocked'}
           </Pill>
+          {edits.length > 0 && (
+            <Pill size="sm" tone={edits.some(e => e.error) ? 'danger' : 'info'} title={edits.map(e => e.label).join('\n')}>
+              edited
+            </Pill>
+          )}
           <button
             type="button"
             onClick={() => onFocusNode(undefined)}
@@ -136,6 +145,8 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
             ))}
           </Row>
         )}
+
+        {node.nodeType === 'ticket' && <NodeEditor node={node} bundle={bundle} />}
       </Stack>
     </BorderedBox>
   )

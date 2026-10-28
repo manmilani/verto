@@ -1,14 +1,18 @@
 import * as vscode from 'vscode'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage } from '../shared/protocol.js'
-import { loadConfig } from './configLoader.js'
+import type { VertoChange, WriteConfirmation } from '@verto/core'
+import { discardChanges, parseChange, TEMP_ID_PREFIX } from '@verto/core'
+import { insertFieldMappings } from '@verto/config'
+import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage, WriteBackMode } from '../shared/protocol.js'
+import { getWorkspaceConfigPath, loadConfig } from './configLoader.js'
 import { isSetupRequiredConfigError, shouldAutoStartSetupForConfigError } from './configErrors.js'
 import { getGitHubToken } from './authProvider.js'
-import { describeMissingField, runPipeline } from './loadPipeline.js'
+import { describeMissingField, loadProjectGraph, type LoadedProject, type ProjectView } from './loadPipeline.js'
 import type { AdapterEnv } from './adapterRegistry.js'
 import { getFissueApi } from './fissueApi.js'
-import { loadOverlay, saveOverlay } from './priorityOverlay.js'
+import { changeLabel, DraftStore, projectKey } from './draftStore.js'
+import { acceptEdit, afterWrite, canWrite, invalidReason, viewWithDraft } from './draftSession.js'
 import { runSetup } from './setupWizard.js'
 import { SkipPrompt } from './skipPrompt.js'
 import { ticketUri } from './ticketUri.js'
@@ -27,6 +31,16 @@ function hostEnv(workspaceFolder: string, warn: (message: string) => void): Adap
 }
 
 const SKIP_AND_LOAD = 'Skip and load'
+const SET_UP_AND_WRITE = 'Set up and write'
+const WRITING = 'Verto: a write is in progress; try again.'
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function writeBackMode(): WriteBackMode {
+  return vscode.workspace.getConfiguration('verto').get<string>('writeBack.mode') === 'immediate' ? 'immediate' : 'draft'
+}
 
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
@@ -36,7 +50,16 @@ export class PanelManager {
   private panel: vscode.WebviewPanel | undefined
   private ready = false
   private fetchSeq = 0
-  private overlay: Record<string, number | null> = {}
+  private readonly drafts: DraftStore
+  /** The last load; edits rebuild the view from it without reloading the tracker. */
+  private current: { loaded: LoadedProject; key: string } | undefined
+  private lastView: ProjectView | undefined
+  private writing = false
+  /** Edits, discards and writes run one at a time. */
+  private queue: Promise<void> = Promise.resolve()
+  private writeQueued = false
+  /** Write confirmations declined (by request) since the last Write back click. */
+  private readonly declinedWrites = new Set<string>()
   private setupInProgress = false
   private shouldAutoStartSetup = false
   private watcherDebounce: ReturnType<typeof setTimeout> | undefined
@@ -57,7 +80,10 @@ export class PanelManager {
   }
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.overlay = loadOverlay(context)
+    this.drafts = new DraftStore(context.workspaceState)
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('verto.writeBack.mode')) void this.render()
+    }))
 
     const watcher = vscode.workspace.createFileSystemWatcher('**/.vscode/verto.config.jsonc')
     const scheduleRefresh = () => {
@@ -154,17 +180,23 @@ export class PanelManager {
       case 'persistState':
         await this.context.workspaceState.update(STATE_KEY_PANEL, msg.state)
         break
-      case 'setPriority': {
-        if (msg.priority === null) {
-          delete this.overlay[msg.sliceId]
-        } else {
-          const clamped = Math.max(1, Math.min(9, Math.round(msg.priority)))
-          this.overlay[msg.sliceId] = clamped
+      case 'edit':
+      case 'discard':
+        if (this.writing) {
+          await this.refuse(WRITING)
+          break
         }
-        await saveOverlay(this.context, this.overlay)
-        await this.fetch()
+        await this.serial(() => (msg.type === 'edit' ? this.edit(msg.change) : this.discard(msg.changes)))
         break
-      }
+      case 'writeBack':
+        if (this.writing || this.writeQueued) break
+        this.writeQueued = true
+        this.declinedWrites.clear()
+        await this.serial(async () => {
+          this.writeQueued = false
+          await this.writeBack()
+        })
+        break
       case 'retry':
         await this.fetch()
         break
@@ -215,16 +247,11 @@ export class PanelManager {
 
     if (seq !== this.fetchSeq) return
 
-    const parsedEnabled: boolean =
-      this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
-
     try {
       const configKey = JSON.stringify(loaded.config)
-      const result = await runPipeline(
+      const project = await loadProjectGraph(
         loaded.config,
         hostEnv(loaded.workspaceFolder, this.warnOnce),
-        parsedEnabled,
-        this.overlay,
         missing => this.skipPrompt.confirm(
           configKey,
           missing.map(describeMissingField).join('\n'),
@@ -232,38 +259,191 @@ export class PanelManager {
         ),
       )
       if (seq !== this.fetchSeq) return
-      if (!result) {
+      if (!project) {
         this.send({ type: 'error', message: 'Verto: load cancelled. Fix or remove the listed fieldMappings, then Retry.' })
         return
       }
-      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints } = result
-      for (const node of bundle.graph.nodes) {
-        if (node.ticketFields) delete node.ticketFields['body']
-      }
-      const restoredState = this.context.workspaceState.get<PersistedPanelState>(STATE_KEY_PANEL)
-      const priorityOverlayActive = Object.values(this.overlay).some(v => v !== null)
-      const journeyPriorityOverlay = Object.fromEntries(
-        Object.entries(this.overlay).filter((entry): entry is [string, number] => entry[1] !== null),
-      )
-      this.send({
-        type: 'update',
-        bundle,
-        displayStatusGroups,
-        showOthersColumn,
-        displayStatusGroupTooltips,
-        parsedEnabled,
-        priorityOverlayActive,
-        projectName,
-        journeyPriorityOverlay,
-        priorityOptionHints,
-        restoredState,
-      })
+      const key = projectKey(project.fullConfig)
+      await this.drafts.migrateOverlay(key, new Set(project.graph.nodes.map(n => n.id)))
+      this.current = { loaded: project, key }
     } catch (err) {
       if (seq !== this.fetchSeq) return
-      const msg = err instanceof Error ? err.message : String(err)
-      vscode.window.showErrorMessage(msg.startsWith('Verto:') ? msg : `Verto: ${msg}`)
-      this.send({ type: 'error', message: msg })
+      this.showLoadError(err)
+      return
     }
+    await this.render()
+  }
+
+  private showLoadError(err: unknown) {
+    const msg = messageOf(err)
+    vscode.window.showErrorMessage(msg.startsWith('Verto:') ? msg : `Verto: ${msg}`)
+    this.send({ type: 'error', message: msg })
+  }
+
+  private parsedEnabled(): boolean {
+    return this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
+  }
+
+  /** Build the view from the last load with the draft applied, and send it. */
+  private async render() {
+    const cur = this.current
+    if (!cur) return
+    const parsedEnabled = this.parsedEnabled()
+    let built
+    try {
+      built = viewWithDraft(cur.loaded, this.drafts.load(cur.key), parsedEnabled)
+    } catch (err) {
+      this.showLoadError(err)
+      return
+    }
+    if (built.pruned) await this.drafts.save(cur.key, built.entries)
+    if (this.current !== cur) return
+    const { view, entries } = built
+    this.lastView = view
+    const { bundle } = view
+    const nodes = bundle.graph.nodes.map(n => {
+      if (!n.ticketFields || !('body' in n.ticketFields)) return n
+      const { body: _, ...ticketFields } = n.ticketFields
+      return { ...n, ticketFields }
+    })
+    this.send({
+      type: 'update',
+      bundle: { ...bundle, graph: { ...bundle.graph, nodes } },
+      displayStatusGroups: view.displayStatusGroups,
+      showOthersColumn: view.showOthersColumn,
+      displayStatusGroupTooltips: view.displayStatusGroupTooltips,
+      parsedEnabled,
+      projectName: view.projectName,
+      priorityOptionHints: view.priorityOptionHints,
+      statusOptions: view.statusOptions,
+      writableLevels: view.writableLevels,
+      draft: {
+        entries: entries.map((e, i) => {
+          const s = view.changeStates[i]!
+          const error = s.error ?? e.error
+          return { change: e.change, state: s.state, label: changeLabel(e.change), ...(error ? { error } : {}) }
+        }),
+        canWrite: canWrite(cur.loaded),
+        mode: writeBackMode(),
+        writing: this.writing,
+        adapter: cur.loaded.fullConfig.adapter,
+      },
+      restoredState: this.context.workspaceState.get<PersistedPanelState>(STATE_KEY_PANEL),
+    })
+  }
+
+  private serial(fn: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(fn, fn)
+    this.queue = run.catch(() => undefined)
+    return run
+  }
+
+  private async edit(input: VertoChange) {
+    const cur = this.current
+    if (!cur) return
+    const change = parseChange(input?.type === 'create' ? { ...input, nodeId: TEMP_ID_PREFIX } : input)
+    if (!change) return this.refuse('Verto: that edit is not well-formed.')
+    const r = await acceptEdit(cur.loaded, this.drafts.load(cur.key), change, this.parsedEnabled())
+    if (this.current !== cur) return this.refuse('Verto: the project reloaded; edit not applied, try again.')
+    if (!r.ok) return this.refuse(`Verto: edit not applied: ${r.error}`)
+    await this.drafts.save(cur.key, r.entries)
+    await this.render()
+    if (writeBackMode() === 'immediate' && canWrite(cur.loaded)) await this.writeBack()
+  }
+
+  /** Warn, and re-send the view so the webview drops the refused edit from its inputs. */
+  private async refuse(message: string) {
+    void vscode.window.showWarningMessage(message)
+    await this.render()
+  }
+
+  private async discard(input?: VertoChange[]) {
+    const cur = this.current
+    if (!cur) return
+    const entries = this.drafts.load(cur.key)
+    const drop = input?.map(parseChange).filter((c): c is VertoChange => c !== null)
+    const kept = discardChanges(entries.map(e => e.change), drop)
+    await this.drafts.save(cur.key, entries.filter(e => kept.includes(e.change)))
+    await this.render()
+  }
+
+  /**
+   * Write the whole draft (DESIGN.md §4.6.11): reload the tracker, rebuild the preview, abort if it
+   * doesn't validate, write with the full config, add default mappings, keep the failed changes.
+   */
+  private async writeBack() {
+    const cur = this.current
+    if (!cur || this.writing || !canWrite(cur.loaded)) return
+    const blocked = this.lastView && invalidReason(this.lastView)
+    if (blocked) {
+      void vscode.window.showWarningMessage(`Verto: not written: ${blocked}`)
+      return
+    }
+    if (this.drafts.load(cur.key).length === 0) return
+    this.writing = true
+    await this.render()
+    try {
+      await this.writeFresh()
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Verto: write failed: ${messageOf(err)}`)
+    } finally {
+      this.writing = false
+    }
+    await this.fetch()
+  }
+
+  /** The write itself, after a fresh reload (the draft's preview must still validate). */
+  private async writeFresh() {
+    const { config, workspaceFolder } = await loadConfig()
+    const fresh = await loadProjectGraph(config, hostEnv(workspaceFolder, this.warnOnce))
+    if (!fresh?.adapter.writeBack) return
+    const key = projectKey(fresh.fullConfig)
+    this.current = { loaded: fresh, key }
+    const { view, entries } = viewWithDraft(fresh, this.drafts.load(key), this.parsedEnabled())
+    await this.drafts.save(key, entries)
+    const reason = invalidReason(view)
+    if (reason) {
+      void vscode.window.showWarningMessage(`Verto: not written: ${reason}`)
+      return
+    }
+    if (entries.length === 0) return
+    const result = await fresh.adapter.writeBack(fresh.fullConfig, entries.map(e => e.change), {
+      confirm: request => this.confirmWrite(fresh.fullConfig.adapter, request),
+    })
+    const added = Object.keys(result.addMappings)
+    if (added.length > 0) {
+      try {
+        await insertFieldMappings(getWorkspaceConfigPath(), fresh.fullConfig.adapter, result.addMappings)
+      } catch (err) {
+        void vscode.window.showErrorMessage(
+          `Verto: couldn't add fieldMappings ${added.join(', ')} to verto.config.jsonc (${messageOf(err)}); add by hand: ${JSON.stringify(result.addMappings)}`,
+        )
+      }
+    }
+    const after = afterWrite(entries, result)
+    await this.drafts.save(key, after.entries)
+    if (after.shown.length > 0) {
+      void vscode.window.showErrorMessage(
+        `Verto: ${after.shown.length} change(s) not written: ${after.shown.map(e => `${changeLabel(e.change)}: ${e.error}`).join('; ')}`,
+      )
+    }
+  }
+
+  /** One modal for field registration + config mappings; a decline is remembered until the next Write back click. */
+  private async confirmWrite(adapter: string, request: WriteConfirmation): Promise<boolean> {
+    const id = JSON.stringify(request)
+    if (this.declinedWrites.has(id)) return false
+    const detail = [
+      ...request.register.map(l => `Register ${adapter} field ${l}`),
+      ...request.addMappings.map(l => `Add fieldMappings.${l} to verto.config.jsonc`),
+    ].join('\n')
+    const ok = (await vscode.window.showWarningMessage(
+      'Verto: writing needs these setup changes.',
+      { modal: true, detail },
+      SET_UP_AND_WRITE,
+    )) === SET_UP_AND_WRITE
+    if (!ok) this.declinedWrites.add(id)
+    return ok
   }
 
   private send(msg: HostToWebviewMessage) {

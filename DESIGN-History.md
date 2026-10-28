@@ -223,6 +223,16 @@ current design is in §4.6.4 and §4.6.7.*
   source type (§4.6.3).
 - **`DisplayStatusGroup` presentation fields.** `tone`, `chartColor` and `weight` were
   dropped; colouring is by group index (§4.6.3).
+- **Priority overlay (Phase 4) → write-back draft (Phase 5).** The panel kept custom
+  journey priorities in `workspaceState` (`verto.priorityOverlay`, delivery-slice ids
+  only), applied by `applyPriorityOverlay` **after** validation, with a `setPriority`
+  message and `priorityOverlayActive` / `journeyPriorityOverlay` in `'update'`. Retired
+  for the general draft (DESIGN §4.6.11): priority edits apply to any ticket, before
+  validation, and are written to the tracker when the adapter can write; the old
+  overlay is moved once into the first loaded project's draft.
+- **`FieldAccessor.fromVertoNode` / `FieldWritePayload`.** A per-node reverse mapping
+  was reserved for write-back; it was never defined. Write-back works per change
+  (`VertoChange`) through each adapter's `writeBack` (§4.6.11).
 
 ---
 
@@ -337,6 +347,10 @@ current design is in §4.6.4 and §4.6.7.*
   informational); `isDeliverySlice` from `subIssues` instead of "no `parent`"; Verto
   registers the fields it needs in fissue as part of write-back, not on load — see
   §4.6.10.
+- **Write-back conflict policy.** Closed (Phase 5) — last write wins per change, no
+  merging with tracker-side edits; a tracker concurrency error fails just that change
+  (kept for retry); conflicting changes to one ticket field both fail (DESIGN §4.6.11
+  rule 11).
 - **`resolveProjectTitle`.** Retired (Phase 6) — the host's adapter switch for the
   panel title became the optional adapter method `projectTitle` (§4.6.5).
 

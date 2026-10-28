@@ -18,6 +18,12 @@ export {
   adapterFieldMappings,
   withoutMappings,
   applyMappingTail,
+  clampPriority,
+  readBack,
+  reverseMappedValue,
+  dotItemsDiff,
+  statusOptionsFor,
+  writableLevels,
   type AdapterBlock,
 } from './mapping.js'
 export { parseVertoConfig, readVertoConfigFile } from './parse.js'
@@ -27,6 +33,7 @@ export {
   readVertoConfigRawFile,
   applyConfigPatch,
   isWorkspaceSetupComplete,
+  insertFieldMappings,
 } from './write.js'
 export { stringifyVertoConfig, extractLeadingComments } from './format.js'
 export {

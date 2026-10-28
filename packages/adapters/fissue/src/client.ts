@@ -8,7 +8,7 @@ export class FissueClient {
   private memo: { root: string; state: Promise<FissueProjectState> } | undefined
 
   constructor(
-    private readonly api: FissueApiV1,
+    readonly api: FissueApiV1,
     private readonly workspaceFolder: string,
   ) {
     if (api.apiVersion !== FISSUE_API_VERSION) {

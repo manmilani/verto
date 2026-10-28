@@ -2,15 +2,10 @@ import { pathToFileURL } from 'node:url'
 import type { VertoEdge, VertoGraph, VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
 import type { FieldMappings, VertoConfig } from '@verto/config'
-import { applyMappingTail } from '@verto/config'
+import { applyMappingTail, clampPriority } from '@verto/config'
 import type { FissueProjectState, FissueStateTicket } from './system_types.js'
 import { interpret } from './values.js'
 import { requireFissueConfig } from './fissueConfig.js'
-
-function clampPriority(raw: unknown): number | null {
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
-  return Math.min(9, Math.max(1, Math.round(raw)))
-}
 
 function strings(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((s): s is string => typeof s === 'string')

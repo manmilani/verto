@@ -53,11 +53,11 @@ describe('runPipeline', () => {
     const config = { adapter: 'fake' } as VertoConfig
 
     const confirm = vi.fn(async () => false)
-    expect(await runPipeline(config, env, true, undefined, confirm)).toBeNull()
+    expect(await runPipeline(config, env, true, confirm)).toBeNull()
     expect(confirm).toHaveBeenCalledWith(missing)
     expect(loadProject).not.toHaveBeenCalled()
 
-    expect((await runPipeline(config, env, true, undefined, async () => true))?.skipped).toEqual(missing)
+    expect((await runPipeline(config, env, true, async () => true))?.skipped).toEqual(missing)
     expect(loadProject).toHaveBeenCalledOnce()
   })
 
@@ -67,7 +67,7 @@ describe('runPipeline', () => {
       create: async () => ({ checkFields: async () => [], loadProject: async () => ({ nodes: [node], edges: [] }) }),
     }
     const confirm = vi.fn(async () => false)
-    expect(await runPipeline({ adapter: 'fake' } as VertoConfig, env, true, undefined, confirm)).not.toBeNull()
+    expect(await runPipeline({ adapter: 'fake' } as VertoConfig, env, true, confirm)).not.toBeNull()
     expect(confirm).not.toHaveBeenCalled()
   })
 

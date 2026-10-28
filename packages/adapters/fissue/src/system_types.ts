@@ -41,10 +41,22 @@ export interface FissueProjectState {
   warnings: FissueWarning[]
 }
 
+/** A value as fissue's write operations take it. */
+export type FissueInput = string | number | boolean | null | (string | number | boolean)[]
+
+export interface FissueUpdateInput {
+  set?: Record<string, FissueInput>
+  add?: Record<string, FissueInput>
+  remove?: Record<string, FissueInput>
+}
+
 export interface FissueApiV1 {
   apiVersion: number
   projectState(root: string, opts?: { bodies?: boolean }): Promise<FissueProjectState>
   findProjectRoot(dir: string): Promise<string | null>
+  updateTicket(root: string, ref: string, input: FissueUpdateInput): Promise<{ id: string; changed: boolean }>
+  createTicket(root: string, values: Record<string, FissueInput>): Promise<{ id: string }>
+  addField(root: string, name: string, def: Record<string, unknown>): Promise<{ changed: boolean }>
 }
 
 export const FISSUE_API_VERSION = 1

@@ -9,7 +9,24 @@ export type {
 export { CANONICAL_VERTO_NODE_KEYS } from './types.js'
 
 // Adapter interface
-export type { VertoAdapter, MissingField } from './adapter.js'
+export type { VertoAdapter, MissingField, WriteConfirmation, WriteHooks, WriteResult } from './adapter.js'
+
+// Write-back change model
+export type { EditableKey, VertoChange, ChangeState, ImpliedSets } from './changes.js'
+export {
+  EDITABLE_KEYS,
+  TEMP_ID_PREFIX,
+  DRAFT_URL_SCHEME,
+  isTempId,
+  sameTarget,
+  upsertChange,
+  changeNodeIds,
+  discardChanges,
+  nextTempId,
+  remapNodeIds,
+  applyChanges,
+  parseChange,
+} from './changes.js'
 
 // Algorithms
 export { closureFor } from './algorithms/closure.js'

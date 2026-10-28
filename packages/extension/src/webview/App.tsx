@@ -3,16 +3,18 @@ import { useVertoState } from './hooks/useVertoState.js'
 import { DeliveryMap } from './lenses/DeliveryMap.js'
 import { NcnLens } from './lenses/NcnLens.js'
 import { vscode } from './vscodeApi.js'
+import { EditingContext } from './editing.js'
+import { DraftBar } from './components/DraftBar.js'
 
 export default function App() {
   const {
     status, isRefreshing, bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, parsedEnabled,
     projectName,
     lens, focusedNode, errorMessage, setupRequired,
-    ncnHighlightedSliceId, ncnFocusedNodeId, priorityOverlayActive,
-    journeyPriorityOverlay, priorityOptionHints, ncnTableView,
+    ncnHighlightedSliceId, ncnFocusedNodeId,
+    priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView,
     setLens, setFocusedNode, setParsedEnabled,
-    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
 
   if (status === 'loading' && !bundle) {
@@ -52,6 +54,7 @@ export default function App() {
   if (!bundle) return null
 
   return (
+    <EditingContext.Provider value={{ draft, statusOptions, writableLevels, priorityOptionHints, edit, discard, writeBack }}>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
@@ -70,6 +73,7 @@ export default function App() {
           NCN Graph
         </button>
         <div style={{ flex: 1 }} />
+        <DraftBar />
         {isRefreshing && (
           <span style={{ fontSize: 11, color: 'var(--vscode-descriptionForeground)' }}>
             Refreshing…
@@ -104,20 +108,17 @@ export default function App() {
             showOthersColumn={showOthersColumn}
             displayStatusGroupTooltips={displayStatusGroupTooltips}
             projectName={projectName}
-            priorityOverlayActive={priorityOverlayActive}
-            journeyPriorityOverlay={journeyPriorityOverlay}
-            priorityOptionHints={priorityOptionHints}
             tableView={ncnTableView}
             onTableViewChange={setNcnTableView}
             highlightedSliceId={ncnHighlightedSliceId}
             focusedNcnNodeId={ncnFocusedNodeId}
             onFocusNode={setNcnFocusedNodeId}
             onHighlightSlice={setNcnHighlightedSliceId}
-            onSetPriority={setPriority}
           />
         )}
       </div>
     </div>
+    </EditingContext.Provider>
   )
 }
 

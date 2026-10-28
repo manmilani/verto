@@ -7,6 +7,7 @@ import {
   mergeIntoJsoncFile,
   readVertoConfigRawFile,
   isWorkspaceSetupComplete,
+  insertFieldMappings,
 } from '../write.js'
 import { parseVertoConfig } from '../parse.js'
 import type { VertoConfig } from '../types.js'
@@ -180,6 +181,56 @@ describe('writeVertoConfigFile / mergeIntoJsoncFile', () => {
     expect(text).toContain('"status": {"from":{"kind":"projectV2","field":"Status"},"type":"select"}')
     expect(text).toContain('{"label":"Raw","sources":')
     expect(text).toContain('System-reserved display group "Done"')
+  })
+})
+
+describe('insertFieldMappings', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'verto-config-insert-'))
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  const priority = { from: { kind: 'issueField', field: 'priority' }, type: 'number' }
+
+  it('adds the entry, keeping comments and layout', async () => {
+    const path = join(dir, 'verto.config.jsonc')
+    const initial = `{
+  // my adapter
+  "adapter": "fissue",
+  "fissue": {
+    "root": "sub", // where tickets live
+    "fieldMappings": {
+      "status": { "from": { "kind": "issueField", "field": "status" } }
+    }
+  }
+}
+`
+    await writeFile(path, initial, 'utf8')
+    await insertFieldMappings(path, 'fissue', { priority })
+    const text = await readFile(path, 'utf8')
+    expect(text).toContain('// my adapter')
+    expect(text).toContain('"root": "sub", // where tickets live')
+    expect(text).toContain('"status": { "from": { "kind": "issueField", "field": "status" } },\n      "priority": {')
+    expect(parseVertoConfig(text).fissue?.fieldMappings?.priority).toEqual(priority)
+  })
+
+  it('inserts into a file without the adapter block', async () => {
+    const path = join(dir, 'verto.config.jsonc')
+    await writeFile(path, '{ "adapter": "fissue" }\n', 'utf8')
+    await insertFieldMappings(path, 'fissue', { priority })
+    expect(parseVertoConfig(await readFile(path, 'utf8')).fissue?.fieldMappings?.priority).toEqual(priority)
+  })
+
+  it('refuses to write an invalid result', async () => {
+    const path = join(dir, 'verto.config.jsonc')
+    await writeFile(path, '{ "adapter": "fissue" }\n', 'utf8')
+    await expect(insertFieldMappings(path, 'fissue', { bad: { nope: 1 } })).rejects.toThrow()
+    expect(await readFile(path, 'utf8')).toBe('{ "adapter": "fissue" }\n')
   })
 })
 

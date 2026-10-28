@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { DeliveryMapBundle } from '@verto/core'
+import type { DeliveryMapBundle, VertoChange } from '@verto/core'
 import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 import type {
   HostToWebviewMessage,
@@ -7,6 +7,7 @@ import type {
   Lens,
   NcnTableView,
   PersistedPanelState,
+  DraftView,
 } from '../../shared/protocol.js'
 import { vscode } from '../vscodeApi.js'
 
@@ -29,9 +30,10 @@ interface VertoState {
   showOthersColumn: boolean
   displayStatusGroupTooltips: Record<string, string>
   parsedEnabled: boolean
-  priorityOverlayActive: boolean
-  journeyPriorityOverlay: Record<string, number>
   priorityOptionHints: PriorityOptionHints
+  statusOptions: string[]
+  writableLevels: number[] | null
+  draft: DraftView
   projectName: string
   lens: Lens
   focusedNode?: string
@@ -50,9 +52,10 @@ export function useVertoState() {
     showOthersColumn: false,
     displayStatusGroupTooltips: {},
     parsedEnabled: true,
-    priorityOverlayActive: false,
-    journeyPriorityOverlay: {},
     priorityOptionHints: {},
+    statusOptions: [],
+    writableLevels: null,
+    draft: { entries: [], canWrite: false, mode: 'draft', writing: false, adapter: '' },
     projectName: 'Verto',
     lens: 'deliveryMap',
     ncnTableView: 'leverage',
@@ -127,7 +130,8 @@ export function useVertoState() {
             s.bundle !== undefined
               ? s.ncnTableView
               : (restored?.ncnTableView
-                ?? (msg.priorityOverlayActive ? 'implementationOrder' : 'leverage'))
+                ?? (msg.draft.entries.some(e => e.change.type === 'set' && e.change.key === 'priority')
+                  ? 'implementationOrder' : 'leverage'))
 
           return {
             ...s,
@@ -138,9 +142,10 @@ export function useVertoState() {
             showOthersColumn: msg.showOthersColumn,
             displayStatusGroupTooltips: msg.displayStatusGroupTooltips,
             parsedEnabled: msg.parsedEnabled,
-            priorityOverlayActive: msg.priorityOverlayActive,
-            journeyPriorityOverlay: msg.journeyPriorityOverlay,
             priorityOptionHints: msg.priorityOptionHints,
+            statusOptions: msg.statusOptions,
+            writableLevels: msg.writableLevels,
+            draft: msg.draft,
             projectName: msg.projectName,
             lens,
             focusedNode,
@@ -176,8 +181,16 @@ export function useVertoState() {
     vscode.postMessage({ type: 'setParsedEnabled', enabled } satisfies WebviewToHostMessage)
   }
 
-  const setPriority = (sliceId: string, priority: number | null) => {
-    vscode.postMessage({ type: 'setPriority', sliceId, priority } satisfies WebviewToHostMessage)
+  const edit = (change: VertoChange) => {
+    vscode.postMessage({ type: 'edit', change } satisfies WebviewToHostMessage)
+  }
+
+  const discard = (changes?: VertoChange[]) => {
+    vscode.postMessage({ type: 'discard', changes } satisfies WebviewToHostMessage)
+  }
+
+  const writeBack = () => {
+    vscode.postMessage({ type: 'writeBack' } satisfies WebviewToHostMessage)
   }
 
   const setNcnHighlightedSliceId = (ncnHighlightedSliceId: string | undefined) => {
@@ -207,7 +220,7 @@ export function useVertoState() {
   return {
     ...state,
     setLens, setFocusedNode, setParsedEnabled,
-    setPriority, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   }
 }
 

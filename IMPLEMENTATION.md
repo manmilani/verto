@@ -17,8 +17,8 @@
 | 3 | [VS Code extension — read-only panel](#phase-3--vs-code-extension--read-only-panel) | Installable `.vsix`; Delivery Map + NCN graph with live data | Complete |
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | Complete |
 | 4.5 | [Setup wizard & config bootstrap](#phase-45--setup-wizard--config-bootstrap) | First-run QuickPick wizard; audit-seeded `verto.config.jsonc`; repository ancestor closure | |
-| 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
-| 6 | [fissue adapter](#phase-6--fissue-adapter) | Second adapter (local file-based tickets); Verto manages its own backlog with itself | Read-only complete; write-back pending |
+| 5 | [Write-back](#phase-5--write-back) | Bidirectional: panel edits propagate to the tracker | Shared framework complete; GitHub write-back remaining |
+| 6 | [fissue adapter](#phase-6--fissue-adapter) | Second adapter (local file-based tickets); Verto manages its own backlog with itself | Complete (read + write-back) |
 | 6.5 | [fissue setup wizard](#phase-65--fissue-setup-wizard) | Setup offers fissue: detect/install, pick or init a project, register Verto's fields | |
 
 ---
@@ -374,8 +374,9 @@ it does **not** bundle `@verto/core` and does **not** recompute. The bundle alre
 contains `globalPriorityRanking`, `implementationOrder`, `readyIds`, and
 `deliveryCompleteness` (Phase 1); `servedBySliceIds` is added in Phase 4.
 
-**Priority overlay integration.** `priorityOverlay.ts` stores per–delivery-slice
-priority overrides in `workspaceState` (cleared by Phase 5 write-back). Overrides are
+**Priority overlay integration** *(as built in Phase 4; replaced in Phase 5 by the
+write-back draft — DESIGN §4.6.11, DESIGN-History §5).* `priorityOverlay.ts` stored per–delivery-slice
+priority overrides in `workspaceState`. Overrides are
 merged into the enriched graph **after** `@verto/text-parser` enrichment and
 `validateGraph`, **immediately before** `buildDeliveryMapBundle()`:
 
@@ -400,12 +401,12 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 | `requireGitHubConfig` | `packages/adapters/github/src/githubConfig.ts` — shared guard when `VertoConfig.github` is optional at the type level |
 | `resolveProjectTitle` | `packages/extension/src/host/resolveProjectTitle.ts` — adapter-aware panel title (`github` → project/repo name; other adapters → adapter id). Replaced in Phase 6 by the optional adapter method `projectTitle` |
 | `servedBySliceIds` | `packages/core/src/bundle.ts` + `types.ts` — computed in `buildDeliveryMapBundle()` |
-| `applyPriorityOverlay` | `packages/text-parser/src/applyPriorityOverlay.ts` — applied in `runHostPipeline` before bundle build |
-| `priorityOverlay.ts` | `packages/extension/src/host/priorityOverlay.ts` — `workspaceState` load/save only |
-| `loadPipeline.ts` | Threads `priorityOverlay`; builds `priorityOptionHints` via `buildPriorityOptionHints` |
+| `applyPriorityOverlay` | `packages/text-parser/src/applyPriorityOverlay.ts` — applied in `runHostPipeline` before bundle build *(removed in Phase 5)* |
+| `priorityOverlay.ts` | `packages/extension/src/host/priorityOverlay.ts` — `workspaceState` load/save only *(removed in Phase 5; replaced by `draftStore.ts`)* |
+| `loadPipeline.ts` | Threads `priorityOverlay` *(removed in Phase 5)*; builds `priorityOptionHints` via `buildPriorityOptionHints` |
 | `@verto/config/priority-hints` | Browser-safe subpath export (`priorityHints.ts`) — P1–P9 labels from `fieldMappings.priority.values` |
-| Protocol extensions | `setPriority`, `projectName`, `priorityOverlayActive`, `journeyPriorityOverlay`, `priorityOptionHints`, `ncnHighlightedSliceId`, `ncnFocusedNodeId`, `ncnTableView` on `PersistedPanelState` |
-| Priority editor | `PriorityEditor.tsx` — dropdown per delivery slice (P1–P9 + tracker-mapped hints); journeys sorted by overlay priority |
+| Protocol extensions | `setPriority`, `projectName`, `priorityOverlayActive`, `journeyPriorityOverlay`, `priorityOptionHints`, `ncnHighlightedSliceId`, `ncnFocusedNodeId`, `ncnTableView` on `PersistedPanelState` *(`setPriority` and the overlay fields removed in Phase 5)* |
+| Priority editor | `PriorityEditor.tsx` — dropdown per delivery slice (P1–P9 + tracker-mapped hints); journeys sorted by overlay priority *(overlay removed in Phase 5; edits go to the draft)* |
 | Implementation order tables | `ImplementationOrderTable.tsx` — leverage view + implementation-order view; shared `DataTableFrame` chrome; status-group dots in `#` column; click row → focus graph node |
 | NCN graph | `NcnGraph.tsx` — pan/zoom (`panOnScroll`, `zoomOnScroll`); journey highlight via `servedBySliceIds`; click-to-focus neighbourhood; status-group edge colouring; leverage badges |
 | NCN lens chrome | `NcnLens.tsx` — stats, journey selector, `FocusedNodeDetail`, table-view toggle (`Pill`), TOC callout |
@@ -546,24 +547,37 @@ indented/prefixed child items. List APIs require **cursor pagination**.
 
 **Depends on:** Phase 4.5 recommended (seeded workspace config) but not strictly blocking.
 
-**Goal:** A PM can set priority, mark items done, add/remove blocking links, or create child
-tickets from the Verto panel, and those changes propagate to GitHub.
+**Goal:** A PM can set priority, status, title and personas, mark items done or reopen
+them, add/remove blocking links, or create child tickets from the Verto panel, and those
+changes propagate to the tracker. Design: DESIGN §4.6.11.
 
-### Deliverables
+### Deliverables — shared framework (implemented)
+
+| Path | Purpose |
+|---|---|
+| `packages/core/src/changes.ts` | `VertoChange` model; `sameTarget`, `upsertChange`, `discardChanges` (create cascade), `nextTempId`, `remapNodeIds`, `applyChanges` (states per change), `parseChange` |
+| `packages/core/src/adapter.ts` | Optional `checkChange` and `writeBack(config, changes, hooks) → { failed, createdIds, addMappings }`; `WriteHooks.confirm` |
+| `@verto/config` `mapping.ts` | `readBack`, `reverseMappedValue`, `dotItemsDiff`, `statusOptionsFor`, `writableLevels`, shared `clampPriority` |
+| `@verto/config` `write.ts` | `insertFieldMappings` — formatting-preserving `jsonc-parser` edit (new dependency), validated before writing |
+| `@verto/text-parser` | `runHostPipeline` applies the draft after parsed mappings, before validation; longest valid prefix; returns `{ bundle, changeStates }`. `applyPriorityOverlay` removed |
+| Extension host | `loadPipeline.ts` split into `loadProjectGraph` + `buildView`; `draftStore.ts` (per-project drafts, overlay migration, labels); `draftSession.ts` (edit acceptance, no-op pruning, write results); `panelManager.ts` edit / discard / write flow; setting `verto.writeBack.mode` |
+| Webview | Protocol `edit` / `discard` / `writeBack` and the `draft` payload; `DraftBar`, `NodeEditor` (NCN focused node), `PriorityEditor` on the draft (shared `PrioritySelect`) |
+
+### Deliverables — GitHub write-back (remaining)
 
 | Area | Deliverables |
 |---|---|
-| Types | `FieldWritePayload` — completes the `FieldAccessor` contract (currently `TODO` in adapter design) |
-| Mapper reverse path | `fromVertoNode(node): FieldWritePayload[]` implementations in system + project accessors |
-| `client.ts` mutations | Scope-aware: repository scope → Issues API mutations only (close/reopen, add/remove blocking link, create sub-issue; no ProjectV2); project scope → Issues API mutations for the above + ProjectV2 mutations for Status + custom field values (Priority, AI SDLC metadata) |
-| `adapter.ts` | `writeBack(changes): Promise<void>` |
-| Extension host | Receives change events from webview; calls `writeBack()`; reloads bundle on completion |
-| Conflict policy | Decide what happens when live tracker state diverges from the in-memory bundle (§5.3 "Write-back conflict policy") |
+| `client.ts` mutations | Scope-aware: repository scope → Issues API mutations only (close/reopen, add/remove blocking link, create sub-issue; no ProjectV2); project scope → Issues API mutations for the above + ProjectV2 / issue-field mutations for Status and custom field values (Priority, AI SDLC metadata) |
+| `adapter.ts` | `checkChange` + `writeBack` per DESIGN §4.6.11 (reverse mapping, conflicts, creates) |
 
-### Decisions to resolve before this phase
+### Decisions (resolved)
 
-- Write-back conflict policy (§5.3).
-- Whether the priority editor (Phase 4) writes to the tracker immediately or batches changes.
+- **Conflict policy** — last write wins per change; a tracker concurrency error fails just
+  that change; conflicting changes to one field both fail (DESIGN §4.6.11 rule 11).
+- **Immediate vs batched** — a draft by default, with **Write back**; `verto.writeBack.mode:
+  "immediate"` writes after each accepted edit.
+- **Missing tracker fields** — registered on write after one confirmation (with the
+  config mappings it adds); a decline is remembered for the session.
 
 ---
 
@@ -592,11 +606,14 @@ development backlog with itself. Design: DESIGN.md §4.6.10; fissue DESIGN.md §
 | `scripts/load-project.mjs` | Reuses the host's config loading, registry and pipeline; `--workspace`, `--fissue-core` |
 | fissue repo | `projectState(root, { bodies: true })`: tickets gain `path` and `body` (additive; `apiVersion` stays 1) |
 
-### Deliverables — write-back (after Phase 5)
+### Deliverables — write-back (implemented)
 
 | Path | Purpose |
 |---|---|
-| Write-back | Changes written through fissue's API, including registering the fields Verto needs (e.g. `priority`) in fissue |
+| `packages/adapters/fissue/src/system_types.ts` | Adds `updateTicket`, `createTicket`, `addField` (structural, as fissue's API; no fissue repo change) |
+| `packages/adapters/fissue/src/defaults.ts` | `fissueWriteMappings` — default write mapping `priority` ← `issueField priority` (number) |
+| `packages/adapters/fissue/src/writer.ts` | `checkChange` + `writeChanges`: resolve (reverse mapping, dot entries, system fields), conflicts, one confirmation for registration + mappings, creates in order with recovery, one `updateTicket` per ticket, `changed-on-disk` retried once |
+| `packages/adapters/fissue/src/adapter.ts` | `checkChange`, `writeBack` |
 
 ### Decisions (resolved)
 
@@ -676,7 +693,7 @@ Each is linked to the phase where it blocks progress.
 | Adapter-aware panel title — now the optional adapter method `projectTitle` | Resolved Phase 4 (moved Phase 6) | §4.6.5 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
 | First-run setup wizard | Resolved Phase 4.5 | §4.6.9, IMPLEMENTATION Phase 4.5 |
-| Write-back conflict policy | Phase 5 | §5.3 |
+| Write-back conflict policy — last write wins per change | Resolved Phase 5 | §4.6.11; DESIGN-History §6.3 |
 | fissue config block shape + field registration timing | Resolved Phase 6 (read-only) | §4.6.10; DESIGN-History §6.3 |
 
 ---
@@ -720,7 +737,7 @@ whether to extend an existing phase or insert a new one. Cross-reference [DESIGN
 | **Link metadata vocabulary** | `VertoEdge.reason` beyond `parsed-req` — decomposition vs cross-cutting prerequisite (§5.1) | TBD |
 | **Additional node fields** | Estimates, iterations/sprints — if/when they feed ordering (§5.1) | TBD |
 | **Adapter capability degradation** | Graceful UI when an adapter lacks custom fields, blocking links, … (§5.3) | TBD |
-| **Workspace-persisted ID cache** | Deferred from Phase 2 in-memory-only cache (§5.3) | TBD — noted near Phase 5 |
+| **Workspace-persisted ID cache** | Deferred from Phase 2 in-memory-only cache (§5.3) | TBD — with GitHub write-back (Phase 5 remaining) |
 | **Repository strategy** | Core + extension monorepo vs standalone consuming layout (§5.5) | TBD |
 | **Team vs. personal state** | Per-user vs per-team priorities/views vs ticket-committed alignment (§5.5) | TBD |
 | **Multi-project / multi-repo** | Scope and timing (§5.5) | TBD |

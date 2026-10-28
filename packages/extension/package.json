@@ -12,6 +12,21 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Verto",
+      "properties": {
+        "verto.writeBack.mode": {
+          "type": "string",
+          "enum": ["draft", "immediate"],
+          "enumDescriptions": [
+            "Edits collect in a draft; Write back sends them to the tracker.",
+            "Each accepted edit is written to the tracker right away."
+          ],
+          "default": "draft",
+          "description": "When edits made in the Verto panel are written to the tracker."
+        }
+      }
+    },
     "commands": [
       {
         "command": "verto.openPanel",
