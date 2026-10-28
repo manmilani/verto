@@ -3,6 +3,7 @@ export type {
   FieldMappings,
   GitHubIssueFilter,
   GitHubConfig,
+  FissueConfig,
   VertoConfig,
   UiConfig,
   DisplayStatusGroupSourceRule,
@@ -12,6 +13,13 @@ export type {
 export { validateVertoConfig } from './schema.js'
 export { coerceFieldValue } from './coerce.js'
 export { mergeConfigs, mergeUi } from './merge.js'
+export {
+  adapterBlock,
+  adapterFieldMappings,
+  withoutMappings,
+  applyMappingTail,
+  type AdapterBlock,
+} from './mapping.js'
 export { parseVertoConfig, readVertoConfigFile } from './parse.js'
 export {
   writeVertoConfigFile,

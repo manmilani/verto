@@ -17,6 +17,19 @@ describe('parseVertoConfig', () => {
     expect(config.github!.owner).toBe('owner')
   })
 
+  it('parses a fissue config: block optional, issueField kind accepted, unknown keys rejected', () => {
+    expect(parseVertoConfig('{ "adapter": "fissue" }')).toEqual({ adapter: 'fissue' })
+    const config = parseVertoConfig(`{ "adapter": "fissue", "fissue": { "root": "sub",
+      "fieldMappings": { "status": { "from": { "kind": "issueField", "field": "status" } } } } }`)
+    expect(config.fissue?.fieldMappings?.status?.from.kind).toBe('issueField')
+    expect(() => parseVertoConfig('{ "adapter": "fissue", "fissue": { "rooot": "x" } }')).toThrow()
+  })
+
+  it('checks isArray+boolean in the block named by adapter', () => {
+    expect(() => parseVertoConfig(`{ "adapter": "fissue", "fissue": { "fieldMappings":
+      { "x": { "from": { "kind": "issue", "field": "x" }, "type": "boolean", "isArray": true } } } }`)).toThrow()
+  })
+
   it('throws on invalid config (missing required field)', () => {
     const jsonc = `{ "adapter": "github", "github": { "scope": "project", "owner": "x" } }`
     expect(() => parseVertoConfig(jsonc)).toThrow(/projectNumber/)

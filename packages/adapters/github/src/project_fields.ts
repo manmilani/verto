@@ -1,7 +1,7 @@
 import type { VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
 import type { FieldMappings } from '@verto/config'
-import { coerceFieldValue } from '@verto/config'
+import { applyMappingTail } from '@verto/config'
 import type { GitHubIssue, GitHubProjectV2FieldValue, GitHubProjectV2Item } from './system_types.js'
 
 interface FieldAccessor {
@@ -11,7 +11,6 @@ interface FieldAccessor {
 export class SystemFieldAccessor implements FieldAccessor {
   toVertoNodeFields(issue: GitHubIssue): Partial<VertoNode> {
     if (!issue.id) throw new Error('Issue has no id')
-    if (!issue.title) throw new Error(`Issue ${issue.id} has no title`)
     if (!issue.url) throw new Error(`Issue ${issue.id} has no url`)
 
     const blockedByIds = issue.blockedBy.nodes.map(n => n.id)
@@ -19,7 +18,7 @@ export class SystemFieldAccessor implements FieldAccessor {
 
     return {
       id: issue.id,
-      title: issue.title,
+      title: issue.title || issue.id,
       isDone: issue.closed,
       isDeliverySlice: issue.parent === null,
       prereqIds: [...new Set([...blockedByIds, ...subIssueIds])],
@@ -83,11 +82,13 @@ export class ProjectFieldAccessor implements FieldAccessor {
     }
   }
 
+  /** Tickets whose mapped priority was empty or invalid (defaulted to 5), for one log line per load. */
+  emptyPriorityCount = 0
+
   toVertoNodeFields(issue: GitHubIssue, projectItem?: GitHubProjectV2Item): Partial<VertoNode> {
     const nodeFields: Partial<VertoNode> = {}
     const ticketFields: Record<string, unknown> = {}
     let prioritySet = false
-    let priorityMappingExists = false
 
     for (const [key, entry] of Object.entries(this.fieldMappings)) {
       const { from, values, type: typeHint } = entry
@@ -97,9 +98,6 @@ export class ProjectFieldAccessor implements FieldAccessor {
       // the adapter's job is only to ensure the base field is in ticketFields (see below).
       if (from.field.includes('.')) continue
 
-      // Mark before any early-continue so the flag is set even when the field is absent
-      if (key === 'priority') priorityMappingExists = true
-
       if (from.kind === 'projectV2') {
         if (this.scope === 'repository') {
           console.warn(
@@ -107,26 +105,24 @@ export class ProjectFieldAccessor implements FieldAccessor {
           )
           continue
         }
-        if (!projectItem) continue
-        const fv = projectItem.fieldValues.find(
+        const fv = projectItem?.fieldValues.find(
           f => f.fieldName.toLowerCase() === from.field.toLowerCase(),
         )
         if (!fv) continue
-        rawValue = resolveProjectV2Value(fv, values as Record<string, unknown> | undefined)
-      } else {
+        rawValue = resolveProjectV2Value(fv)
+      } else if (from.kind === 'issue') {
         const resolver = ISSUE_FIELD_RESOLVER[from.field]
         rawValue = resolver
           ? resolver(issue)
           : ((issue as unknown as Record<string, unknown>)[from.field] ?? null)
-        if (values && rawValue !== null) {
-          rawValue = (values as Record<string, unknown>)[String(rawValue)] ?? null
-        }
+      } else {
+        continue
       }
 
-      rawValue = coerceFieldValue(rawValue, typeHint)
+      const value = applyMappingTail(rawValue, values, typeHint)
 
       if (key === 'priority') {
-        const clamped = clampPriority(rawValue)
+        const clamped = clampPriority(value)
         if (clamped !== null) {
           nodeFields.priority = clamped
           prioritySet = true
@@ -135,18 +131,14 @@ export class ProjectFieldAccessor implements FieldAccessor {
       }
 
       if (CANONICAL_VERTO_NODE_KEYS.has(key)) {
-        ;(nodeFields as Record<string, unknown>)[key] = rawValue
+        if (value !== null) (nodeFields as Record<string, unknown>)[key] = value
       } else {
-        ticketFields[key] = rawValue
+        ticketFields[key] = value
       }
     }
 
     if (!prioritySet) {
-      if (priorityMappingExists) {
-        console.warn(`[verto] Issue ${issue.id}: priority mapping found but field is empty or unmapped, defaulting to 5`)
-      } else {
-        console.warn(`[verto] Issue ${issue.id}: no priority mapping, defaulting to 5`)
-      }
+      if (this.fieldMappings['priority']) this.emptyPriorityCount++
       nodeFields.priority = 5
     }
 
@@ -184,13 +176,10 @@ export class ProjectFieldAccessor implements FieldAccessor {
   }
 }
 
-function resolveProjectV2Value(
-  fv: GitHubProjectV2FieldValue,
-  values?: Record<string, unknown>,
-): unknown {
+function resolveProjectV2Value(fv: GitHubProjectV2FieldValue): unknown {
   switch (fv.kind) {
     case 'number': return fv.value
-    case 'single_select': return values ? (values[fv.value] ?? fv.value) : fv.value
+    case 'single_select': return fv.value
     case 'text': return fv.value
     case 'date': return fv.value
     case 'iteration': return fv.title

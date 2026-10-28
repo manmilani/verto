@@ -9,7 +9,7 @@ export type {
 export { CANONICAL_VERTO_NODE_KEYS } from './types.js'
 
 // Adapter interface
-export type { VertoAdapter } from './adapter.js'
+export type { VertoAdapter, MissingField } from './adapter.js'
 
 // Algorithms
 export { closureFor } from './algorithms/closure.js'

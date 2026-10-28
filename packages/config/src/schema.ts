@@ -1,6 +1,7 @@
 import Ajv from 'ajv'
 import type { VertoConfig } from './types.js'
 import { validateUserDisplayStatusGroups } from './displayStatusGroups.js'
+import { adapterFieldMappings } from './mapping.js'
 
 const ajv = new Ajv({ allErrors: true })
 
@@ -14,7 +15,7 @@ const fieldMappingEntrySchema = {
       required: ['kind', 'field'],
       additionalProperties: false,
       properties: {
-        kind: { type: 'string', enum: ['issue', 'projectV2'] },
+        kind: { type: 'string', enum: ['issue', 'issueField', 'projectV2'] },
         field: { type: 'string' },
       },
     },
@@ -56,6 +57,15 @@ const githubConfigSchema = {
   if: { properties: { scope: { const: 'project' } } },
   then: { required: ['projectNumber'] },
   else: { required: ['repository'] },
+}
+
+const fissueConfigSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    root: { type: 'string' },
+    fieldMappings: fieldMappingsSchema,
+  },
 }
 
 const displayStatusGroupSourceRuleSchema = {
@@ -107,6 +117,7 @@ const vertoConfigSchema = {
   properties: {
     adapter: { type: 'string' },
     github: githubConfigSchema,
+    fissue: fissueConfigSchema,
     ui: uiConfigSchema,
   },
   allOf: [
@@ -131,8 +142,9 @@ export function validateVertoConfig(raw: unknown): VertoConfig {
     validateUserDisplayStatusGroups(config.ui.displayStatusGroups)
   }
 
-  if (config.github?.fieldMappings) {
-    for (const [key, entry] of Object.entries(config.github.fieldMappings)) {
+  const fieldMappings = adapterFieldMappings(config)
+  if (fieldMappings) {
+    for (const [key, entry] of Object.entries(fieldMappings)) {
       if (entry.isArray === true && entry.type === 'boolean') {
         throw new Error(
           `Invalid VertoConfig: fieldMappings["${key}"] cannot combine isArray:true with type:"boolean"`,

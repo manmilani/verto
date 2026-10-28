@@ -4,16 +4,19 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./display-status-groups": {
+      "types": "./dist/displayStatusGroups.d.ts",
       "import": "./dist/displayStatusGroups.js",
-      "types": "./dist/displayStatusGroups.d.ts"
+      "default": "./dist/displayStatusGroups.js"
     },
     "./priority-hints": {
+      "types": "./dist/priorityHints.d.ts",
       "import": "./dist/priorityHints.js",
-      "types": "./dist/priorityHints.d.ts"
+      "default": "./dist/priorityHints.js"
     }
   },
   "main": "./dist/index.js",

@@ -18,6 +18,7 @@ import {
 } from '@verto/adapter-github'
 import { getGitHubToken } from './authProvider.js'
 import { getWorkspaceConfigPath } from './configLoader.js'
+import { isRawConfigComplete } from './workspaceConfig.js'
 
 type SourcePick = vscode.QuickPickItem & {
   action: 'other' | 'repo' | 'project'
@@ -45,7 +46,7 @@ export async function runSetup(_context: vscode.ExtensionContext, options?: RunS
   if (exists) {
     try {
       const raw = await readVertoConfigRawFile(cfgPath)
-      if (isWorkspaceSetupComplete(raw)) {
+      if (isRawConfigComplete(raw)) {
         const rerun = await vscode.window.showQuickPick(
           ['Yes, continue', 'No, cancel'],
           { title: 'Verto setup', placeHolder: 'Config exists — re-run setup?' },

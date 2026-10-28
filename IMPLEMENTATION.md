@@ -18,7 +18,8 @@
 | 4 | [Full UI fidelity](#phase-4--full-ui-fidelity) | Canvas-outcome parity: slice priorities, two-mode impl. order, NCN pan/zoom/focus, status colouring | Complete |
 | 4.5 | [Setup wizard & config bootstrap](#phase-45--setup-wizard--config-bootstrap) | First-run QuickPick wizard; audit-seeded `verto.config.jsonc`; repository ancestor closure | |
 | 5 | [Write-back](#phase-5--write-back) | Bidirectional: UI changes propagate to GitHub | |
-| 6 | [fissue adapter](#phase-6--fissue-adapter) | Second adapter (local file-based tickets); Verto manages its own backlog with itself | |
+| 6 | [fissue adapter](#phase-6--fissue-adapter) | Second adapter (local file-based tickets); Verto manages its own backlog with itself | Read-only complete; write-back pending |
+| 6.5 | [fissue setup wizard](#phase-65--fissue-setup-wizard) | Setup offers fissue: detect/install, pick or init a project, register Verto's fields | |
 
 ---
 
@@ -397,7 +398,7 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 |---|---|
 | `@verto/adapter-github` audit library | `auditProjectScope` / `auditRepositoryScope` exported from `@verto/adapter-github`; `scripts/audit-github-project.mjs` is a thin CLI |
 | `requireGitHubConfig` | `packages/adapters/github/src/githubConfig.ts` — shared guard when `VertoConfig.github` is optional at the type level |
-| `resolveProjectTitle` | `packages/extension/src/host/resolveProjectTitle.ts` — adapter-aware panel title (`github` → project/repo name; other adapters → adapter id) |
+| `resolveProjectTitle` | `packages/extension/src/host/resolveProjectTitle.ts` — adapter-aware panel title (`github` → project/repo name; other adapters → adapter id). Replaced in Phase 6 by the optional adapter method `projectTitle` |
 | `servedBySliceIds` | `packages/core/src/bundle.ts` + `types.ts` — computed in `buildDeliveryMapBundle()` |
 | `applyPriorityOverlay` | `packages/text-parser/src/applyPriorityOverlay.ts` — applied in `runHostPipeline` before bundle build |
 | `priorityOverlay.ts` | `packages/extension/src/host/priorityOverlay.ts` — `workspaceState` load/save only |
@@ -575,24 +576,52 @@ write-back part depends on Phase 5.
 [fissue](https://github.com/manmilani/fissue) project, so Verto can display its own
 development backlog with itself. Design: DESIGN.md §4.6.10; fissue DESIGN.md §7.
 
-### Deliverables
+### Deliverables — read-only (implemented)
 
 | Path | Purpose |
 |---|---|
-| `packages/adapters/fissue/src/system_types.ts` | Ticket and field-definition shapes as returned by fissue's API |
-| `packages/adapters/fissue/src/client.ts` | Reads tickets and field definitions through the fissue API object passed in (`apiVersion` check); no `vscode` dependency |
-| Extension host / scripts | Host obtains the API from the fissue extension at runtime (soft dependency); `scripts/load-project.mjs` uses fissue's core library |
-| `packages/adapters/fissue/src/mapper.ts` | Ticket → `VertoNode` + `VertoEdge`: system mappings (DESIGN §4.6.10) plus `fieldMappings` (`issue` / `issueField`) |
-| `packages/adapters/fissue/src/adapter.ts` | `checkFields(config)` against fissue's `config.json`; `loadProject(config): VertoGraph` *(host pipeline builds bundle — same as GitHub)* |
-| `packages/adapters/fissue/defaults.verto.config.jsonc` | Default mappings and the fields Verto registers in fissue (e.g. `priority`) |
-| `@verto/config` | `adapter: "fissue"` with an adapter-conditional `fissue` block (type + JSON Schema) |
-| Extension setup wizard | "fissue" adapter option: detect the extension (offer install), pick an existing project or run fissue init |
-| Write-back (after Phase 5) | Changes written through fissue's API |
+| `packages/adapters/fissue/src/system_types.ts` | Structural subset of fissue's API (`apiVersion`, `projectState`, `findProjectRoot`); no fissue package dependency |
+| `packages/adapters/fissue/src/client.ts` | `apiVersion` check; root resolution (workspace folder + walk-up); one memoised `projectState(root, { bodies: true })` per adapter instance |
+| `packages/adapters/fissue/src/values.ts` | Raw values interpreted by the fissue field's `type` and shape |
+| `packages/adapters/fissue/src/mapper.ts` | Ticket → `VertoNode` + `VertoEdge`: system mappings, `fieldMappings` with the shared mapping tail, reference / self-link / duplicate rules |
+| `packages/adapters/fissue/src/fields.ts` | Field check by name only (`missing` / `unsupported`) |
+| `packages/adapters/fissue/src/adapter.ts` | `checkFields`, `loadProject`, `fetchStatusOptions`, `fieldMappings`, `projectTitle` |
+| `packages/adapters/fissue/defaults.verto.config.jsonc` | Default mappings and display status groups for fissue `init`'s statuses; `priority` as a commented example |
+| `@verto/config` | Optional `fissue` block; `issueField` kind; adapter-block merge/patch; `applyMappingTail`, `withoutMappings` |
+| Extension host | Adapter registry with `env` (lazy GitHub token, fissue API from the fissue extension); `workspaceConfig.ts`; host-pipeline field check and skip with a warning; `openTicket` message (`file:` opens in the editor) |
+| `scripts/load-project.mjs` | Reuses the host's config loading, registry and pipeline; `--workspace`, `--fissue-core` |
+| fissue repo | `projectState(root, { bodies: true })`: tickets gain `path` and `body` (additive; `apiVersion` stays 1) |
 
-### Decisions to resolve before this phase
+### Deliverables — write-back (after Phase 5)
 
-- Exact shape of the `fissue` config block.
-- When Verto registers the fields it needs in fissue (at setup only, or checked on every load).
+| Path | Purpose |
+|---|---|
+| Write-back | Changes written through fissue's API, including registering the fields Verto needs (e.g. `priority`) in fissue |
+
+### Decisions (resolved)
+
+- `fissue` config block: `{ root?, fieldMappings? }`, optional — DESIGN §4.6.10.
+- Field registration: part of write-back (it is a write), not checked on load; the
+  field check reports an unregistered field as missing and skips it.
+
+---
+
+## Phase 6.5 — fissue setup wizard
+
+**Depends on:** Phase 6 write-back.
+
+**Goal:** The setup wizard (DESIGN §4.6.9) offers fissue next to GitHub, so a fissue
+workspace needs no hand-written config.
+
+### Deliverables
+
+| Item | Purpose |
+|---|---|
+| Wizard adapter option | "fissue" in the adapter QuickPick |
+| Detect / install | Detect the fissue extension; offer to install it from a `.vsix` the user selects (fissue is not on the Marketplace) |
+| Project | Pick an existing fissue project or run fissue `init` |
+| Fields | Register the fields Verto needs (e.g. `priority`) through fissue's field API; seed `fieldMappings` and display status groups from the project's fields |
+| Registry | A `setup` entry for fissue in the adapter registry (completeness rule) |
 
 ---
 
@@ -644,11 +673,11 @@ Each is linked to the phase where it blocks progress.
 | NCN pan/zoom and focus | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
 | UI port fidelity (NCN + tables) | Resolved Phase 4 | DESIGN-History §6.4 |
 | Slice-level delivery completeness display | Resolved Phase 4 | Stat + completion-toned slice pills (not a separate progress-bar widget) |
-| `resolveProjectTitle` — adapter-aware panel title | Resolved Phase 4 | IMPLEMENTATION Phase 4 |
+| Adapter-aware panel title — now the optional adapter method `projectTitle` | Resolved Phase 4 (moved Phase 6) | §4.6.5 |
 | Large-graph performance strategy | Deferred (post–Phase 4) | §5.4, unplanned backlog |
 | First-run setup wizard | Resolved Phase 4.5 | §4.6.9, IMPLEMENTATION Phase 4.5 |
 | Write-back conflict policy | Phase 5 | §5.3 |
-| fissue config block shape + field registration timing | Phase 6 | §5.3, §4.6.10 |
+| fissue config block shape + field registration timing | Resolved Phase 6 (read-only) | §4.6.10; DESIGN-History §6.3 |
 
 ---
 
@@ -676,6 +705,8 @@ whether to extend an existing phase or insert a new one. Cross-reference [DESIGN
 | Item | Notes | Suggested phase |
 |---|---|---|
 | **Agent / chat workflow integration** | How the Verto panel relates to Cursor agent workflows (DESIGN §5.4) | TBD |
+| **GitHub field check** | `checkFields` only reports `issueField` as unsupported; detect missing Issue properties / Project fields and suggest the other kind (DESIGN §4.6.4, §5.3) | TBD |
+| **Missing-field prompt** | Interactive "Skip and load / Cancel" instead of the non-modal warning (DESIGN §4.6.4) | TBD |
 
 ### UI & graph
 

@@ -53,9 +53,10 @@ export interface VertoNode {
    *
    * Populated by the system accessor from the tracker's native done/closed field:
    *   GitHub: native `closed: boolean` issue field (always present).
-   * Can be overridden via a standard fieldMappings entry when a tracker lacks a
-   * native boolean closed field (e.g. derive from status values):
-   *   { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true } }
+   *   fissue: `state === "CLOSED"`.
+   * Can be overridden via a standard fieldMappings entry (e.g. derive from status values).
+   * A value missing from `values` keeps the system value, so list the `false` options too:
+   *   { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true, "Todo": false, "In Progress": false } }
    */
   isDone: boolean;
 
@@ -65,11 +66,12 @@ export interface VertoNode {
    * Semantic designation only; does not change graph structure or algorithm behaviour.
    *
    * Default behaviour (system accessor): true when the ticket has no parent
-   * (parent is null or empty) — i.e. top-level tickets are delivery slices by default.
+   * (GitHub: parent is null; fissue: no loaded ticket lists it in `subIssues`) — i.e.
+   * top-level tickets are delivery slices by default.
    *
    * Override via a standard fieldMappings entry to use issue type instead:
-   *   { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }
-   * When a fieldMappings entry is present, it fully replaces the system-accessor default.
+   *   { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true, "Task": false, "Bug": false } }
+   * A value missing from `values` (or empty) keeps the system-accessor default.
    */
   isDeliverySlice: boolean;
 

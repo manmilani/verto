@@ -32,3 +32,4 @@ export type WebviewToHostMessage =
   | { type: 'setPriority'; sliceId: string; priority: number | null }
   | { type: 'retry' }
   | { type: 'runSetup' }
+  | { type: 'openTicket'; url: string }

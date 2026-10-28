@@ -239,12 +239,12 @@ export function formatDoneGroupTooltip(fieldMappings?: FieldMappings): string {
     const from = entry.from
     const fieldRef = from?.kind === 'projectV2'
       ? `project field "${from.field}"`
-      : from?.kind === 'issue'
+      : from?.kind === 'issue' || from?.kind === 'issueField'
         ? `issue field "${from.field}"`
         : 'configured field'
     return `isDone when ${fieldRef} is: ${mapped.join(', ')}`
   }
-  return 'isDone when the GitHub issue is closed (issue.closed)'
+  return 'isDone when the ticket is closed'
 }
 
 /** Tooltip for one user-configured display group. */

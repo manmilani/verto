@@ -649,7 +649,10 @@ then opened in the editor — never starting from a blank config.
 **`@verto/config` package.** The `VertoConfig` TypeScript type, JSON Schema (validated
 via `ajv`), and runtime helpers live in `packages/config/` (`@verto/config`):
 `validateVertoConfig(raw)` — throws on invalid config; `mergeConfigs(defaults, workspace)`
-— field-level replace merge; `parseVertoConfig(jsonc)` / `readVertoConfigFile(path)` —
+— workspace wins; the **adapter block** (the block named by `adapter`, e.g. `github`,
+`fissue`) is merged per key and its `fieldMappings` per entry; `withoutMappings` and
+`applyConfigPatch` treat every adapter block the same way (no list of block names);
+`parseVertoConfig(jsonc)` / `readVertoConfigFile(path)` —
 JSONC-aware parsing. Config files use **JSONC format** (`.jsonc` extension; `//` line
 comments allowed). Plain `JSON.parse` and `import ... assert { type: 'json' }` both fail
 on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not depend on
@@ -658,7 +661,8 @@ on JSONC — always use `parseVertoConfig`. `@verto/core` intentionally does not
 **`VertoConfig.github` is adapter-conditional.** The TypeScript type declares
 `github?: GitHubConfig`. JSON Schema requires only `adapter` at the root; when
 `adapter === "github"`, the `github` block is required (`allOf` + `if`/`then` in
-`schema.ts`). Non-GitHub adapters (e.g. fissue) omit `github` entirely. GitHub
+`schema.ts`). Non-GitHub adapters omit `github` entirely; the `fissue` block is
+optional (§4.6.10). GitHub
 adapter code calls `requireGitHubConfig(config)` (`packages/adapters/github/src/githubConfig.ts`)
 for a clear error when the block is missing.
 
@@ -837,11 +841,11 @@ Example shape (illustrative — exact schema to be defined in `VertoConfig`; fil
       //
       // isDone: system-mapped from native GitHub `closed` boolean — no entry needed by default.
       // Override example (derive from a status field instead):
-      // "isDone": { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true, "Closed": true } }
+      // "isDone": { "from": { "kind": "projectV2", "field": "Status" }, "values": { "Done": true, "Closed": true, "Todo": false, "In Progress": false } }
       //
       // isDeliverySlice: system-mapped — true for top-level tickets (parent is null).
-      // Override to use issue type instead:
-      // "isDeliverySlice": { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }
+      // Override to use issue type instead (list the false options too; unlisted values keep the system value):
+      // "isDeliverySlice": { "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true, "Task": false, "Bug": false } }
       "status": {
         "from": { "kind": "projectV2", "field": "Status" }
         // Canonical root (Phase 2.5) — no "type" hint; options discovered by audit
@@ -894,8 +898,7 @@ Data flow per entry: `parser → [boolean synthesis] → values remapping → co
 
 - **Parsers** are pure extractors — they never return booleans. For `isArray: false`, they return a raw string or `null`.
 - **Boolean synthesis** (labels only, `isArray: false`): if the parser returns `null` and `type === 'boolean'`, the main loop checks `labels.includes(parsedKey)` → `true`/`false`. Values and `coerceFieldValue` are skipped for this synthesized boolean. Text-block misses with `type: 'boolean'` stay `null` (not written).
-- **`values` remapping** is applied before `coerceFieldValue`, on miss → `null`. For `isArray: true`: applied per non-null element; `null` slots (bare KEY-only labels) pass through unchanged.
-- **`coerceFieldValue`** (from `@verto/config`) is the shared coercion helper used by both the adapter (standard fields) and text-parser (parsed fields). Called with `type === undefined` for the adapter path → raw passthrough. Null/undefined input → `null` before the type switch.
+- **`values` remapping and coercion** are the shared mapping tail below (`applyMappingTail`). For `isArray: true`, `null` slots (bare KEY-only labels) pass through unchanged.
 - **Routing** follows the standard rule (canonical root or `ticketFields`). `null` is never written; `[]` (empty array) and `false` (absent boolean label) are written. There is no special boolean-canonical skip — store what you get.
 - **`select`/`iteration` on dot-notation** entries: resolved to `'text'` before coercion (these are projectV2-column-specific concepts).
 
@@ -921,6 +924,18 @@ default config includes `personas: { from: { kind: 'issue', field: 'labels.perso
 `@verto/text-parser` extracts persona values from `ticketFields.labels` and writes them
 to `node.personas`. When no `fieldMappings.personas` entry is present, `mapper.ts`
 falls back to direct `persona:<value>` label extraction. If neither applies, **`[]`**.
+
+**Mapping tail — one rule for every adapter and the text-parser.** After an entry's
+source value is read (and flattened, e.g. a ProjectV2 iteration to its `title`),
+`applyMappingTail(value, values, type)` (`@verto/config`) runs per list item (or on the
+scalar): `values` is applied (a value missing from `values` → `null`), then
+`coerceFieldValue(type)`; `null` items stay `null`. Then:
+
+- a `null` result for a **canonical** key (e.g. `isDone`) keeps the system value — so a
+  partial `values` map overrides only the values it lists; an override meant to decide
+  every ticket lists its `false` options too;
+- **priority:** unmapped → 5, silently; mapped but empty or invalid → 5, logged once per
+  load with a count.
 
 **`type` hint for ticket fields.** Non-canonical `fieldMappings` entries may carry an optional `"type"` hint (`"text"`, `"number"`, `"date"`, `"select"`, `"iteration"`). The mapper uses it to coerce raw source values to the correct JavaScript type. The hint is omitted for canonical fields (their types are in `types.ts`). The audit step populates it automatically from the source's field schema (§4.6.6).
 
@@ -1017,6 +1032,15 @@ same name exists).
 - **Unsupported fields** — names that exist but can't be read as a plain value (e.g.
   an object property with no flattening entry) — are listed in the same warning and
   handled the same way.
+- **Where it runs.** The host pipeline does check and skip once, for every adapter:
+  `adapter.checkFields?(config)`, then `withoutMappings(config, keys)` (`@verto/config`);
+  `loadProject`, `fieldMappings`, sufficiency and parsed mappings all use that reduced
+  config.
+- **Built today.** The extension shows the skipped list as one non-modal warning,
+  repeated only when the list changes (the Skip / Cancel prompt is still to come);
+  scripts print it. fissue checks by name (§4.6.10). GitHub's `checkFields` reports only
+  `issueField` mappings, as `unsupported` (org issue fields aren't read yet); its
+  missing-field detection and kind suggestions are not built yet (§5.3).
 
 **Relationship fields.** Only parent/child and blocked-by/blocking become graph edges
 (system accessor, §4.6.5). Any other relationship (e.g. GitHub `duplicateOf`,
@@ -1049,10 +1073,11 @@ and drafts the mapping section.
 not inside adapters:
 
 ```
-adapter.checkFields(config) → MissingField[]   // §4.6.4; if any: warn → skip (drop entries) or cancel
+registry: adapter = ADAPTERS[config.adapter].create(env)   // env: workspace folder, GitHub token (lazy), fissue API
+adapter.checkFields?(config) → MissingField[]   // §4.6.4; warn, config = withoutMappings(config, keys)
 adapter.loadProject(config) → VertoGraph
-resolveProjectTitle(config, token)   // adapter-aware panel title (extension host only)
-  → runHostPipeline(graph, { parsedEnabled?, priorityOverlay? })
+adapter.projectTitle?(config) ?? config.adapter   // panel title
+  → runHostPipeline(graph, { parsedEnabled?, priorityOverlay?, fieldMappings? })
        → materializeParsedRequirements(graph)
        → computeBodyFields(graph)
        → filterParsedNodes(graph)          // when !parsedEnabled / --no-parsed
@@ -1061,18 +1086,25 @@ resolveProjectTitle(config, token)   // adapter-aware panel title (extension hos
        → buildDeliveryMapBundle(graph)
 ```
 
-**`resolveProjectTitle`** (`packages/extension/src/host/resolveProjectTitle.ts`) —
-extension-host only. For `adapter === 'github'`, delegates to `@verto/adapter-github`
-`resolveProjectName`; other adapters return the adapter id until they supply their own
-resolver. Keeps GitHub-specific I/O out of the generic load path.
+**Adapter registry** (`packages/extension/src/host/adapterRegistry.ts`, no `vscode`):
+one entry per adapter id, `{ defaults, create(env), setup? }`. `env` gives what an
+adapter may need (workspace folder, `getGitHubToken`, `getFissueApi`); each is called
+only by the adapter that uses it, so a GitHub token is requested only for GitHub.
+`setup.isComplete` exists for adapters with a setup wizard (§4.6.9). The registry,
+`workspaceConfig.ts` (read → validate → completeness → merge with the adapter's
+defaults) and `loadPipeline.ts` are shared by the extension and the load script.
+
+**Panel title:** optional `adapter.projectTitle(config)` (GitHub: project or repo
+name; fissue: `fissue: <root folder>`), falling back to the adapter id.
 
 **Required-field fallback policy (read path).** Some `VertoNode` properties are
 required but may have no mapped ticket field. The mapper must behave consistently:
 
 | Category | Verto properties | Behaviour when unmapped / invalid |
 |---|---|---|
-| **No fallback — fail** | `id`, `title`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`, `nodeType`, `nodeOrigin` | **Error; do not produce a graph.** System-mapped or stamped by `mapper.ts` (see system-only table above). If absent after mapping, data is corrupt. |
-| **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Audit flags missing mapping; emit non-fatal notice. |
+| **No fallback — fail** | `id`, `isDone`, `isDeliverySlice`, `ticketUrl`, `prereqIds`, `childIds`, `nodeType`, `nodeOrigin` | **Error; do not produce a graph.** System-mapped or stamped by `mapper.ts` (see system-only table above). If absent after mapping, data is corrupt. |
+| **Fallback to `id`** | `title` | An empty or missing title is replaced by the node `id` (every adapter). |
+| **Valid neutral default — continue** | `priority` | **Use `5`**, continue. Unmapped: silent (audit flags the missing mapping). Mapped but empty or invalid: one log line per load with a count. |
 | **Optional — continue** | `status` | **`undefined`** if no `fieldMappings` binding, or the entry was skipped (a missing field the user skipped, §4.6.4; or `projectV2` in repository scope, §4.6.7). No error. |
 | **Optional — continue** | `personas` | **`[]`** if no `persona:<value>` labels and no `fieldMappings.personas` entry. Default config uses `"labels.persona"` dot-notation; `@verto/text-parser` populates from labels. No error. |
 | **Optional — continue** | `weight` | **`undefined`** if unmapped. Algorithms use `nodeWeight()` (see `completeness.ts`). No error. |
@@ -1136,7 +1168,7 @@ Grounded in GitHub GraphQL capabilities documented under
 | **NCN edge** `A → B` (A prerequisite for B) | `addBlockedBy(issueId: B, blockingIssueId: A)`; read via `blockedBy` / `blocking` |
 | **Parent/child** (child blocks parent) | Sub-issue relationship (`addSubIssue`, `parent` / `subIssues`); same graph semantics as blocking |
 | **Done** (`isDone`) | Native GitHub issue `closed: boolean` — populated by system accessor; no `fieldMappings` entry needed by default. Drives `isReady` and `implementationOrder`. Overridable via `fieldMappings` if needed. |
-| **Vertical designation** (`isDeliverySlice`) | System accessor default: `true` for top-level tickets (`parent` is null). Override via standard `fieldMappings` entry — e.g. `{ "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true } }` |
+| **Vertical designation** (`isDeliverySlice`) | System accessor default: `true` for top-level tickets (`parent` is null). Override via standard `fieldMappings` entry — e.g. `{ "from": { "kind": "issue", "field": "type" }, "values": { "Epic": true, "Task": false, "Bug": false } }` (unlisted values keep the default) |
 | **Status** (`status`) | ProjectV2 built-in `Status` field — **canonical root** via `fieldMappings` (optional; `undefined` if unmapped) |
 | **State reason** (`ticketFields.stateReason`) | Recommended passthrough in `defaults.verto.config.jsonc` — native GitHub issue field (`completed` / `not_planned` / `duplicate` / `reopened` / null); useful for display and filtering; `"type": "text"` |
 | **Issue type** (`ticketFields.type`) | Native **org-level GitHub Issue Type** (defaults: Task, Bug, Feature; org may add e.g. Epic). **Not** duplicated as a project custom column |
@@ -1386,6 +1418,16 @@ incomplete / invalid). `panelManager` maps only those three to `'error'` message
 with `setupRequired: true`; auth and API failures send `'error'` without
 `setupRequired` (Retry only).
 
+**Only adapters with a wizard.** The wizard (and "incomplete") applies to adapters
+whose registry entry has `setup` (§4.6.5) — GitHub today. One completeness rule: an
+adapter with a wizard decides when its file is complete (GitHub: ≥ 1 `fieldMappings`
+entry); any other adapter is complete once its config validates (`{ "adapter":
+"fissue" }` loads with the defaults). Setup is offered when the configured adapter has
+a wizard **or no adapter can be read from the file** (missing, unparseable, `adapter`
+missing or unknown). A readable but invalid config of an adapter without a wizard shows
+the error with a hint to edit the file. The *"Config exists — re-run setup?"* check uses
+the same rule.
+
 **Auth vs owner.** GitHub session (token) is separate from `github.owner` (API identity).
 The authenticated user may configure Verto for another owner's project/repo when permitted.
 
@@ -1408,28 +1450,62 @@ single-user. Its full design is in
 [fissue's DESIGN.md](https://github.com/manmilani/fissue/blob/main/DESIGN.md) (Verto
 integration: §7). The Verto side:
 
-- **Access:** in-process through fissue's API object (checking `apiVersion`), passed
-  into the adapter, so the adapter package has no `vscode` dependency. The extension
-  host gets it from the fissue extension
-  (`vscode.extensions.getExtension('manmilani.fissue')` → `activate()` → exports);
-  scripts get it from fissue's core library. No CLI spawning or output parsing.
-- **Soft dependency:** no `extensionDependencies`. Verto looks fissue up at runtime
-  and offers to install it (from a `.vsix` the user selects; fissue is not on the
-  Marketplace) only when the user picks the fissue adapter in setup (§4.6.9). Verto
-  never initialises a fissue project automatically.
-- **Config:** `adapter: "fissue"` with an adapter-conditional `fissue` block (project
-  root, `fieldMappings`), mirroring `github` (§4.6.3); exact shape decided in Phase 6.
-- **Fields:** fissue's native fields carry GitHub `Issue` names (`kind: "issue"`) and
-  its user-added fields are `kind: "issueField"`, so mappings read exactly as for
-  GitHub; `projectV2` does not apply. The load-time field check (§4.6.4) looks up name
-  and `kind` in fissue's `config.json`; a name defined under the other kind produces a
-  suggestion, as for GitHub. Verto registers the fields it needs (e.g. `priority`)
-  through fissue's field API.
-- **System mappings:** `id` = fissue ticket ID; `isDone` from `state` (`CLOSED`);
-  `childIds` from `subIssues`, blocking prerequisites from `blockedBy`;
-  `isDeliverySlice` default = no `parent`; `created_at` from `createdAt`;
-  `ticketUrl` = the ticket file's `file://` URI.
-- **Write-back** (after Phase 5) goes through the same API.
+Package `@verto/adapter-fissue` (`packages/adapters/fissue`, same layout as GitHub's,
+§4.6.2). Read-only today; write-back comes later.
+
+- **Access:** in-process through fissue's API object, passed into the adapter, so the
+  adapter package depends on neither `vscode` nor fissue: it declares structurally the
+  part of the API it uses, and checks `apiVersion` (1). The extension host gets the API
+  from the fissue extension (`vscode.extensions.getExtension('manmilani.fissue')` →
+  `activate()` → exports); `scripts/load-project.mjs` imports fissue's built core
+  (`--fissue-core`). No CLI spawning or output parsing.
+- **One read per load:** `projectState(root, { bodies: true })` — one fissue `sync`,
+  giving config, tickets (values, file `path`, Markdown `body`) and warnings. fissue's
+  warnings are logged only (fissue shows them as diagnostics). The adapter shares that
+  one call between `checkFields`, `fetchStatusOptions` and `loadProject`; the host
+  creates a fresh adapter per load.
+- **Soft dependency:** no `extensionDependencies`. Verto looks fissue up at runtime; if
+  it is missing or disabled the load fails with "install its .vsix (or enable it), then
+  refresh". A setup-wizard option that detects or installs fissue and picks or inits a
+  project is planned (IMPLEMENTATION.md Phase 6.5). Verto never initialises a fissue
+  project automatically.
+- **Config:** `adapter: "fissue"` and an optional `fissue` block
+  `{ root?, fieldMappings? }`, merged like any adapter block (§4.6.3). `root` (default
+  `"."`) is resolved against the workspace folder; fissue's `findProjectRoot` then walks
+  up from it, like the CLI. No project → "No fissue project at/above <path>; run
+  `fissue init`". `{ "adapter": "fissue" }` alone is a complete config.
+- **Values:** a ticket's values are its frontmatter values plus `body` (the Markdown
+  body), interpreted by the fissue field's own `type` (fissue's definitions are the only
+  source of truth): `number` by fissue's YAML 1.2 number syntax (non-finite → `null`);
+  `boolean` by `true/True/TRUE`, `false/False/FALSE`; `text`/`date`/`select` as the
+  string. Shape: a single field takes a string, an `isArray` field a string (→ one-item
+  list) or a list of strings; any other shape is `null`. A key with no definition is
+  read as text. Then the shared mapping tail applies (§4.6.4). `ticketFields` keys follow
+  the mapping keys, e.g. `assignees` (GitHub's default is `assignee`; nothing in Verto
+  reads either by name).
+- **Fields:** fissue's native fields carry GitHub `Issue` names and its user-added
+  fields are usually `kind: "issueField"`, so mappings read as for GitHub. fissue's
+  `kind` is informational and names are unique, so the field check (§4.6.4) **finds
+  `from.field` by name only**: an undefined base field is `missing` (scope: fissue's
+  `config.json`), a `projectV2` source is `unsupported`, a kind mismatch is fine.
+- **System mappings:** `id` = fissue ticket ID; `title` (empty → `id`); `isDone` =
+  `state === "CLOSED"`; `isDeliverySlice` = no loaded ticket lists it in `subIssues`
+  (one hierarchy source; fissue's `sync` keeps `parent` in step); `childIds` =
+  `subIssues`; `prereqIds` = `blockedBy ∪ subIssues`; `created_at` from `createdAt`;
+  `ticketUrl` = the ticket file's `file://` URL (opened in the editor, §4.8);
+  `nodeOrigin: "fissue"`; personas as GitHub. Edges: `blocking` from `blockedBy`,
+  `parent-child` from `subIssues`.
+- **References:** links are kept only between distinct loaded tickets; a reference to an
+  ID that isn't loaded, or to the ticket itself, is dropped (one log line per load).
+  Longer cycles are left to `validateGraph`, which fails the load as for GitHub; they are
+  likelier with fissue, since nothing prevents them.
+- **Duplicate IDs** (same exact ID text): the first in fissue's list order is loaded,
+  the rest are skipped and logged.
+- **Status options** for the status universe (§4.6.3) are the options of the `select`
+  field that `fieldMappings.status` maps to.
+- **Panel title:** `fissue: <project root folder name>`.
+- **Write-back** (later) goes through the same API; registering the fields Verto needs
+  (e.g. `priority`) in fissue is part of it, since it is a write.
 
 ### 4.7 State: tickets vs. workspace
 
@@ -1505,6 +1581,7 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
 | `'setPriority'` | `sliceId: string; priority: number \| null` (`null` clears the override) | User edits priority on a delivery slice; host updates overlay + rebuilds bundle |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN highlight/focus, or table-view toggle (debounced) |
+| `'openTicket'` | `url: string` (a node's `ticketUrl`) | User clicks a ticket title link. The host opens `ticketUri(url)` with `vscode.open`: only `http`/`https` (browser) and `file:` (editor, fragment dropped — e.g. a parsed node's `#raw-req-n`); anything else is ignored and logged |
 
 `displayStatusGroups`, `showOthersColumn`, and `displayStatusGroupTooltips` travel
 in `'update'` alongside the bundle — **not** inside `DeliveryMapBundle` — keeping
@@ -1512,11 +1589,11 @@ in `'update'` alongside the bundle — **not** inside `DeliveryMapBundle` — ke
 tooltips and **`others`** visibility are computed in `loadPipeline` from config,
 the loaded graph, project Status options, and `fieldMappings`.
 
-**Adapter defaults programmatic export.** `configLoader.ts` imports adapter defaults
+**Adapter defaults programmatic export.** The adapter registry imports adapter defaults
 directly as a JS object rather than reading files at runtime (safe for the bundled
-extension and for tests). Each adapter package therefore exports its defaults:
-`@verto/adapter-github` exports `githubAdapterDefaults` from `src/index.ts`; esbuild
-inlines it at build time. `defaults.verto.config.jsonc` remains the human-readable
+extension and for tests). Each adapter package therefore exports its defaults
+(`githubAdapterDefaults`, `fissueAdapterDefaults`) from `src/index.ts`; esbuild
+inlines them at build time. `defaults.verto.config.jsonc` remains the human-readable
 source; the exported object mirrors it exactly.
 
 ### 4.9 Data source of truth vs declarative formats
@@ -1592,7 +1669,8 @@ the body sections cited — this list is the index.
   retries). Pagination: cursor-based, fetch all pages (top-level + nested connections).
 - **Adapter capability differences.** How the core/UI degrade gracefully when an
   adapter lacks a feature (e.g. no custom fields, no native blocking links). Partially
-  addressed: `resolveProjectTitle` falls back to adapter id; `requireGitHubConfig` gives
+  addressed: the panel title falls back to the adapter id when an adapter has no
+  `projectTitle`; `requireGitHubConfig` gives
   a specific error when `github` is missing for the GitHub adapter.
 - **GitHub issue fields in setup and write-back.** The audit and setup wizard
   (§4.6.6, §4.6.9) do not yet discover org issue fields or seed `issueField` mappings;
@@ -1600,12 +1678,12 @@ the body sections cited — this list is the index.
   only the configured owner's org, so issue fields of issues from other orgs (e.g. in a
   user-owned project) are not yet readable.
 - **Status options beyond ProjectV2.** The status universe (§4.6.3) takes ticket
-  status options from the Project's Status field; when `status` maps to another
-  source (an `issueField` select, a fissue field), its options should come from that
-  field's definition.
-- **fissue adapter details (Phase 6, §4.6.10).** Exact shape of the `fissue` config
-  block; when Verto registers the fields it needs in fissue (at setup only, or checked
-  on every load).
+  status options from the Project's Status field (GitHub) or from the mapped fissue
+  `select` field (§4.6.10); when GitHub's `status` maps to an `issueField` select, its
+  options should come from that field's definition.
+- **GitHub field check.** GitHub's `checkFields` only reports `issueField` mappings as
+  `unsupported`; detecting missing Issue properties / Project fields and suggesting the
+  other kind (§4.6.4) is not built yet.
 
 ### 5.4 Extension & UI
 

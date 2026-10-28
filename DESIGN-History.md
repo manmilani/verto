@@ -331,6 +331,14 @@ current design is in §4.6.4 and §4.6.7.*
 - **Beans or Backlog.md / file-system shape.** Closed (October 2026) — superseded by
   the fissue adapter; the on-disk format is defined by fissue (§3 of this file,
   §4.6.10).
+- **fissue adapter details.** Closed (Phase 6, read-only) — optional `fissue` block
+  `{ root?, fieldMappings? }`; fields checked by name only (the earlier idea of a
+  "defined under the other kind" suggestion was dropped: fissue's `kind` is
+  informational); `isDeliverySlice` from `subIssues` instead of "no `parent`"; Verto
+  registers the fields it needs in fissue as part of write-back, not on load — see
+  §4.6.10.
+- **`resolveProjectTitle`.** Retired (Phase 6) — the host's adapter switch for the
+  panel title became the optional adapter method `projectTitle` (§4.6.5).
 
 ### 6.4 Extension & UI
 

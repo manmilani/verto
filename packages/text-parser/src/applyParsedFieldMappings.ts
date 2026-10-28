@@ -1,7 +1,7 @@
 import type { VertoGraph, VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
 import type { FieldMappings, FieldMappingEntry } from '@verto/config'
-import { coerceFieldValue } from '@verto/config'
+import { applyMappingTail } from '@verto/config'
 
 export function applyParsedFieldMappings(
   graph: VertoGraph,
@@ -25,9 +25,7 @@ export function applyParsedFieldMappings(
         const labels = baseValue as string[]
         if (resolvedIsArray) {
           const arr = parseLabelsField(labels, parsedKey, true)
-          const coerced = arr.map(slot =>
-            slot === null ? null : applyValuesAndCoerce(slot, resolvedType, values),
-          )
+          const coerced = applyMappingTail(arr, values, resolvedType)
           updated = routeParsedValue(updated, targetKey, coerced)
         } else {
           const raw = parseLabelsField(labels, parsedKey, false)
@@ -36,7 +34,7 @@ export function applyParsedFieldMappings(
             const synthesized = labels.includes(parsedKey)
             updated = routeParsedValue(updated, targetKey, synthesized)
           } else {
-            const coerced = applyValuesAndCoerce(raw, resolvedType, values)
+            const coerced = applyMappingTail(raw, values, resolvedType)
             updated = routeParsedValue(updated, targetKey, coerced)
           }
         }
@@ -45,12 +43,12 @@ export function applyParsedFieldMappings(
         if (resolvedIsArray) {
           const arr = parseTextBlock(baseValue, parsedKey, true)
           if (arr !== null) {
-            const coerced = arr.map(slot => applyValuesAndCoerce(slot, resolvedType, values))
+            const coerced = applyMappingTail(arr, values, resolvedType)
             updated = routeParsedValue(updated, targetKey, coerced)
           }
         } else {
           const raw = parseTextBlock(baseValue, parsedKey, false)
-          const coerced = applyValuesAndCoerce(raw, resolvedType, values)
+          const coerced = applyMappingTail(raw, values, resolvedType)
           updated = routeParsedValue(updated, targetKey, coerced)
         }
       }
@@ -91,19 +89,6 @@ function collectDotEntries(fieldMappings: FieldMappings): DotEntry[] {
     })
   }
   return entries
-}
-
-function applyValuesAndCoerce(
-  raw: string | null,
-  resolvedType: FieldMappingEntry['type'],
-  values: Record<string, unknown> | undefined,
-): unknown {
-  if (raw === null) return null
-  let remapped: unknown = raw
-  if (values) {
-    remapped = values[raw] ?? null
-  }
-  return coerceFieldValue(remapped, resolvedType)
 }
 
 /**

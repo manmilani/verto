@@ -143,6 +143,20 @@ describe('writeVertoConfigFile / mergeIntoJsoncFile', () => {
     expect(parsed.github?.fieldMappings?.user_added).toBeDefined()
   })
 
+  it('patches any adapter block the same way (fissue)', async () => {
+    const path = join(dir, 'verto.config.jsonc')
+    await writeVertoConfigFile(path, {
+      adapter: 'fissue',
+      fissue: { fieldMappings: { mine: { from: { kind: 'issueField', field: 'x' } } } },
+    })
+    await mergeIntoJsoncFile(path, {
+      fissue: { root: 'sub', fieldMappings: { status: { from: { kind: 'issueField', field: 'status' } } } },
+    })
+    const parsed = parseVertoConfig(await readFile(path, 'utf8'))
+    expect(parsed.fissue?.root).toBe('sub')
+    expect(Object.keys(parsed.fissue?.fieldMappings ?? {}).sort()).toEqual(['mine', 'status'])
+  })
+
   it('writes fieldMappings entries on a single line each', async () => {
     const path = join(dir, 'verto.config.jsonc')
     await writeVertoConfigFile(path, {

@@ -36,6 +36,7 @@
   "dependencies": {
     "@verto/core": "workspace:*",
     "@verto/config": "workspace:*",
+    "@verto/adapter-fissue": "workspace:*",
     "@verto/adapter-github": "workspace:*",
     "@verto/text-parser": "workspace:*",
     "react": "^18.3.1",

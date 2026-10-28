@@ -12,9 +12,31 @@ import type { VertoGraph } from './types.js'
  *   runHostPipeline) owns materialize → filter → validate → bundle.
  * Write path: writeBack(changes)  → void  (optional; Phase 5)
  */
+/**
+ * A mapped field the tracker can't provide (DESIGN.md §4.6.4): `key` is the fieldMappings key,
+ * `field`/`kind` its configured source, `scope` where it was looked up.
+ */
+export interface MissingField {
+  key: string
+  field: string
+  kind: string
+  scope: string
+  reason: 'missing' | 'unsupported'
+  suggestedKinds: string[]
+}
+
 export interface VertoAdapter<TConfig = unknown> {
   /** Load the full project graph from the tracker. */
   loadProject(config: TConfig): Promise<VertoGraph>
+
+  /**
+   * The load-time field check (§4.6.4): mapped fields that can't be read. The host drops
+   * these entries from the config before loadProject and tells the user.
+   */
+  checkFields?(config: TConfig): Promise<MissingField[]>
+
+  /** Panel title for this project; the host falls back to the adapter id. */
+  projectTitle?(config: TConfig): Promise<string>
 
   /**
    * Workflow status option names from the tracker board (for status-universe sufficiency).

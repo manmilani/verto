@@ -1,5 +1,5 @@
 export interface FieldMappingEntry {
-  from: { kind: 'issue' | 'projectV2'; field: string }
+  from: { kind: 'issue' | 'issueField' | 'projectV2'; field: string }
   values?: Record<string, unknown>
   type?: 'text' | 'number' | 'boolean' | 'date' | 'select' | 'iteration'
   isArray?: boolean
@@ -24,6 +24,12 @@ export type GitHubConfig = GitHubScopeVariant & {
   fieldMappings?: FieldMappings
 }
 
+export interface FissueConfig {
+  /** Folder to look for the fissue project from (walking up), relative to the workspace folder. Default ".". */
+  root?: string
+  fieldMappings?: FieldMappings
+}
+
 export interface DisplayStatusGroupSourceRule {
   statuses: string[]
 }
@@ -43,5 +49,6 @@ export interface UiConfig {
 export interface VertoConfig {
   adapter: string
   github?: GitHubConfig
+  fissue?: FissueConfig
   ui?: UiConfig
 }

@@ -58,5 +58,9 @@ export function mapIssuesToGraph(
     }
   }
 
+  if (project.emptyPriorityCount > 0) {
+    console.warn(`[verto] ${project.emptyPriorityCount} ticket(s): mapped priority empty or invalid, defaulting to 5`)
+  }
+
   return { nodes, edges }
 }

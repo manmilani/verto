@@ -1,0 +1,43 @@
+{
+  // Default configuration for the fissue adapter (local Markdown tickets, see fissue's DESIGN.md).
+  // Merge with your workspace .vscode/verto.config.jsonc via mergeConfigs().
+  // A workspace file of just { "adapter": "fissue" } is complete.
+
+  "adapter": "fissue",
+
+  "ui": {
+    // System-reserved display group "Done" matches node.isDone (by default: the ticket's state is CLOSED).
+    // It is always evaluated first and is not listed below. fissue init's last status option ("Done")
+    // is therefore not listed either.
+    "displayStatusGroups": [
+      { "label": "In Progress", "sources": { "ticket": { "statuses": ["In Progress"] } } },
+      { "label": "Raw", "sources": { "ticket": { "statuses": ["Todo"] }, "parsed": { "statuses": ["raw"] } } }
+    ]
+  },
+
+  "fissue": {
+    // Folder to look for the fissue project from (walking up, like the fissue CLI), relative to the workspace folder.
+    "root": ".",
+
+    // fissue fields are found by name; "kind" is informational (fissue's own kind is not checked).
+    "fieldMappings": {
+      // -- fissue native fields --
+      "type":        { "from": { "kind": "issue", "field": "issueType" } },
+      "assignees":   { "from": { "kind": "issue", "field": "assignees" } },
+      "labels":      { "from": { "kind": "issue", "field": "labels" } },
+      "body":        { "from": { "kind": "issue", "field": "body" } },
+      "stateReason": { "from": { "kind": "issue", "field": "stateReason" } },
+      "updated_at":  { "from": { "kind": "issue", "field": "updatedAt" } },
+      "milestone":   { "from": { "kind": "issue", "field": "milestone" } },
+
+      // -- fissue's default workflow field --
+      "status": { "from": { "kind": "issueField", "field": "status" }, "type": "select" },
+
+      // -- Parsed sub-field mappings (dot-notation; extracted by @verto/text-parser) --
+      "personas": { "from": { "kind": "issue", "field": "labels.persona" }, "isArray": true }
+
+      // fissue has no priority field until one is defined (e.g. `fissue field add priority --type number`). Then:
+      // "priority": { "from": { "kind": "issueField", "field": "priority" }, "type": "number" }
+    }
+  }
+}

@@ -175,6 +175,44 @@ describe('GitHubAdapter', () => {
     expect(graph.nodes.some(n => n.id === 'B')).toBe(false)
   })
 
+  it('checkFields reports issueField entries as unsupported, nothing else', async () => {
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'repository',
+        owner: 'test',
+        repository: 'my-repo',
+        fieldMappings: {
+          type: { from: { kind: 'issue', field: 'type' } },
+          risk: { from: { kind: 'issueField', field: 'Risk' } },
+        },
+      },
+    }
+    const missing = await new GitHubAdapter('t').checkFields(config)
+    expect(missing).toEqual([
+      { key: 'risk', field: 'Risk', kind: 'issueField', scope: 'test/my-repo', reason: 'unsupported', suggestedKinds: [] },
+    ])
+  })
+
+  it('logs one line per load for mapped-but-empty priorities', async () => {
+    const issues = [makeIssue('I1'), makeIssue('I2')]
+    const { GitHubClient } = await import('../client.js')
+    vi.spyOn(GitHubClient.prototype, 'fetchRepositoryIssues').mockResolvedValue(issues)
+    vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([])
+    const config: VertoConfig = {
+      adapter: 'github',
+      github: {
+        scope: 'repository',
+        owner: 'test',
+        repository: 'my-repo',
+        fieldMappings: { priority: { from: { kind: 'issue', field: 'milestone' }, type: 'number' } },
+      },
+    }
+    await new GitHubAdapter('t').loadProject(config)
+    const lines = warnSpy.mock.calls.map(c => String(c[0])).filter(s => s.includes('priority'))
+    expect(lines).toEqual(['[verto] 2 ticket(s): mapped priority empty or invalid, defaulting to 5'])
+  })
+
   it('all nodes at priority 5 when no priority fieldMapping → valid (not an error)', async () => {
     const issue = makeIssue('I1')
     const item: GitHubProjectV2Item = { issueNodeId: 'I1', fieldValues: [] }

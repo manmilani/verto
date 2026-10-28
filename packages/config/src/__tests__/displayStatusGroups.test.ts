@@ -208,8 +208,15 @@ describe('formatDisplayGroupsProse', () => {
 })
 
 describe('display status group tooltips', () => {
-  it('Done tooltip describes default issue.closed when no isDone mapping', () => {
-    expect(formatDoneGroupTooltip()).toContain('issue.closed')
+  it('Done tooltip describes the default (ticket closed) when no isDone mapping', () => {
+    expect(formatDoneGroupTooltip()).toBe('isDone when the ticket is closed')
+  })
+
+  it('Done tooltip names an issueField source', () => {
+    const tip = formatDoneGroupTooltip({
+      isDone: { from: { kind: 'issueField', field: 'status' }, values: { Done: true } },
+    })
+    expect(tip).toBe('isDone when issue field "status" is: Done')
   })
 
   it('Done tooltip lists isDone-mapped status values', () => {

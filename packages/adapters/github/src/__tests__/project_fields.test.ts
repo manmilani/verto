@@ -40,6 +40,10 @@ describe('SystemFieldAccessor', () => {
     expect(fields.created_at).toBe('2024-01-01T00:00:00Z')
   })
 
+  it('an empty title falls back to the id', () => {
+    expect(sys.toVertoNodeFields(makeIssue({ id: 'X9', title: '' })).title).toBe('X9')
+  })
+
   it('isDeliverySlice is false when issue has a parent', () => {
     const issue = makeIssue({ parent: { id: 'P1' } })
     expect(sys.toVertoNodeFields(issue).isDeliverySlice).toBe(false)
@@ -126,14 +130,15 @@ describe('ProjectFieldAccessor', () => {
     expect(fields.priority).toBe(9)
   })
 
-  it('defaults priority to 5 and warns when no mapping configured', () => {
+  it('defaults priority to 5 silently when no mapping configured', () => {
     const pfa = new ProjectFieldAccessor({}, 'project')
     const fields = pfa.toVertoNodeFields(makeIssue())
     expect(fields.priority).toBe(5)
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('no priority mapping'))
+    expect(pfa.emptyPriorityCount).toBe(0)
+    expect(warnSpy).not.toHaveBeenCalled()
   })
 
-  it('warns "field empty or unmapped" when priority mapping exists but projectV2 field is absent from item', () => {
+  it('counts (not per-issue warns) a mapped priority whose projectV2 field is absent from the item', () => {
     const mappings: FieldMappings = {
       priority: { from: { kind: 'projectV2', field: 'Priority' } },
     }
@@ -145,7 +150,48 @@ describe('ProjectFieldAccessor', () => {
     const pfa = new ProjectFieldAccessor(mappings, 'project')
     const fields = pfa.toVertoNodeFields(issue, item)
     expect(fields.priority).toBe(5)
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('field is empty or unmapped'))
+    expect(pfa.emptyPriorityCount).toBe(1)
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('a single_select value missing from values gives null (priority → 5)', () => {
+    const mappings: FieldMappings = {
+      priority: { from: { kind: 'projectV2', field: 'Priority' }, type: 'select', values: { High: 3 } },
+    }
+    const issue = makeIssue()
+    const item: GitHubProjectV2Item = {
+      issueNodeId: issue.id,
+      fieldValues: [{ fieldName: 'Priority', kind: 'single_select', value: 'Unknown' }],
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    expect(pfa.toVertoNodeFields(issue, item).priority).toBe(5)
+    expect(pfa.emptyPriorityCount).toBe(1)
+  })
+
+  it('applies values per list item (labels), not to the stringified list', () => {
+    const mappings: FieldMappings = {
+      flags: { from: { kind: 'issue', field: 'labels' }, values: { bug: 'B', ux: 'U' } },
+    }
+    const issue = makeIssue({ labels: { nodes: [{ name: 'bug' }, { name: 'other' }, { name: 'ux' }] } })
+    const fields = new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(issue)
+    expect(fields.ticketFields!['flags']).toEqual(['B', null, 'U'])
+  })
+
+  it('canonical override: listed false wins; a value missing from values keeps the system value', () => {
+    const mappings: FieldMappings = {
+      isDone: { from: { kind: 'issue', field: 'type' }, values: { Epic: true, Task: false } },
+    }
+    const pfa = new ProjectFieldAccessor(mappings, 'project')
+    expect(pfa.toVertoNodeFields(makeIssue({ issueType: { name: 'Task' } })).isDone).toBe(false)
+    expect('isDone' in pfa.toVertoNodeFields(makeIssue({ issueType: { name: 'Bug' } }))).toBe(false)
+  })
+
+  it('skips issueField entries (unsupported for GitHub)', () => {
+    const mappings: FieldMappings = {
+      thing: { from: { kind: 'issueField', field: 'title' } },
+    }
+    const fields = new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(makeIssue())
+    expect(fields.ticketFields?.['thing']).toBeUndefined()
   })
 
   it('skips projectV2 entries with warning in repository scope', () => {

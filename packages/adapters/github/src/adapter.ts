@@ -1,4 +1,4 @@
-import type { VertoAdapter, VertoGraph } from '@verto/core'
+import type { MissingField, VertoAdapter, VertoGraph } from '@verto/core'
 import { validateVertoConfig } from '@verto/config'
 import type { VertoConfig } from '@verto/config'
 import { GitHubClient } from './client.js'
@@ -7,6 +7,22 @@ import { requireGitHubConfig } from './githubConfig.js'
 import { mapIssuesToGraph } from './mapper.js'
 import type { GitHubProjectV2Item } from './system_types.js'
 import { fetchProjectStatusOptions } from './statusOptions.js'
+import { resolveProjectName } from './projectName.js'
+
+/** The field check (DESIGN.md §4.6.4) as far as built: org issue fields aren't read yet. */
+export function checkGitHubFields(config: VertoConfig): MissingField[] {
+  const github = requireGitHubConfig(config)
+  return Object.entries(github.fieldMappings ?? {})
+    .filter(([, entry]) => entry.from.kind === 'issueField')
+    .map(([key, entry]) => ({
+      key,
+      field: entry.from.field,
+      kind: entry.from.kind,
+      scope: github.scope === 'project' ? `${github.owner}/project ${github.projectNumber}` : `${github.owner}/${github.repository}`,
+      reason: 'unsupported' as const,
+      suggestedKinds: [],
+    }))
+}
 
 export class GitHubAdapter implements VertoAdapter<VertoConfig> {
   constructor(private readonly token: string) {}
@@ -18,6 +34,14 @@ export class GitHubAdapter implements VertoAdapter<VertoConfig> {
   fieldMappings(config: VertoConfig): Record<string, unknown> | undefined {
     const github = requireGitHubConfig(config)
     return github.fieldMappings as Record<string, unknown> | undefined
+  }
+
+  async checkFields(config: VertoConfig): Promise<MissingField[]> {
+    return checkGitHubFields(config)
+  }
+
+  async projectTitle(config: VertoConfig): Promise<string> {
+    return resolveProjectName(config, this.token)
   }
 
   async loadProject(config: VertoConfig): Promise<VertoGraph> {

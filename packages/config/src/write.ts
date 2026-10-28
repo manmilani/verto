@@ -25,26 +25,23 @@ export function applyConfigPatch(target: Record<string, unknown>, patch: Partial
     }
   }
 
-  if (patch.github !== undefined) {
-    if (!isPlainObject(target.github)) {
-      target.github = {}
+  // Adapter blocks (any other object-valued key): merged per key, fieldMappings per entry.
+  for (const [name, block] of Object.entries(patch as Record<string, unknown>)) {
+    if (name === 'ui' || !isPlainObject(block)) continue
+    if (!isPlainObject(target[name])) {
+      target[name] = {}
     }
-    const targetGh = target.github as Record<string, unknown>
-    const patchGh = patch.github as Record<string, unknown>
+    const targetBlock = target[name] as Record<string, unknown>
 
-    if (patch.github.fieldMappings !== undefined) {
-      if (!isPlainObject(targetGh.fieldMappings)) {
-        targetGh.fieldMappings = {}
+    for (const [key, value] of Object.entries(block)) {
+      if (key === 'fieldMappings' && isPlainObject(value)) {
+        if (!isPlainObject(targetBlock.fieldMappings)) {
+          targetBlock.fieldMappings = {}
+        }
+        Object.assign(targetBlock.fieldMappings as Record<string, unknown>, value)
+      } else {
+        targetBlock[key] = value
       }
-      const targetMappings = targetGh.fieldMappings as Record<string, unknown>
-      for (const [key, entry] of Object.entries(patch.github.fieldMappings)) {
-        targetMappings[key] = entry
-      }
-    }
-
-    for (const [key, value] of Object.entries(patchGh)) {
-      if (key === 'fieldMappings') continue
-      targetGh[key] = value
     }
   }
 }

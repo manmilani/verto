@@ -104,6 +104,29 @@ describe('mergeConfigs', () => {
     expect(merged.ui?.displayStatusGroups).toEqual(base.ui?.displayStatusGroups)
   })
 
+  it('merges the block named by the adapter (fissue) per key and fieldMappings per entry', () => {
+    const defaults: VertoConfig = {
+      adapter: 'fissue',
+      fissue: {
+        fieldMappings: {
+          status: { from: { kind: 'issueField', field: 'status' } },
+          type: { from: { kind: 'issueField', field: 'issueType' } },
+        },
+      },
+    }
+    const merged = mergeConfigs(defaults, {
+      adapter: 'fissue',
+      fissue: { root: 'sub', fieldMappings: { type: { from: { kind: 'issueField', field: 'kind' } } } },
+    })
+    expect(merged.fissue).toEqual({
+      root: 'sub',
+      fieldMappings: {
+        status: { from: { kind: 'issueField', field: 'status' } },
+        type: { from: { kind: 'issueField', field: 'kind' } },
+      },
+    })
+  })
+
   it('neither defaults nor workspace ui → merged.ui is undefined', () => {
     const noUi: VertoConfig = {
       adapter: 'github',

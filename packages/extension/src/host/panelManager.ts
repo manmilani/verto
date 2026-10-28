@@ -5,9 +5,24 @@ import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage } 
 import { loadConfig } from './configLoader.js'
 import { isSetupRequiredConfigError, shouldAutoStartSetupForConfigError } from './configErrors.js'
 import { getGitHubToken } from './authProvider.js'
-import { runPipeline } from './loadPipeline.js'
+import { formatSkippedFields, runPipeline } from './loadPipeline.js'
+import type { AdapterEnv } from './adapterRegistry.js'
+import { getFissueApi } from './fissueApi.js'
 import { loadOverlay, saveOverlay } from './priorityOverlay.js'
 import { runSetup } from './setupWizard.js'
+import { ticketUri } from './ticketUri.js'
+
+function hostEnv(workspaceFolder: string): AdapterEnv {
+  return {
+    workspaceFolder,
+    async getGitHubToken() {
+      const token = await getGitHubToken()
+      if (!token) throw new Error('Verto: GitHub authentication was cancelled.')
+      return token
+    },
+    getFissueApi,
+  }
+}
 
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
@@ -21,6 +36,8 @@ export class PanelManager {
   private setupInProgress = false
   private shouldAutoStartSetup = false
   private watcherDebounce: ReturnType<typeof setTimeout> | undefined
+  /** The last skipped-fields warning shown; repeated only when it changes (or for a new panel). */
+  private lastSkippedWarning = ''
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.overlay = loadOverlay(context)
@@ -73,6 +90,7 @@ export class PanelManager {
         }
         this.panel = undefined
         this.ready = false
+        this.lastSkippedWarning = ''
       },
       undefined,
       this.context.subscriptions,
@@ -137,6 +155,15 @@ export class PanelManager {
       case 'runSetup':
         await this.invokeSetup({ prefillFromWorkspace: true })
         break
+      case 'openTicket': {
+        const uri = ticketUri(msg.url)
+        if (uri) {
+          await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(uri))
+        } else {
+          console.warn(`[verto] not opening ticket URL ${msg.url}`)
+        }
+        break
+      }
     }
   }
 
@@ -149,9 +176,9 @@ export class PanelManager {
     const seq = ++this.fetchSeq
     this.send({ type: 'loading' })
 
-    let config
+    let loaded
     try {
-      config = await loadConfig()
+      loaded = await loadConfig()
     } catch (err) {
       if (seq !== this.fetchSeq) return
       const msg = err instanceof Error ? err.message : String(err)
@@ -172,23 +199,18 @@ export class PanelManager {
 
     if (seq !== this.fetchSeq) return
 
-    const token = await getGitHubToken()
-    if (!token) {
-      if (seq !== this.fetchSeq) return
-      const msg = 'Verto: GitHub authentication was cancelled.'
-      vscode.window.showErrorMessage(msg)
-      this.send({ type: 'error', message: msg })
-      return
-    }
-
-    if (seq !== this.fetchSeq) return
-
     const parsedEnabled: boolean =
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints } = await runPipeline(config, token, parsedEnabled, this.overlay)
+      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints, skipped } =
+        await runPipeline(loaded.config, hostEnv(loaded.workspaceFolder), parsedEnabled, this.overlay)
       if (seq !== this.fetchSeq) return
+      const skippedWarning = skipped.length > 0 ? formatSkippedFields(skipped) : ''
+      if (skippedWarning !== this.lastSkippedWarning) {
+        this.lastSkippedWarning = skippedWarning
+        if (skippedWarning) void vscode.window.showWarningMessage(skippedWarning)
+      }
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
       }
@@ -213,7 +235,7 @@ export class PanelManager {
     } catch (err) {
       if (seq !== this.fetchSeq) return
       const msg = err instanceof Error ? err.message : String(err)
-      vscode.window.showErrorMessage(`Verto: ${msg}`)
+      vscode.window.showErrorMessage(msg.startsWith('Verto:') ? msg : `Verto: ${msg}`)
       this.send({ type: 'error', message: msg })
     }
   }

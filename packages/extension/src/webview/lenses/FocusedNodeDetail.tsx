@@ -4,6 +4,7 @@ import type { DisplayStatusGroup } from '@verto/config'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
 import { displayStatusGroupColorForNode, resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
+import { vscode } from '../vscodeApi.js'
 import {
   Stack, Row, Text, Pill, BorderedBox,
 } from '../components/ui.js'
@@ -43,7 +44,23 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
           <div style={{ width: 5, height: 36, borderRadius: 2, background: barColor, flexShrink: 0 }} />
           <Text weight="bold" style={{ fontSize: 17, flex: 1, minWidth: 200 }}>
             {node.ticketUrl
-              ? <a href={node.ticketUrl} target="_blank" rel="noreferrer" style={linkStyle}>{node.title}</a>
+              ? (
+                <a
+                  href={node.ticketUrl}
+                  style={linkStyle}
+                  onClick={e => {
+                    e.preventDefault()
+                    vscode.postMessage({ type: 'openTicket', url: node.ticketUrl })
+                  }}
+                  onAuxClick={e => {
+                    if (e.button !== 1) return
+                    e.preventDefault()
+                    vscode.postMessage({ type: 'openTicket', url: node.ticketUrl })
+                  }}
+                >
+                  {node.title}
+                </a>
+              )
               : node.title}
           </Text>
           <Pill
