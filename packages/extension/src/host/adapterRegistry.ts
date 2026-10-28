@@ -10,6 +10,8 @@ export interface AdapterEnv {
   /** Resolves to a token, or throws (e.g. when the user declines sign-in). */
   getGitHubToken(): Promise<string>
   getFissueApi(): Promise<FissueApiV1>
+  /** Shows a non-blocking warning to the user (default: `console.warn`). */
+  warn?(message: string): void
 }
 
 export interface AdapterEntry {
@@ -22,7 +24,7 @@ export interface AdapterEntry {
 export const ADAPTERS: Record<string, AdapterEntry> = {
   github: {
     defaults: githubAdapterDefaults,
-    create: async env => new GitHubAdapter(await env.getGitHubToken()),
+    create: async env => new GitHubAdapter(await env.getGitHubToken(), env.warn?.bind(env)),
     setup: { isComplete: isWorkspaceSetupComplete },
   },
   fissue: {

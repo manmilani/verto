@@ -1036,11 +1036,14 @@ same name exists).
   `adapter.checkFields?(config)`, then `withoutMappings(config, keys)` (`@verto/config`);
   `loadProject`, `fieldMappings`, sufficiency and parsed mappings all use that reduced
   config.
-- **Built today.** The extension shows the skipped list as one non-modal warning,
-  repeated only when the list changes (the Skip / Cancel prompt is still to come);
-  scripts print it. fissue checks by name (§4.6.10). GitHub's `checkFields` reports only
-  `issueField` mappings, as `unsupported` (org issue fields aren't read yet); its
-  missing-field detection and kind suggestions are not built yet (§5.3).
+- **Failed lookups.** A kind whose lookup fails (network, token scope, an error not
+  attributable to a mapping) is not checked: its mappings are trusted and it gives no
+  suggestions. If that kind is mapped, the user sees one non-modal warning naming the
+  kind and the error; the load continues.
+- **Built today.** The extension shows the modal Skip / Cancel prompt with session
+  memory (keyed by config and warning text; survives closing the panel); scripts print
+  the list and skip. fissue checks by name (§4.6.10); GitHub checks all three kinds with
+  suggestions (§4.6.7).
 
 **Relationship fields.** Only parent/child and blocked-by/blocking become graph edges
 (system accessor, §4.6.5). Any other relationship (e.g. GitHub `duplicateOf`,
@@ -1074,7 +1077,7 @@ not inside adapters:
 
 ```
 registry: adapter = ADAPTERS[config.adapter].create(env)   // env: workspace folder, GitHub token (lazy), fissue API
-adapter.checkFields?(config) → MissingField[]   // §4.6.4; warn, config = withoutMappings(config, keys)
+adapter.checkFields?(config) → MissingField[]   // §4.6.4; skip or cancel, config = withoutMappings(config, keys)
 adapter.loadProject(config) → VertoGraph
 adapter.projectTitle?(config) ?? config.adapter   // panel title
   → runHostPipeline(graph, { parsedEnabled?, priorityOverlay?, fieldMappings? })
@@ -1207,11 +1210,12 @@ mapping layer consistent across scopes.
 
 | `from.kind` | How existence is checked |
 |---|---|
-| `issue` | A small query (one issue) is sent with the `Issue` selection built from the configured fields (not a fixed list). GitHub rejects unknown properties as `errors[]` entries with `extensions.code: "undefinedField"`, `typeName` and `fieldName` (HTTP 200; all reported together, independent of data); these identify every missing field. Unknown names are selected as scalars; a name GitHub rejects as needing a sub-selection or arguments (an object or connection with no resolver entry) is reported as unsupported. `loadProject` builds its selection the same way, minus skipped entries. Names known to `ISSUE_FIELD_RESOLVER`, including its aliases (e.g. `type` → `issueType.name`, `assignee` → first of `assignees`, `updated_at` → `updatedAt`), count as existing. |
-| `issueField` | The issue-field definitions (name + data type) of the configured `github.owner` are fetched and compared case-insensitively; if the owner is a user, every `issueField` mapping is missing. Needed because an unknown name never fails a query — it just never appears in `issueFieldValues` — so only the definitions tell "doesn't exist" from "empty". |
+| `issue` | A probe query `viewer { issues(first: 0) { nodes { … } } }` (validated, never executed) is sent with the `Issue` selection built from the configured fields (not a fixed list), every entry under a unique alias so each error is attributable to one mapping (via the alias in its `path`). GitHub rejects unknown properties as `errors[]` entries with `extensions.code: "undefinedField"`, `typeName` and `fieldName` (HTTP 200; all reported together, independent of data); these identify every missing field. Unknown names are selected as scalars; a name GitHub rejects as needing a sub-selection or arguments (an object or connection with no resolver entry) is reported as unsupported. `loadProject` builds its selection the same way, minus skipped entries. Names known to `ISSUE_FIELD_RESOLVER`, including its aliases (e.g. `type` → `issueType.name`, `assignee` → first of `assignees`, `updated_at` → `updatedAt`), count as existing. |
+| `issueField` | The issue-field definitions of the configured `github.owner` are fetched via `repositoryOwner(login)` (both scopes; works for users and orgs) and compared case-insensitively; if the owner is a user, every `issueField` mapping is missing. Needed because an unknown name never fails a query — it just never appears in `issueFieldValues` — so only the definitions tell "doesn't exist" from "empty". |
 | `projectV2` | Compared case-insensitively against the project's field definitions (already fetched for Status options). Project scope only. |
 
-Suggestions come from the same three lookups. In project scope an org issue field
+The three lookups run in parallel and are best-effort: a failed lookup leaves its kind
+unchecked (§4.6.4 "Failed lookups"). Suggestions come from the same three lookups. In project scope an org issue field
 added to the Project can be read through either `projectV2` or `issueField`; the kind
 in config decides.
 
@@ -1681,9 +1685,6 @@ the body sections cited — this list is the index.
   status options from the Project's Status field (GitHub) or from the mapped fissue
   `select` field (§4.6.10); when GitHub's `status` maps to an `issueField` select, its
   options should come from that field's definition.
-- **GitHub field check.** GitHub's `checkFields` only reports `issueField` mappings as
-  `unsupported`; detecting missing Issue properties / Project fields and suggesting the
-  other kind (§4.6.4) is not built yet.
 
 ### 5.4 Extension & UI
 

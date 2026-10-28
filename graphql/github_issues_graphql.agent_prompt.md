@@ -25,7 +25,9 @@ Q { user(login: String!) { id } }                                         # user
 Q { REPO { label(name: String!) { id } } }                                # label node ID
 Q { REPO { milestones(first: 20) { nodes { id number title } } } }        # milestone IDs
 Q { REPO { issueTypes(first: 20)  { nodes { id name } } } }               # issue type IDs
-Q { REPO { issueFields(first: 20) { nodes { id name dataType } } } }      # custom field IDs
+Q { repositoryOwner(login: String!) { __typename ... on Organization {     # org issue fields (user → none)
+    issueFields(first: 30) { nodes { ... on IssueFieldCommon { id name dataType } } } } } }
+Q { REPO { issueFields(first: 30) { nodes { ... on IssueFieldCommon { id name dataType } } } } }  # same, via repo (null for user repos)
 Q { REPO { issueTemplates { name title body about } } }                   # templates
 Q { node(id: PROJECT_ID) { ... on ProjectV2 {                             # project field + option IDs
     fields(first: 30) { nodes {
@@ -49,6 +51,7 @@ Issue {
   issueType { id name } · repository { name owner { login } }
 
   parent { id number title } · duplicateOf { id number title }
+  relatesTo([…] orderBy?: { field: CREATED_AT|RELATES_TO_ADDED_AT direction: ASC|DESC }) { nodes { id number title } }
   subIssues([…]) { nodes { id number title state } } · subIssuesSummary { total completed percentCompleted }
   trackedIssues([…]) { nodes { id number title state } } · trackedInIssues([…]) { nodes { id number title state } }
   blockedBy([…]) { nodes { id number title state } } · blocking([…]) { nodes { id number title state } }
@@ -81,11 +84,15 @@ Issue {
       ... on ProjectV2ItemFieldSingleSelectValue { field { id name } name optionId }
       ... on ProjectV2ItemFieldIterationValue    { field { id name } title } } } } }
 
-  issueFieldValues(first: 20) { nodes {
-    ... on IssueFieldTextValue         { field { id name } textValue }
-    ... on IssueFieldNumberValue       { field { id name } numberValue }
-    ... on IssueFieldDateValue         { field { id name } dateValue }
-    ... on IssueFieldSingleSelectValue { field { id name } name } } }
+  # `field` is the union IssueFields → read it via IssueFieldCommon. Every value type has `value`,
+  # but with different types (String! / Float! / String) → alias it per fragment.
+  # Never select issueFieldValues { totalCount } (GitHub internal error).
+  issueFieldValues(first: 30) { nodes {
+    ... on IssueFieldTextValue         { field { ... on IssueFieldCommon { name } } textValue: value }
+    ... on IssueFieldNumberValue       { field { ... on IssueFieldCommon { name } } numberValue: value }
+    ... on IssueFieldDateValue         { field { ... on IssueFieldCommon { name } } dateValue: value }
+    ... on IssueFieldSingleSelectValue { field { ... on IssueFieldCommon { name } } name optionId }
+    ... on IssueFieldMultiSelectValue  { field { ... on IssueFieldCommon { name } } options { id name } } } }
 
   linkedBranches(first: 10) { nodes { id ref { name } } }
   closedByPullRequestsReferences(first: 10) { nodes { number title state } }
@@ -173,9 +180,10 @@ addBlockedBy({ issueId!, blockingIssueId! })
 removeBlockedBy({ issueId!, blockingIssueId! })
 ```
 
-### G. Duplicate & Subscription
+### G. Duplicate, Relates to & Subscription
 ```
 unmarkIssueAsDuplicate({ duplicateId!, canonicalId! })
+addRelatesTo({ issueId!, relatedIssueId! })  ·  removeRelatesTo({ issueId!, relatedIssueId! })
 updateSubscription({ subscribableId!, state!: SUBSCRIBED|UNSUBSCRIBED|IGNORED })
 ```
 
@@ -204,7 +212,8 @@ deleteIssueField({ fieldId! })
 
 ### K. Custom Field Values  (per-issue)
 ```
-# IssueFieldCreateOrUpdateInput: { fieldId!, textValue?, numberValue?, dateValue?, singleSelectOptionId?, delete? }
+# IssueFieldCreateOrUpdateInput: { fieldId!, textValue?, numberValue?, dateValue?, singleSelectOptionId?,
+#                                  multiSelectOptionIds?: [ID!], delete? }
 setIssueFieldValue({ issueId!, issueFields!: [IssueFieldCreateOrUpdateInput!] })  # bulk (preferred)
 createIssueFieldValue({ issueId!, fieldId!, textValue?, numberValue?, dateValue?, singleSelectOptionId? })
 updateIssueFieldValue({ issueId!, issueField!: IssueFieldCreateOrUpdateInput })
@@ -231,6 +240,7 @@ IssueClosedStateReason: COMPLETED | NOT_PLANNED | DUPLICATE
 IssueOrderField:        COMMENTS | CREATED_AT | UPDATED_AT
 IssueFieldDataType:     TEXT | NUMBER | DATE | SINGLE_SELECT | MULTI_SELECT
 IssueFieldVisibility:   PUBLIC | PRIVATE
+IssueRelatesToOrderField: CREATED_AT | RELATES_TO_ADDED_AT
 IssueTypeColor:         BLUE | GRAY | GREEN | ORANGE | PINK | PURPLE | RED | YELLOW
 LockReason:             OFF_TOPIC | RESOLVED | SPAM | TOO_HEATED
 ReactionContent:        THUMBS_UP | THUMBS_DOWN | LAUGH | HOORAY | CONFUSED | HEART | ROCKET | EYES

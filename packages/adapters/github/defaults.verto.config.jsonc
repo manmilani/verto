@@ -57,6 +57,15 @@
       //   // For a NUMBER field use: { "from": {...}, "type": "number" } — no "values" map needed.
       //   // For a SINGLE_SELECT field, "values" is required; missing entries default to priority 5.
       // },
+      // Org issue fields (organization-owned repos only) use kind "issueField", e.g.:
+      // "priority": {
+      //   "from": { "kind": "issueField", "field": "Priority" },
+      //   "type": "select",
+      //   "values": { "Urgent": 1, "High": 3, "Medium": 5, "Low": 7 }
+      // },
+      // Issue relationships land in ticketFields as issue IDs (never graph edges):
+      // "duplicate_of": { "from": { "kind": "issue", "field": "duplicateOf" } },
+      // "relates_to":   { "from": { "kind": "issue", "field": "relatesTo" } },
       // "resolution": {
       //   "from": { "kind": "projectV2", "field": "resolution" },
       //   "type": "select"

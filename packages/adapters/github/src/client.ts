@@ -1,36 +1,7 @@
 import { graphql } from '@octokit/graphql'
-import type { GitHubIssue, GitHubProjectV2FieldValue, GitHubProjectV2Item } from './system_types.js'
+import type { GitHubIssue, GitHubProjectV2FieldValue, GitHubProjectV2Item, IssueConnectionName } from './system_types.js'
 import type { GitHubIssueFilter } from '@verto/config'
-
-// Shared issue fields used in all queries
-const ISSUE_FIELDS = `
-  id
-  number
-  title
-  body
-  closed
-  stateReason
-  url
-  createdAt
-  updatedAt
-  issueType { name }
-  labels(first: 50) { nodes { name } }
-  assignees(first: 20) { nodes { login } }
-  milestone { title }
-  parent { id }
-  subIssues(first: 100) {
-    nodes { id }
-    pageInfo { hasNextPage endCursor }
-  }
-  blockedBy(first: 100) {
-    nodes { id }
-    pageInfo { hasNextPage endCursor }
-  }
-  blocking(first: 100) {
-    nodes { id }
-    pageInfo { hasNextPage endCursor }
-  }
-`
+import { buildIssueSelection, type IssueSelection } from './issue_selection.js'
 
 const FIELD_VALUE_FRAGMENTS = `
   ... on ProjectV2ItemFieldTextValue         { field { ... on ProjectV2FieldCommon { name } } text }
@@ -46,7 +17,8 @@ type GQL = (query: string, variables?: Record<string, unknown>) => Promise<any>
 export class GitHubClient {
   private readonly gql: GQL
 
-  constructor(token: string) {
+  /** `issues` is the `Issue` selection used by every issue fetch (default: the system part only). */
+  constructor(token: string, private readonly issues: IssueSelection = buildIssueSelection()) {
     this.gql = graphql.defaults({
       headers: { authorization: `token ${token}` },
     }) as GQL
@@ -124,7 +96,7 @@ export class GitHubClient {
       const query = `
         query FetchIssuesByIds($ids: [ID!]!) {
           nodes(ids: $ids) {
-            ... on Issue { ${ISSUE_FIELDS} }
+            ... on Issue { ${this.issues.selection} }
           }
         }
       `
@@ -135,17 +107,7 @@ export class GitHubClient {
       issues.push(...raw)
     }
 
-    // Follow nested pagination for any issue that has more than 100 items
-    for (const issue of issues) {
-      for (const connection of ['subIssues', 'blockedBy', 'blocking'] as const) {
-        if (issue[connection].pageInfo.hasNextPage) {
-          const extra = await this.fetchNestedConnection(issue.id, connection, issue[connection].pageInfo.endCursor!)
-          issue[connection].nodes.push(...extra)
-          issue[connection].pageInfo.hasNextPage = false
-        }
-      }
-    }
-
+    await this.followNestedPages(issues)
     return issues
   }
 
@@ -164,7 +126,7 @@ export class GitHubClient {
             filterBy: { labels: $labels, assignee: $assignee, milestone: $milestone }
           ) {
             pageInfo { hasNextPage endCursor }
-            nodes { ${ISSUE_FIELDS} }
+            nodes { ${this.issues.selection} }
           }
         }
       }
@@ -186,23 +148,27 @@ export class GitHubClient {
       after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null
     } while (after)
 
-    // Follow nested pagination
+    await this.followNestedPages(issues)
+    return issues
+  }
+
+  /** Completes every paginated id connection with more than one page. */
+  private async followNestedPages(issues: GitHubIssue[]): Promise<void> {
     for (const issue of issues) {
-      for (const connection of ['subIssues', 'blockedBy', 'blocking'] as const) {
-        if (issue[connection].pageInfo.hasNextPage) {
-          const extra = await this.fetchNestedConnection(issue.id, connection, issue[connection].pageInfo.endCursor!)
-          issue[connection].nodes.push(...extra)
-          issue[connection].pageInfo.hasNextPage = false
+      for (const connection of this.issues.paginated) {
+        const conn = issue[connection]
+        if (conn?.pageInfo.hasNextPage) {
+          const extra = await this.fetchNestedConnection(issue.id, connection, conn.pageInfo.endCursor!)
+          conn.nodes.push(...extra)
+          conn.pageInfo.hasNextPage = false
         }
       }
     }
-
-    return issues
   }
 
   private async fetchNestedConnection(
     issueId: string,
-    connection: 'subIssues' | 'blockedBy' | 'blocking',
+    connection: IssueConnectionName,
     startCursor: string,
   ): Promise<{ id: string }[]> {
     const query = `

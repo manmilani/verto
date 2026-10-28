@@ -1,15 +1,15 @@
 import type { VertoConfig } from '@verto/config'
 import { requireGitHubConfig } from './githubConfig.js'
 import { gqlRequest } from './gqlRequest.js'
-import { statusOptionsFromProjectFields } from './projectField.js'
+import { statusOptionsFromProjectFields, type ProjectFieldNode } from './projectField.js'
 
-/** Status column option names from a GitHub ProjectV2 (empty when unavailable). */
-export async function fetchProjectStatusOptions(
+/** Field definitions of the configured ProjectV2; `undefined` when not project scope or not found. */
+export async function fetchProjectFieldNodes(
   token: string,
   config: VertoConfig,
-): Promise<string[]> {
+): Promise<ProjectFieldNode[] | undefined> {
   const github = requireGitHubConfig(config)
-  if (github.scope !== 'project') return []
+  if (github.scope !== 'project') return undefined
 
   const ownerField = github.ownerType === 'organization' ? 'organization' : 'user'
   const data = await gqlRequest(
@@ -31,13 +31,17 @@ export async function fetchProjectStatusOptions(
   )
 
   const project = (data as Record<string, {
-    projectV2?: {
-      fields: {
-        nodes: Array<{ name?: string; options?: Array<{ name: string }> }>
-      }
-    }
+    projectV2?: { fields: { nodes: ProjectFieldNode[] } }
   }>)[ownerField]?.projectV2
-  if (!project) return []
+  return project?.fields.nodes
+}
 
-  return statusOptionsFromProjectFields(project.fields.nodes, github.fieldMappings)
+/** Status column option names from a GitHub ProjectV2 (empty when unavailable). */
+export async function fetchProjectStatusOptions(
+  token: string,
+  config: VertoConfig,
+): Promise<string[]> {
+  const fields = await fetchProjectFieldNodes(token, config)
+  if (!fields) return []
+  return statusOptionsFromProjectFields(fields, requireGitHubConfig(config).fieldMappings)
 }

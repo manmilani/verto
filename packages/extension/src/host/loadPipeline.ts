@@ -10,19 +10,31 @@ import {
 import { runHostPipeline } from '@verto/text-parser'
 import { getAdapter, type AdapterEnv } from './adapterRegistry.js'
 
-/** One line describing mappings skipped by the field check (DESIGN.md §4.6.4). */
-export function formatSkippedFields(skipped: MissingField[]): string {
-  const parts = skipped.map(m =>
-    `${m.key} (${m.kind} "${m.field}" ${m.reason === 'missing' ? `not found in ${m.scope}` : 'not supported'})`,
-  )
-  return `Verto: skipped field mappings: ${parts.join('; ')}`
+/** One field-check finding, with the other kinds where the name exists (DESIGN.md §4.6.4). */
+export function describeMissingField(m: MissingField): string {
+  const problem = m.reason === 'missing' ? `not found in ${m.scope}` : 'not supported'
+  const hint = m.suggestedKinds.length > 0
+    ? ` — found as kind ${m.suggestedKinds.map(k => `"${k}"`).join(', ')}`
+    : ''
+  return `${m.key}: kind "${m.kind}" "${m.field}" ${problem}${hint}`
 }
 
+/** One line describing mappings skipped by the field check (scripts). */
+export function formatSkippedFields(skipped: MissingField[]): string {
+  return `Verto: skipped field mappings: ${skipped.map(describeMissingField).join('; ')}`
+}
+
+/**
+ * Check, then load. When the field check finds mappings that can't be read, `confirmSkip`
+ * decides: `true` skips them and loads, `false` cancels (result `null`). Without it they are
+ * skipped (non-interactive scripts).
+ */
 export async function runPipeline(
   loadedConfig: VertoConfig,
   env: AdapterEnv,
   parsedEnabled: boolean,
   priorityOverlay?: Record<string, number | null>,
+  confirmSkip?: (missing: MissingField[]) => Promise<boolean>,
 ): Promise<{
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
@@ -31,9 +43,10 @@ export async function runPipeline(
   projectName: string
   priorityOptionHints: PriorityOptionHints
   skipped: MissingField[]
-}> {
+} | null> {
   const adapter = await getAdapter(loadedConfig, env)
   const skipped = (await adapter.checkFields?.(loadedConfig)) ?? []
+  if (skipped.length > 0 && confirmSkip && !(await confirmSkip(skipped))) return null
   const config = withoutMappings(loadedConfig, skipped.map(m => m.key))
 
   const fieldMappings = adapter.fieldMappings?.(config) as FieldMappings | undefined

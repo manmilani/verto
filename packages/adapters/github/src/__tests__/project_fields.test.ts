@@ -186,12 +186,98 @@ describe('ProjectFieldAccessor', () => {
     expect('isDone' in pfa.toVertoNodeFields(makeIssue({ issueType: { name: 'Bug' } }))).toBe(false)
   })
 
-  it('skips issueField entries (unsupported for GitHub)', () => {
+  describe('kind:issueField (org issue fields)', () => {
+    const withValues = (...nodes: NonNullable<GitHubIssue['issueFieldValues']>['nodes']) =>
+      makeIssue({ issueFieldValues: { nodes } })
+
+    it('reads priority from the org Priority field with a values map, case-insensitively (AC 2)', () => {
+      const mappings: FieldMappings = {
+        priority: { from: { kind: 'issueField', field: 'priority' }, values: { Urgent: 1, High: 3, Medium: 5, Low: 7 } },
+      }
+      const pfa = new ProjectFieldAccessor(mappings, 'repository')
+      const issue = withValues({ field: { name: 'Priority' }, optionName: 'High' })
+      expect(pfa.toVertoNodeFields(issue).priority).toBe(3)
+      expect(pfa.emptyPriorityCount).toBe(0)
+    })
+
+    it('reads text, number and date values; a set field with no value on the issue is null (AC 7)', () => {
+      const mappings: FieldMappings = {
+        note: { from: { kind: 'issueField', field: 'Note' } },
+        effort: { from: { kind: 'issueField', field: 'Effort' } },
+        target: { from: { kind: 'issueField', field: 'Target date' } },
+        risk: { from: { kind: 'issueField', field: 'Risk' } },
+      }
+      const issue = withValues(
+        { field: { name: 'Note' }, textValue: 'hello' },
+        { field: { name: 'Effort' }, numberValue: 3 },
+        { field: { name: 'Target date' }, dateValue: '2026-11-01' },
+        null,
+      )
+      const tf = new ProjectFieldAccessor(mappings, 'repository').toVertoNodeFields(issue).ticketFields!
+      expect(tf).toMatchObject({ note: 'hello', effort: 3, target: '2026-11-01', risk: null })
+      expect(warnSpy).not.toHaveBeenCalled()
+    })
+
+    it('multi-select gives the option names; values map applies per item', () => {
+      const mappings: FieldMappings = {
+        areas: { from: { kind: 'issueField', field: 'Areas' }, type: 'select', isArray: true, values: { UI: 'ui', API: 'api' } },
+      }
+      const issue = withValues({ field: { name: 'Areas' }, options: [{ name: 'UI' }, { name: 'API' }] })
+      expect(new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(issue).ticketFields!['areas'])
+        .toEqual(['ui', 'api'])
+    })
+
+    it('no issueFieldValues selected (e.g. user-owned repo) → null', () => {
+      const mappings: FieldMappings = { risk: { from: { kind: 'issueField', field: 'Risk' } } }
+      expect(new ProjectFieldAccessor(mappings, 'repository').toVertoNodeFields(makeIssue()).ticketFields!['risk'])
+        .toBeNull()
+    })
+
+    it('dot-notation entry auto-includes the issue field as its base value', () => {
+      const mappings: FieldMappings = { phase: { from: { kind: 'issueField', field: 'Notes.PHASE' } } }
+      const issue = withValues({ field: { name: 'notes' }, textValue: 'PHASE:BEGIN\na\nPHASE:END' })
+      expect(new ProjectFieldAccessor(mappings, 'repository').toVertoNodeFields(issue).ticketFields!['Notes'])
+        .toBe('PHASE:BEGIN\na\nPHASE:END')
+    })
+  })
+
+  it('kind:issue trusts the config: any scalar Issue property is read as-is (AC 3)', () => {
+    const mappings: FieldMappings = { comments_locked: { from: { kind: 'issue', field: 'locked' } } }
+    const issue = makeIssue({ locked: true })
+    expect(new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(issue).ticketFields!['comments_locked'])
+      .toBe(true)
+  })
+
+  it('kind:issue: a name inherited from Object.prototype reads null, not the prototype member', () => {
+    const mappings: FieldMappings = { c: { from: { kind: 'issue', field: 'constructor' } } }
+    expect(new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(makeIssue()).ticketFields!['c']).toBeNull()
+  })
+
+  it('duplicateOf / relatesTo land in ticketFields as ids, never in prereqIds / childIds (AC 8)', () => {
     const mappings: FieldMappings = {
-      thing: { from: { kind: 'issueField', field: 'title' } },
+      duplicate_of: { from: { kind: 'issue', field: 'duplicateOf' } },
+      related: { from: { kind: 'issue', field: 'relatesTo' } },
     }
-    const fields = new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(makeIssue())
-    expect(fields.ticketFields?.['thing']).toBeUndefined()
+    const issue = makeIssue({
+      duplicateOf: { id: 'D1' },
+      relatesTo: { nodes: [{ id: 'R1' }, { id: 'R2' }], pageInfo: { hasNextPage: false, endCursor: null } },
+    })
+    const fields = new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(issue)
+    expect(fields.ticketFields).toMatchObject({ duplicate_of: 'D1', related: ['R1', 'R2'] })
+    expect(fields.prereqIds).toBeUndefined()
+    expect(fields.childIds).toBeUndefined()
+    const sys = new SystemFieldAccessor().toVertoNodeFields(issue)
+    expect(sys.prereqIds).toEqual([])
+    expect(sys.childIds).toEqual([])
+  })
+
+  it('duplicateOf / relatesTo empty on the issue → null', () => {
+    const mappings: FieldMappings = {
+      duplicate_of: { from: { kind: 'issue', field: 'duplicateOf' } },
+      related: { from: { kind: 'issue', field: 'relatesTo' } },
+    }
+    const tf = new ProjectFieldAccessor(mappings, 'project').toVertoNodeFields(makeIssue({ duplicateOf: null })).ticketFields!
+    expect(tf).toMatchObject({ duplicate_of: null, related: null })
   })
 
   it('skips projectV2 entries with warning in repository scope', () => {

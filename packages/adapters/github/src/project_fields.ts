@@ -1,8 +1,16 @@
 import type { VertoNode } from '@verto/core'
 import { CANONICAL_VERTO_NODE_KEYS } from '@verto/core'
-import type { FieldMappings } from '@verto/config'
+import type { FieldMappingEntry, FieldMappings } from '@verto/config'
 import { applyMappingTail } from '@verto/config'
-import type { GitHubIssue, GitHubProjectV2FieldValue, GitHubProjectV2Item } from './system_types.js'
+import type {
+  GitHubIssue,
+  GitHubProjectV2FieldValue,
+  GitHubProjectV2Item,
+  IssueConnectionName,
+  IssueIdConnection,
+} from './system_types.js'
+
+type SourceKind = FieldMappingEntry['from']['kind']
 
 interface FieldAccessor {
   toVertoNodeFields(issue: GitHubIssue, projectItem?: GitHubProjectV2Item): Partial<VertoNode>
@@ -29,56 +37,94 @@ export class SystemFieldAccessor implements FieldAccessor {
   }
 }
 
-const ISSUE_FIELD_RESOLVER: Record<string, (issue: GitHubIssue) => unknown> = {
-  type: i => i.issueType?.name ?? null,
-  assignee: i => i.assignees.nodes[0]?.login ?? null,
-  labels: i => i.labels.nodes.map(l => l.name),
-  created_at: i => i.createdAt,
-  updated_at: i => i.updatedAt,
-  body: i => i.body,
-  stateReason: i => i.stateReason,
-  milestone: i => i.milestone?.title ?? null,
+/** Selects and flattens one `kind: "issue"` name that isn't a plain scalar `Issue` property. */
+export interface IssuePropertyReader {
+  /** GraphQL selection on `Issue`. */
+  select: string
+  read: (issue: GitHubIssue) => unknown
+  /** Connection to follow past its first page. */
+  paginated?: IssueConnectionName
+}
+
+const ids = (c: IssueIdConnection | undefined): string[] | null => c?.nodes.map(n => n.id) ?? null
+
+/**
+ * Flattening table for known non-scalar or renamed `Issue` properties — not an allow-list: any
+ * other name is selected as a scalar and read as `issue[name]` (DESIGN.md §4.6.4).
+ */
+export const ISSUE_FIELD_RESOLVER: Record<string, IssuePropertyReader> = {
+  type: { select: 'issueType { name }', read: i => i.issueType?.name ?? null },
+  assignee: { select: 'assignees(first: 20) { nodes { login } }', read: i => i.assignees?.nodes[0]?.login ?? null },
+  labels: { select: 'labels(first: 50) { nodes { name } }', read: i => i.labels.nodes.map(l => l.name) },
+  created_at: { select: 'createdAt', read: i => i.createdAt },
+  updated_at: { select: 'updatedAt', read: i => i.updatedAt ?? null },
+  milestone: { select: 'milestone { title }', read: i => i.milestone?.title ?? null },
+  duplicateOf: { select: 'duplicateOf { id }', read: i => i.duplicateOf?.id ?? null },
+  relatesTo: {
+    select: 'relatesTo(first: 100) { nodes { id } pageInfo { hasNextPage endCursor } }',
+    read: i => ids(i.relatesTo),
+    paginated: 'relatesTo',
+  },
+}
+
+/** The reader for `name`, if any (own entries only, so `constructor` etc. stay plain names). */
+export function issueReader(name: string): IssuePropertyReader | undefined {
+  return Object.prototype.hasOwnProperty.call(ISSUE_FIELD_RESOLVER, name) ? ISSUE_FIELD_RESOLVER[name] : undefined
+}
+
+/** Value of the org issue field `name` (case-insensitive) on `issue`; `null` when unset. */
+export function issueFieldValue(issue: GitHubIssue, name: string): unknown {
+  const lower = name.toLowerCase()
+  const node = issue.issueFieldValues?.nodes.find(n => n?.field?.name?.toLowerCase() === lower)
+  if (!node) return null
+  if (node.options) return node.options.map(o => o.name)
+  return node.textValue ?? node.numberValue ?? node.dateValue ?? node.optionName ?? null
+}
+
+/** Raw value of a mapped field before `values` / `type`; `undefined` = no value source (skip the entry). */
+function readRaw(kind: SourceKind, field: string, issue: GitHubIssue, projectItem?: GitHubProjectV2Item): unknown {
+  switch (kind) {
+    case 'issue': {
+      const reader = issueReader(field)
+      if (reader) return reader.read(issue)
+      return Object.prototype.hasOwnProperty.call(issue, field) ? (issue[field] ?? null) : null
+    }
+    case 'issueField':
+      return issueFieldValue(issue, field)
+    case 'projectV2': {
+      const fv = projectItem?.fieldValues.find(f => f.fieldName.toLowerCase() === field.toLowerCase())
+      return fv ? resolveProjectV2Value(fv) : undefined
+    }
+    default:
+      return undefined
+  }
 }
 
 export class ProjectFieldAccessor implements FieldAccessor {
-  private readonly autoIncludeBaseFields: Map<string, (issue: GitHubIssue) => unknown>
-  private readonly autoIncludeProjectV2BaseFields: Set<string>
+  /** Base fields of dot-notation entries not mapped by an entry of their own (read for @verto/text-parser). */
+  private readonly autoIncludeBaseFields: Array<{ kind: SourceKind; baseField: string }> = []
 
   constructor(
     private readonly fieldMappings: FieldMappings,
     private readonly scope: 'project' | 'repository',
   ) {
-    // Pre-compute which base fields must be auto-included for dot-notation entries.
-    // A base field only needs auto-include if it isn't also directly mapped by its own entry.
-    const explicitIssueFields = new Set<string>()
-    const explicitProjectV2Fields = new Set<string>()
+    // Names compare like the tracker does: Issue properties exactly, custom fields case-insensitively.
+    const id = (kind: SourceKind, field: string) => `${kind}:${kind === 'issue' ? field : field.toLowerCase()}`
+    const explicit = new Set(
+      Object.values(fieldMappings)
+        .filter(e => !e.from.field.includes('.'))
+        .map(e => id(e.from.kind, e.from.field)),
+    )
+
     for (const entry of Object.values(fieldMappings)) {
-      if (entry.from.field.includes('.')) continue
-      if (entry.from.kind === 'issue') explicitIssueFields.add(entry.from.field)
-      else if (entry.from.kind === 'projectV2') explicitProjectV2Fields.add(entry.from.field.toLowerCase())
-    }
-
-    this.autoIncludeBaseFields = new Map()
-    this.autoIncludeProjectV2BaseFields = new Set()
-
-    for (const [key, entry] of Object.entries(fieldMappings)) {
       const dot = entry.from.field.indexOf('.')
       if (dot === -1) continue
+      const { kind } = entry.from
       const baseField = entry.from.field.slice(0, dot)
-
-      if (entry.from.kind === 'issue') {
-        if (!explicitIssueFields.has(baseField) && !this.autoIncludeBaseFields.has(baseField)) {
-          const resolver = ISSUE_FIELD_RESOLVER[baseField]
-            ?? ((i: GitHubIssue) => (i as unknown as Record<string, unknown>)[baseField] ?? null)
-          this.autoIncludeBaseFields.set(baseField, resolver)
-        }
-      } else if (entry.from.kind === 'projectV2') {
-        if (!explicitProjectV2Fields.has(baseField.toLowerCase())) {
-          this.autoIncludeProjectV2BaseFields.add(baseField)
-        }
-      } else {
-        console.warn(`[verto] fieldMappings["${key}"]: unknown kind '${entry.from.kind}', skipping`)
-      }
+      if (kind === 'projectV2' && scope === 'repository') continue
+      if (explicit.has(id(kind, baseField))) continue
+      explicit.add(id(kind, baseField))
+      this.autoIncludeBaseFields.push({ kind, baseField })
     }
   }
 
@@ -92,32 +138,19 @@ export class ProjectFieldAccessor implements FieldAccessor {
 
     for (const [key, entry] of Object.entries(this.fieldMappings)) {
       const { from, values, type: typeHint } = entry
-      let rawValue: unknown = null
 
       // Dot-notation entries (e.g. "labels.persona") are handled by @verto/text-parser;
       // the adapter's job is only to ensure the base field is in ticketFields (see below).
       if (from.field.includes('.')) continue
 
-      if (from.kind === 'projectV2') {
-        if (this.scope === 'repository') {
-          console.warn(
-            `[verto] fieldMappings["${key}"]: kind 'projectV2' unavailable in repository scope, skipping`,
-          )
-          continue
-        }
-        const fv = projectItem?.fieldValues.find(
-          f => f.fieldName.toLowerCase() === from.field.toLowerCase(),
+      if (from.kind === 'projectV2' && this.scope === 'repository') {
+        console.warn(
+          `[verto] fieldMappings["${key}"]: kind 'projectV2' unavailable in repository scope, skipping`,
         )
-        if (!fv) continue
-        rawValue = resolveProjectV2Value(fv)
-      } else if (from.kind === 'issue') {
-        const resolver = ISSUE_FIELD_RESOLVER[from.field]
-        rawValue = resolver
-          ? resolver(issue)
-          : ((issue as unknown as Record<string, unknown>)[from.field] ?? null)
-      } else {
         continue
       }
+      const rawValue = readRaw(from.kind, from.field, issue, projectItem)
+      if (rawValue === undefined) continue
 
       const value = applyMappingTail(rawValue, values, typeHint)
 
@@ -146,26 +179,10 @@ export class ProjectFieldAccessor implements FieldAccessor {
     // text-parser reads these from ticketFields to apply parsed sub-field extraction.
     // Also fires when the field was explicitly mapped but produced null (e.g. a projectV2
     // mapping for a built-in field like "Labels" that doesn't appear in fieldValues).
-    for (const [baseField, resolver] of this.autoIncludeBaseFields) {
-      if (!(baseField in ticketFields) || ticketFields[baseField] === null) {
-        const rawValue = resolver(issue)
-        if (rawValue !== null && rawValue !== undefined) {
-          ticketFields[baseField] = rawValue
-        }
-      }
-    }
-
-    // Auto-include projectV2 base fields for dot-notation entries with kind:'projectV2'.
-    if (this.scope !== 'repository' && projectItem) {
-      for (const baseField of this.autoIncludeProjectV2BaseFields) {
-        if (baseField in ticketFields && ticketFields[baseField] !== null) continue
-        const fv = projectItem.fieldValues.find(
-          f => f.fieldName.toLowerCase() === baseField.toLowerCase(),
-        )
-        if (fv) {
-          ticketFields[baseField] = resolveProjectV2Value(fv)
-        }
-      }
+    for (const { kind, baseField } of this.autoIncludeBaseFields) {
+      if (ticketFields[baseField] !== undefined && ticketFields[baseField] !== null) continue
+      const rawValue = readRaw(kind, baseField, issue, projectItem)
+      if (rawValue !== null && rawValue !== undefined) ticketFields[baseField] = rawValue
     }
 
     if (Object.keys(ticketFields).length > 0) {

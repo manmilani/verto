@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { GitHubAdapter } from '../adapter.js'
+
+vi.mock('../field_check.js', () => ({ checkGitHubFields: vi.fn() }))
 import type { VertoConfig } from '@verto/config'
 import type { GitHubIssue, GitHubProjectV2Item } from '../system_types.js'
 
@@ -175,7 +177,23 @@ describe('GitHubAdapter', () => {
     expect(graph.nodes.some(n => n.id === 'B')).toBe(false)
   })
 
-  it('checkFields reports issueField entries as unsupported, nothing else', async () => {
+  it('checkFields delegates to the GitHub field check with the token and the warn hook', async () => {
+    const fieldCheck = await import('../field_check.js')
+    const missing = [{ key: 'k', field: 'f', kind: 'issue', scope: 's', reason: 'missing' as const, suggestedKinds: [] }]
+    vi.mocked(fieldCheck.checkGitHubFields).mockResolvedValueOnce(missing)
+    const warn = vi.fn()
+    expect(await new GitHubAdapter('t', warn).checkFields(repoConfig)).toBe(missing)
+    expect(fieldCheck.checkGitHubFields).toHaveBeenCalledWith('t', repoConfig, warn)
+  })
+
+  it('loads issue-field values and relationships through the configured mappings', async () => {
+    const issue = makeIssue('R1', {
+      issueFieldValues: { nodes: [{ field: { name: 'Priority' }, optionName: 'Urgent' }] },
+      duplicateOf: { id: 'R0' },
+    })
+    const { GitHubClient } = await import('../client.js')
+    vi.spyOn(GitHubClient.prototype, 'fetchRepositoryIssues').mockResolvedValue([issue])
+    vi.spyOn(GitHubClient.prototype, 'fetchIssuesByNodeIds').mockResolvedValue([])
     const config: VertoConfig = {
       adapter: 'github',
       github: {
@@ -183,15 +201,15 @@ describe('GitHubAdapter', () => {
         owner: 'test',
         repository: 'my-repo',
         fieldMappings: {
-          type: { from: { kind: 'issue', field: 'type' } },
-          risk: { from: { kind: 'issueField', field: 'Risk' } },
+          priority: { from: { kind: 'issueField', field: 'Priority' }, values: { Urgent: 1, High: 3 } },
+          duplicate_of: { from: { kind: 'issue', field: 'duplicateOf' } },
         },
       },
     }
-    const missing = await new GitHubAdapter('t').checkFields(config)
-    expect(missing).toEqual([
-      { key: 'risk', field: 'Risk', kind: 'issueField', scope: 'test/my-repo', reason: 'unsupported', suggestedKinds: [] },
-    ])
+    const graph = await new GitHubAdapter('t').loadProject(config)
+    expect(graph.nodes[0].priority).toBe(1)
+    expect(graph.nodes[0].ticketFields?.['duplicate_of']).toBe('R0')
+    expect(graph.edges).toEqual([])
   })
 
   it('logs one line per load for mapped-but-empty priorities', async () => {

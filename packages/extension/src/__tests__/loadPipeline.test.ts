@@ -36,11 +36,39 @@ describe('runPipeline', () => {
       fake: { fieldMappings: { gone: { from: { kind: 'issueField', field: 'g' } }, kept: { from: { kind: 'issue', field: 'k' } } } },
     } as unknown as VertoConfig
 
-    const out = await runPipeline(config, env, true)
+    const out = (await runPipeline(config, env, true))!
     expect(out.projectName).toBe('fake')
     expect(out.skipped.map(m => m.key)).toEqual(['gone'])
     expect(Object.keys((seen[0] as { fake: { fieldMappings: object } }).fake.fieldMappings)).toEqual(['kept'])
     expect(out.bundle.graph.nodes.map(n => n.id)).toEqual(['A'])
+  })
+
+  it('confirmSkip decides: false cancels before loading (null); true skips and loads', async () => {
+    const loadProject = vi.fn(async () => ({ nodes: [node], edges: [] }))
+    const missing = [{ key: 'gone', field: 'g', kind: 'issue', scope: 's', reason: 'missing' as const, suggestedKinds: [] }]
+    ADAPTERS['fake'] = {
+      defaults: { adapter: 'fake' },
+      create: async () => ({ checkFields: async () => missing, loadProject }),
+    }
+    const config = { adapter: 'fake' } as VertoConfig
+
+    const confirm = vi.fn(async () => false)
+    expect(await runPipeline(config, env, true, undefined, confirm)).toBeNull()
+    expect(confirm).toHaveBeenCalledWith(missing)
+    expect(loadProject).not.toHaveBeenCalled()
+
+    expect((await runPipeline(config, env, true, undefined, async () => true))?.skipped).toEqual(missing)
+    expect(loadProject).toHaveBeenCalledOnce()
+  })
+
+  it('confirmSkip is not asked when nothing is missing', async () => {
+    ADAPTERS['fake'] = {
+      defaults: { adapter: 'fake' },
+      create: async () => ({ checkFields: async () => [], loadProject: async () => ({ nodes: [node], edges: [] }) }),
+    }
+    const confirm = vi.fn(async () => false)
+    expect(await runPipeline({ adapter: 'fake' } as VertoConfig, env, true, undefined, confirm)).not.toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
   })
 
   it('creates the adapter through the registry env (GitHub token fetched only when needed)', async () => {
@@ -51,10 +79,14 @@ describe('runPipeline', () => {
 })
 
 describe('formatSkippedFields', () => {
-  it('names each mapping and why', () => {
+  it('names each mapping, why, and other kinds where the name exists', () => {
     expect(formatSkippedFields([
-      { key: 'priority', field: 'priority', kind: 'issueField', scope: '/p/.fissue/config.json', reason: 'missing', suggestedKinds: [] },
+      { key: 'priority', field: 'Priority', kind: 'issue', scope: 'GitHub Issue properties', reason: 'missing', suggestedKinds: ['issueField', 'projectV2'] },
       { key: 'board', field: 'Status', kind: 'projectV2', scope: '/p', reason: 'unsupported', suggestedKinds: [] },
-    ])).toBe('Verto: skipped field mappings: priority (issueField "priority" not found in /p/.fissue/config.json); board (projectV2 "Status" not supported)')
+    ])).toBe(
+      'Verto: skipped field mappings: '
+      + 'priority: kind "issue" "Priority" not found in GitHub Issue properties — found as kind "issueField", "projectV2"; '
+      + 'board: kind "projectV2" "Status" not supported',
+    )
   })
 })

@@ -1,4 +1,6 @@
-export { GitHubAdapter, checkGitHubFields } from './adapter.js'
+export { GitHubAdapter } from './adapter.js'
+export { checkGitHubFields } from './field_check.js'
+export { buildIssueSelection } from './issue_selection.js'
 export { githubAdapterDefaults } from './defaults.js'
 export type { GitHubIssue, GitHubProjectV2Item, GitHubProjectV2FieldValue } from './system_types.js'
 export { auditProjectScope, auditRepositoryScope, auditForWizard, buildWizardConfigComments, buildProjectDisplayStatusGroups } from './audit.js'

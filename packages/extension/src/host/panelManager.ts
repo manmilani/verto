@@ -5,14 +5,15 @@ import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage } 
 import { loadConfig } from './configLoader.js'
 import { isSetupRequiredConfigError, shouldAutoStartSetupForConfigError } from './configErrors.js'
 import { getGitHubToken } from './authProvider.js'
-import { formatSkippedFields, runPipeline } from './loadPipeline.js'
+import { describeMissingField, runPipeline } from './loadPipeline.js'
 import type { AdapterEnv } from './adapterRegistry.js'
 import { getFissueApi } from './fissueApi.js'
 import { loadOverlay, saveOverlay } from './priorityOverlay.js'
 import { runSetup } from './setupWizard.js'
+import { SkipPrompt } from './skipPrompt.js'
 import { ticketUri } from './ticketUri.js'
 
-function hostEnv(workspaceFolder: string): AdapterEnv {
+function hostEnv(workspaceFolder: string, warn: (message: string) => void): AdapterEnv {
   return {
     workspaceFolder,
     async getGitHubToken() {
@@ -21,8 +22,11 @@ function hostEnv(workspaceFolder: string): AdapterEnv {
       return token
     },
     getFissueApi,
+    warn,
   }
 }
+
+const SKIP_AND_LOAD = 'Skip and load'
 
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
@@ -36,8 +40,21 @@ export class PanelManager {
   private setupInProgress = false
   private shouldAutoStartSetup = false
   private watcherDebounce: ReturnType<typeof setTimeout> | undefined
-  /** The last skipped-fields warning shown; repeated only when it changes (or for a new panel). */
-  private lastSkippedWarning = ''
+  /** Field-check prompt; its "Skip and load" memory lasts for the extension session. */
+  private readonly skipPrompt = new SkipPrompt(async detail =>
+    (await vscode.window.showWarningMessage(
+      "Verto: some field mappings can't be read.",
+      { modal: true, detail },
+      SKIP_AND_LOAD,
+    )) === SKIP_AND_LOAD,
+  )
+  /** Adapter warnings already shown this session. */
+  private readonly shownWarnings = new Set<string>()
+  private readonly warnOnce = (message: string) => {
+    if (this.shownWarnings.has(message)) return
+    this.shownWarnings.add(message)
+    void vscode.window.showWarningMessage(message)
+  }
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.overlay = loadOverlay(context)
@@ -90,7 +107,6 @@ export class PanelManager {
         }
         this.panel = undefined
         this.ready = false
-        this.lastSkippedWarning = ''
       },
       undefined,
       this.context.subscriptions,
@@ -203,14 +219,24 @@ export class PanelManager {
       this.context.workspaceState.get<boolean>(STATE_KEY_PARSED) ?? true
 
     try {
-      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints, skipped } =
-        await runPipeline(loaded.config, hostEnv(loaded.workspaceFolder), parsedEnabled, this.overlay)
+      const configKey = JSON.stringify(loaded.config)
+      const result = await runPipeline(
+        loaded.config,
+        hostEnv(loaded.workspaceFolder, this.warnOnce),
+        parsedEnabled,
+        this.overlay,
+        missing => this.skipPrompt.confirm(
+          configKey,
+          missing.map(describeMissingField).join('\n'),
+          () => seq === this.fetchSeq,
+        ),
+      )
       if (seq !== this.fetchSeq) return
-      const skippedWarning = skipped.length > 0 ? formatSkippedFields(skipped) : ''
-      if (skippedWarning !== this.lastSkippedWarning) {
-        this.lastSkippedWarning = skippedWarning
-        if (skippedWarning) void vscode.window.showWarningMessage(skippedWarning)
+      if (!result) {
+        this.send({ type: 'error', message: 'Verto: load cancelled. Fix or remove the listed fieldMappings, then Retry.' })
+        return
       }
+      const { bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, priorityOptionHints } = result
       for (const node of bundle.graph.nodes) {
         if (node.ticketFields) delete node.ticketFields['body']
       }

@@ -588,7 +588,7 @@ development backlog with itself. Design: DESIGN.md §4.6.10; fissue DESIGN.md §
 | `packages/adapters/fissue/src/adapter.ts` | `checkFields`, `loadProject`, `fetchStatusOptions`, `fieldMappings`, `projectTitle` |
 | `packages/adapters/fissue/defaults.verto.config.jsonc` | Default mappings and display status groups for fissue `init`'s statuses; `priority` as a commented example |
 | `@verto/config` | Optional `fissue` block; `issueField` kind; adapter-block merge/patch; `applyMappingTail`, `withoutMappings` |
-| Extension host | Adapter registry with `env` (lazy GitHub token, fissue API from the fissue extension); `workspaceConfig.ts`; host-pipeline field check and skip with a warning; `openTicket` message (`file:` opens in the editor) |
+| Extension host | Adapter registry with `env` (lazy GitHub token, fissue API from the fissue extension); `workspaceConfig.ts`; host-pipeline field check with a Skip and load / Cancel prompt; `openTicket` message (`file:` opens in the editor) |
 | `scripts/load-project.mjs` | Reuses the host's config loading, registry and pipeline; `--workspace`, `--fissue-core` |
 | fissue repo | `projectState(root, { bodies: true })`: tickets gain `path` and `body` (additive; `apiVersion` stays 1) |
 
@@ -705,8 +705,6 @@ whether to extend an existing phase or insert a new one. Cross-reference [DESIGN
 | Item | Notes | Suggested phase |
 |---|---|---|
 | **Agent / chat workflow integration** | How the Verto panel relates to Cursor agent workflows (DESIGN §5.4) | TBD |
-| **GitHub field check** | `checkFields` only reports `issueField` as unsupported; detect missing Issue properties / Project fields and suggest the other kind (DESIGN §4.6.4, §5.3) | TBD |
-| **Missing-field prompt** | Interactive "Skip and load / Cancel" instead of the non-modal warning (DESIGN §4.6.4) | TBD |
 
 ### UI & graph
 

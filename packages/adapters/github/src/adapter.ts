@@ -3,29 +3,20 @@ import { validateVertoConfig } from '@verto/config'
 import type { VertoConfig } from '@verto/config'
 import { GitHubClient } from './client.js'
 import { expandGraphClosure, expandParentClosure } from './closure.js'
+import { checkGitHubFields } from './field_check.js'
 import { requireGitHubConfig } from './githubConfig.js'
+import { buildIssueSelection } from './issue_selection.js'
 import { mapIssuesToGraph } from './mapper.js'
 import type { GitHubProjectV2Item } from './system_types.js'
 import { fetchProjectStatusOptions } from './statusOptions.js'
 import { resolveProjectName } from './projectName.js'
 
-/** The field check (DESIGN.md §4.6.4) as far as built: org issue fields aren't read yet. */
-export function checkGitHubFields(config: VertoConfig): MissingField[] {
-  const github = requireGitHubConfig(config)
-  return Object.entries(github.fieldMappings ?? {})
-    .filter(([, entry]) => entry.from.kind === 'issueField')
-    .map(([key, entry]) => ({
-      key,
-      field: entry.from.field,
-      kind: entry.from.kind,
-      scope: github.scope === 'project' ? `${github.owner}/project ${github.projectNumber}` : `${github.owner}/${github.repository}`,
-      reason: 'unsupported' as const,
-      suggestedKinds: [],
-    }))
-}
-
 export class GitHubAdapter implements VertoAdapter<VertoConfig> {
-  constructor(private readonly token: string) {}
+  /** `warn` shows a message to the user (e.g. a field kind that couldn't be checked); default `console.warn`. */
+  constructor(
+    private readonly token: string,
+    private readonly warn?: (message: string) => void,
+  ) {}
 
   async fetchStatusOptions(config: VertoConfig): Promise<string[]> {
     return fetchProjectStatusOptions(this.token, config)
@@ -37,7 +28,7 @@ export class GitHubAdapter implements VertoAdapter<VertoConfig> {
   }
 
   async checkFields(config: VertoConfig): Promise<MissingField[]> {
-    return checkGitHubFields(config)
+    return checkGitHubFields(this.token, config, this.warn)
   }
 
   async projectTitle(config: VertoConfig): Promise<string> {
@@ -46,11 +37,10 @@ export class GitHubAdapter implements VertoAdapter<VertoConfig> {
 
   async loadProject(config: VertoConfig): Promise<VertoGraph> {
     validateVertoConfig(config)
-    const client = new GitHubClient(this.token)
+    const github = requireGitHubConfig(config)
+    const client = new GitHubClient(this.token, buildIssueSelection(github.fieldMappings))
 
     let projectItemsByNodeId = new Map<string, GitHubProjectV2Item>()
-
-    const github = requireGitHubConfig(config)
 
     let issues
     if (github.scope === 'project') {

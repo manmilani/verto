@@ -30,8 +30,8 @@ export interface VertoAdapter<TConfig = unknown> {
   loadProject(config: TConfig): Promise<VertoGraph>
 
   /**
-   * The load-time field check (§4.6.4): mapped fields that can't be read. The host drops
-   * these entries from the config before loadProject and tells the user.
+   * The load-time field check (§4.6.4): mapped fields that can't be read. The host lets the user
+   * skip these entries (dropped from the config before loadProject) or cancel the load.
    */
   checkFields?(config: TConfig): Promise<MissingField[]>
 

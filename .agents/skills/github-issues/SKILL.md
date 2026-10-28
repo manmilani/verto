@@ -49,7 +49,7 @@ When project context is **unknown** (no `GITHUB_PROJECT_ID` / `--project-id` / o
 
 **Resolution order:** env/config project id → `projects --number N` from issue → ask user.
 
-**Field location:** Verto SDLC columns (`ai_tokens_used`, `specified_by`, etc.) are **ProjectV2 custom fields**, not repo-native `issueFields`. Try `projects` before `setIssueFieldValue`.
+**Field location:** a field lives where the workspace `fieldMappings` say (`from.kind`): `projectV2` → ProjectV2 field (use `projects`); `issueField` → org-level issue field (`setIssueFieldValue`; user-owned repos have none); `issue` → built-in `Issue` property. Verto's default SDLC columns (`ai_tokens_used`, `specified_by`, etc.) are **ProjectV2 custom fields**.
 
 **API preference:** **Issues API first** — CRUD, labels, assignees, sub-issues, blocking, issue body. **ProjectV2 second** — when project context is known or discovered via `projects`: enumerate board items, read/write Status and custom columns. Issue-native fields stay on Issues API even in project scope.
 
