@@ -5,6 +5,11 @@
   "version": "0.0.1",
   "publisher": "manmilani",
   "private": true,
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manmilani/verto"
+  },
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -46,7 +51,8 @@
     "build:host": "node esbuild.mjs",
     "build:webview": "vite build",
     "build": "pnpm build:host && pnpm build:webview",
-    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.webview.json --noEmit"
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "package": "vsce package --no-dependencies --skip-license"
   },
   "dependencies": {
     "@verto/core": "workspace:*",
