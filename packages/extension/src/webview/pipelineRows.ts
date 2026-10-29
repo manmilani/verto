@@ -10,9 +10,11 @@ export function buildPipelineForSlice(
   if (!slice) return []
 
   const orderIndex = new Map(implementationOrder.map((id, i) => [id, i]))
+  const rawIds = new Set(slice._rawReqIds)
 
-  // Child tickets sorted by: impl order position, then created_at, then id
-  const children = slice.childIds
+  // Direct ticket prereqs (children and blockers) sorted by: impl order position, then created_at, then id
+  const tickets = slice.prereqIds
+    .filter(id => !rawIds.has(id))
     .map(id => nodeById.get(id))
     .filter((n): n is VertoNode => n !== undefined)
     .sort((a, b) => {
@@ -30,5 +32,5 @@ export function buildPipelineForSlice(
     .map(id => nodeById.get(id))
     .filter((n): n is VertoNode => n !== undefined)
 
-  return [...children, ...rawNodes]
+  return [...tickets, ...rawNodes]
 }

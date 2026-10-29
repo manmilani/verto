@@ -274,10 +274,10 @@ Parsed nodes are created by **`@verto/text-parser`** (Phase 2.5) after the track
 adapter loads ticket nodes. They participate in **NCN math** (closure, readiness,
 leverage, implementation order) when **Enable Parsed Requirements** is on.
 
-A slice's Requirements are the **union** of its child sub-issues and its raw
-requirement lines — shown as a **single pipeline column** in the Delivery Map (not
-two side-by-side columns). There is **no automatic deduplication or linking**
-between raw lines and child tickets.
+A slice's Requirements are its **direct prerequisites** (`prereqIds`): child
+sub-issues, BlockedBy tickets, and raw requirement lines — shown as a **single
+pipeline column** in the Delivery Map (not side-by-side columns). There is **no
+automatic deduplication or linking** between raw lines and tickets.
 
 **`_rawReqIds[]`** on a parent lists synthetic ids for that ticket's materialized
 raw lines. **`prereqIds`** = `_rawReqIds ∪ childIds ∪ blocking` (deduped).
@@ -286,7 +286,7 @@ raw lines. **`prereqIds`** = `_rawReqIds ∪ childIds ∪ blocking` (deduped).
 
 When **Enable Parsed Requirements** is off (global toggle, default **on**), parsed
 nodes are **filtered out** of the graph copy used for `buildDeliveryMapBundle()` —
-as if they did not exist — including from the Delivery Map pipeline (children only).
+as if they did not exist — including from the Delivery Map pipeline (tickets only).
 
 ### 3.7 Delivery Map lens (vertical-focused presentation)
 
@@ -311,26 +311,27 @@ The Delivery Map emphasises **delivery-slice** nodes (vertical / epic / journey)
 
 **Requirement pipeline** — one ordered list per slice, **not** two columns:
 
-1. **Child tickets** (sub-issues) — first segment  
+1. **Prerequisite tickets** — every ticket in `prereqIds` (children and BlockedBy
+   alike; parent/child and BlockedBy are the same edge) — first segment  
 2. **Raw requirement lines** — second segment  
 
-Concatenation only; **no deduplication**. Blocking-only prereqs are **not** shown.
-Parsed lines on **child** tickets affect that child's graph only — they do **not**
-appear on the parent slice's pipeline (same as sub-sub-issues).
+Concatenation only; **no deduplication** across segments. Direct prerequisites only:
+a prerequisite's own prerequisites (including its parsed lines) do **not** appear on
+the slice's pipeline — they count through closure (completeness), not as rows.
 
 **Ordering.**
 
 | Segment | Sort rule |
 |---|---|
-| **Child tickets** | (1) `implementationOrder` rank; (2) `created_at` ascending (oldest first; missing → sort last); (3) issue `id` alphanumeric ascending |
+| **Prerequisite tickets** | (1) `implementationOrder` rank; (2) `created_at` ascending (oldest first; missing → sort last); (3) issue `id` alphanumeric ascending |
 | **Raw requirements** | Document order within `RAW_REQ:BEGIN` / `RAW_REQ:END`; ignore `1.`, `2.`, … prefixes |
 
 **Per-requirement display fields** (pipeline row; `title` = `VertoNode.title`):
 
-| Field | Raw requirement (`parsed`) | Child ticket (`ticket`) |
+| Field | Raw requirement (`parsed`) | Prerequisite ticket (`ticket`) |
 |---|---|---|
 | **title** | Parsed from line text (see below) | Issue title |
-| **note** | `node._note` (set by `materializeParsedRequirements`) | `node._note` — **first paragraph** of the child's `DESC:BEGIN` / `DESC:END` block, pre-computed by `computeBodyFields` (§4.6.8) |
+| **note** | `node._note` (set by `materializeParsedRequirements`) | `node._note` — **first paragraph** of the ticket's `DESC:BEGIN` / `DESC:END` block, pre-computed by `computeBodyFields` (§4.6.8) |
 | **status** | `raw` (unchecked) or `done` (checked) | Tracker `status` (canonical root) |
 | **isDone** | Matches checkbox | Tracker closed / mapping |
 | **Completeness** | `isDone ? 1 : 0` × `weight` (display as %; default weight 1) | `deliveryCompleteness(nodeId)` (weighted; §3.3) |
@@ -356,7 +357,7 @@ appear on the parent slice's pipeline (same as sub-sub-issues).
 | Situation | UI |
 |---|---|
 | No `isDeliverySlice` nodes | Empty screen (auto-promote deferred) |
-| Slice with no children and toggle off / no raw lines | Empty pipeline |
+| Slice with no prerequisite tickets and toggle off / no raw lines | Empty pipeline |
 
 **Portfolio table, UsageBar, gap callouts (Phase 3 UI).**
 
@@ -380,7 +381,7 @@ filters before bundle when off; rebuilds bundle on toggle.
 | **Raw Requirements** | Checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END`; markdown heading **Raw Requirements** |
 | **`raw` status** | Unchecked raw requirement (`isDone: false`) |
 | **`done` status** | Checked raw requirement (`isDone: true`) |
-| **Requirement** | Any pipeline row: a **child ticket** and/or a **raw requirement** line (union, concatenated) |
+| **Requirement** | Any pipeline row: a **prerequisite ticket** (child or BlockedBy) or a **raw requirement** line (union, concatenated) |
 | **`parsed` `nodeType`** | Graph node materialized from a raw requirement line |
 | **`ticket` `nodeType`** | Graph node from a tracker adapter |
 | **`nodeOrigin`** | Provenance: `'github'`, `'text-parser'`, etc. |
@@ -502,8 +503,9 @@ Host- and vendor-agnostic. Responsibilities:
   like any other node. See §3.6–§3.8.
 - **Child tickets** decompose a parent into implementable work. Parent/child and
   BlockedBy/Blocking both express necessary-condition edges (child blocks parent).
-- **Delivery Map** (see §3.7) shows the **union** of child tickets and raw requirement
-  lines in a **single pipeline column** per delivery-slice node.
+- **Delivery Map** (see §3.7) shows the **union** of prerequisite tickets (children
+  and BlockedBy) and raw requirement lines in a **single pipeline column** per
+  delivery-slice node.
 - **Priority** is a required field on **all nodes** (default 5), from which the
   global priority ranking and implementation order are derived — see §3.5.
 
@@ -522,13 +524,13 @@ How tracker tickets map onto the graph:
 - **Raw requirements** — checklist items between `RAW_REQ:BEGIN` / `RAW_REQ:END` —
   are materialized as **`nodeType: 'parsed'`** nodes by `@verto/text-parser` (Phase
   2.5). When **Enable Parsed Requirements** is on, they participate in NCN math and
-  appear in the Delivery Map pipeline after child tickets. **No linking** to child
+  appear in the Delivery Map pipeline after prerequisite tickets. **No linking** to
   tickets — concatenation only.
 - **Child tickets** decompose a parent into implementable work. Parent/child and
   BlockedBy/Blocking both express necessary-condition edges (child blocks parent).
   Any ticket may have children, not only epics.
-- **Parsed requirements on child tickets** affect that child's graph only — they do
-  not roll up to the parent slice pipeline.
+- **Parsed requirements on prerequisite tickets** affect that ticket's graph only —
+  they do not roll up to the slice's pipeline.
 
 ### 4.6 Multi-adapter support
 

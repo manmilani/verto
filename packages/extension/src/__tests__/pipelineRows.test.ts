@@ -24,6 +24,7 @@ const slice = makeNode({
   isDeliverySlice: true,
   childIds: ['c1', 'c2', 'c3'],
   _rawReqIds: ['r1', 'r2'],
+  prereqIds: ['c1', 'c2', 'c3', 'r1', 'r2'],
 })
 
 const c1 = makeNode({ id: 'c1', created_at: '2024-01-01' })
@@ -68,7 +69,7 @@ describe('buildPipelineForSlice', () => {
   it('tie-breaks by id alphanumeric when created_at also equal', () => {
     const nodeA = makeNode({ id: 'a', created_at: '2024-01-01' })
     const nodeB = makeNode({ id: 'b', created_at: '2024-01-01' })
-    const sliceAB = makeNode({ id: 's', isDeliverySlice: true, childIds: ['b', 'a'] })
+    const sliceAB = makeNode({ id: 's', isDeliverySlice: true, childIds: ['b', 'a'], prereqIds: ['b', 'a'] })
     const g: VertoGraph = { nodes: [sliceAB, nodeA, nodeB], edges: [] }
     const result = buildPipelineForSlice('s', g, [])
     expect(result.map(n => n.id)).toEqual(['a', 'b'])
@@ -80,17 +81,25 @@ describe('buildPipelineForSlice', () => {
     expect(result.slice(-2).map(n => n.id)).toEqual(['r1', 'r2'])
   })
 
-  it('skips child ids not present in the graph', () => {
-    const s = makeNode({ id: 's', isDeliverySlice: true, childIds: ['c1', 'missing'] })
+  it('skips prereq ids not present in the graph', () => {
+    const s = makeNode({ id: 's', isDeliverySlice: true, childIds: ['c1', 'missing'], prereqIds: ['c1', 'missing'] })
     const g: VertoGraph = { nodes: [s, c1], edges: [] }
     const result = buildPipelineForSlice('s', g, [])
     expect(result.map(n => n.id)).toEqual(['c1'])
   })
 
   it('returns only raw nodes when slice has no children', () => {
-    const s = makeNode({ id: 's', isDeliverySlice: true, childIds: [], _rawReqIds: ['r1'] })
+    const s = makeNode({ id: 's', isDeliverySlice: true, childIds: [], _rawReqIds: ['r1'], prereqIds: ['r1'] })
     const g: VertoGraph = { nodes: [s, r1], edges: [] }
     const result = buildPipelineForSlice('s', g, [])
     expect(result).toEqual([r1])
+  })
+
+  it('includes blocking-only prereqs alongside children, sorted together', () => {
+    const b = makeNode({ id: 'b', created_at: '2024-01-02' })
+    const s = makeNode({ id: 's', isDeliverySlice: true, childIds: ['c1'], _rawReqIds: ['r1'], prereqIds: ['c1', 'b', 'r1'] })
+    const g: VertoGraph = { nodes: [s, c1, b, r1], edges: [] }
+    expect(buildPipelineForSlice('s', g, ['b', 'c1']).map(n => n.id)).toEqual(['b', 'c1', 'r1'])
+    expect(buildPipelineForSlice('s', g, []).map(n => n.id)).toEqual(['c1', 'b', 'r1'])
   })
 })
