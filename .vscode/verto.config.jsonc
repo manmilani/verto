@@ -1,23 +1,18 @@
 {
-  // Workspace config for Verto's own GitHub project (manmilani/project #1).
-  // Merged over packages/adapters/github/defaults.verto.config.jsonc at runtime.
-  // Note: no Priority column on this board — all nodes default to priority 5.
-  "adapter": "github",
-  "github": {
-    "scope": "project",
-    "owner": "manmilani",
-    "projectNumber": 1,
+  "adapter": "fissue",
+  "fissue": {
     "fieldMappings": {
-      "status":             { "from": { "kind": "projectV2", "field": "Status" }, "type": "select" },
-      "resolution":         { "from": { "kind": "projectV2", "field": "resolution" }, "type": "select" },
-      "specified_by":       { "from": { "kind": "projectV2", "field": "specified_by" } },
-      "planned_by":         { "from": { "kind": "projectV2", "field": "planned_by" } },
-      "implemented_by":     { "from": { "kind": "projectV2", "field": "implemented_by" } },
-      "verified_by":        { "from": { "kind": "projectV2", "field": "verified_by" } },
-      "ai_tokens_estimate": { "from": { "kind": "projectV2", "field": "ai_tokens_estimate" }, "type": "number" },
-      "ai_tokens_used":     { "from": { "kind": "projectV2", "field": "ai_tokens_used" }, "type": "number" },
-      "ai_model_worker":    { "from": { "kind": "projectV2", "field": "ai_model_worker" } },
-      "ai_model_reviewer":  { "from": { "kind": "projectV2", "field": "ai_model_reviewer" } }
+      // Both types listed: an unlisted or empty issueType keeps the default (no parent → vertical).
+      "isDeliverySlice": { "from": { "kind": "issue", "field": "issueType" }, "values": { "Vertical": true, "Task": false } },
+      "personas": { "from": { "kind": "issueField", "field": "personas" }, "type": "select", "isArray": true },
+      "priority": { "from": { "kind": "issueField", "field": "priority" }, "type": "number" }
     }
+  },
+  "ui": {
+    "displayStatusGroups": [
+      { "label": "In Progress", "sources": { "ticket": { "statuses": ["In Progress"] } } },
+      { "label": "Designed", "sources": { "ticket": { "statuses": ["Designed"] } } },
+      { "label": "Raw", "sources": { "ticket": { "statuses": ["Todo"] }, "parsed": { "statuses": ["raw"] } } }
+    ]
   }
 }
