@@ -230,6 +230,11 @@ current design is in §4.6.4 and §4.6.7.*
   for the general draft (DESIGN §4.6.11): priority edits apply to any ticket, before
   validation, and are written to the tracker when the adapter can write; the old
   overlay is moved once into the first loaded project's draft.
+- **Children-only Delivery Map pipeline.** A slice's pipeline listed only its child
+  sub-issues and raw lines; BlockedBy-only prerequisites were hidden, though they
+  already counted in closure and completeness. Retired so the pipeline shows all
+  direct prerequisites (`prereqIds`) — parent/child and BlockedBy are one edge, and a
+  ticket needed by several slices can appear on each (DESIGN §3.7).
 - **`FieldAccessor.fromVertoNode` / `FieldWritePayload`.** A per-node reverse mapping
   was reserved for write-back; it was never defined. Write-back works per change
   (`VertoChange`) through each adapter's `writeBack` (§4.6.11).
