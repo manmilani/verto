@@ -22,6 +22,7 @@ For the **target system design**, see [../DESIGN.md](../DESIGN.md).
 | [rustybu-vertical-delivery-map.canvas.tsx](./rustybu-vertical-delivery-map.canvas.tsx) | Verbatim deprecated original canvas source (~1,800 lines) |
 | [rustybu-vertical-delivery-map.canvas.data.json](./rustybu-vertical-delivery-map.canvas.data.json) | Example session state (`journeyPriorities`, view, pan/zoom, …) |
 | [rustybu-vertical-delivery-map.canvas.status.json](./rustybu-vertical-delivery-map.canvas.status.json) | Canvas build status sidecar from the original IDE host |
+| [import-to-fissue.mjs](./import-to-fissue.mjs) | One-off import of the canvas journeys and nodes into this repo's fissue project (mapping in its header) |
 | [chat_summary_1__060d34f9.md](./chat_summary_1__060d34f9.md) | Summary — how the canvas was built (chat 060d34f9) |
 | [chat_060d34f9-1272-4ada-a8d1-dc82873c8d10.jsonl](./chat_060d34f9-1272-4ada-a8d1-dc82873c8d10.jsonl) | Full transcript — canvas authoring (historical paths) |
 | [chat_summary_2__e4e7087f.md](./chat_summary_2__e4e7087f.md) | Summary — Verto system design & documentation (chat e4e7087) |
