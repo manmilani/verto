@@ -2,7 +2,7 @@
   "name": "verto",
   "displayName": "Verto",
   "description": "Plan and deliver vertical slices from your issue graph using NCN and TOC thinking.",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "publisher": "manmilani",
   "private": true,
   "license": "UNLICENSED",
