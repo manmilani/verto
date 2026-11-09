@@ -1,10 +1,11 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { useVertoState } from './hooks/useVertoState.js'
 import { DeliveryMap } from './lenses/DeliveryMap.js'
 import { NcnLens } from './lenses/NcnLens.js'
 import { vscode } from './vscodeApi.js'
 import { EditingContext } from './editing.js'
 import { DraftBar } from './components/DraftBar.js'
+import { FindBar } from './find/FindBar.js'
 
 export default function App() {
   const {
@@ -16,6 +17,7 @@ export default function App() {
     setLens, setFocusedNode, setParsedEnabled,
     edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
+  const searchRoot = useRef<HTMLDivElement>(null)
 
   if (status === 'loading' && !bundle) {
     return (
@@ -55,7 +57,7 @@ export default function App() {
 
   return (
     <EditingContext.Provider value={{ draft, statusOptions, writableLevels, priorityOptionHints, edit, discard, writeBack }}>
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div ref={searchRoot} style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
         borderBottom: '1px solid var(--vscode-panel-border)', flexShrink: 0,
@@ -119,6 +121,7 @@ export default function App() {
         )}
       </div>
     </div>
+    <FindBar root={searchRoot} />
     </EditingContext.Provider>
   )
 }

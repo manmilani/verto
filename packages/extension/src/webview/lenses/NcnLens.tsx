@@ -145,7 +145,7 @@ export function NcnLens({
 
       <Text size="small" tone="quaternary">
         Tip: drag empty space to pan, Ctrl + mouse-wheel to zoom (or use the toolbar; 1:1 resets to 100%).
-        Hover a node for its prerequisites and the journeys it serves; click any node to focus its neighbourhood. Use the journey selector to light up everything one vertical delivery needs.
+        Hover a node for its prerequisites and the journeys it serves; click any node to focus its neighbourhood. Use the journey selector to light up everything one vertical delivery needs. Ctrl+F finds text anywhere in the panel.
       </Text>
 
       {focusedNode && (

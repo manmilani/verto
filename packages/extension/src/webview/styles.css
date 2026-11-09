@@ -39,3 +39,11 @@
 .react-flow__node-ncn .ncn-node-body {
   cursor: pointer;
 }
+
+::highlight(verto-find) {
+  background-color: var(--vscode-editor-findMatchHighlightBackground);
+}
+
+::highlight(verto-find-current) {
+  background-color: var(--vscode-editor-findMatchBackground);
+}

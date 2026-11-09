@@ -21,6 +21,7 @@ import { formatNodeStatus } from '../nodeStatusFormat.js'
 import {
   elkColumnOrder, dependencyDepth, packColumns, NCN_LAYOUT, type PackedLayout,
 } from './ncnLayout.js'
+import { usePanRegion } from '../find/panRegions.js'
 
 const GRAPH_HEIGHT = 720
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 }
@@ -211,6 +212,12 @@ function NcnGraphInner({
     return { rfNodes, rfEdges }
   }, [layout, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
 
+  const { getViewport, setViewport } = useReactFlow()
+  const panRegionRef = usePanRegion((dx, dy) => {
+    const { x, y, zoom } = getViewport()
+    setViewport({ x: x - dx, y: y - dy, zoom }, { duration: 200 })
+  })
+
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
     onFocusNode(node.id === focusedNcnNodeId ? undefined : node.id)
   }
@@ -225,6 +232,7 @@ function NcnGraphInner({
 
   return (
     <div
+      ref={panRegionRef}
       style={{
         position: 'relative',
         border: '1px solid var(--vscode-panel-border)',
@@ -249,6 +257,7 @@ function NcnGraphInner({
         zoomOnScroll={false}
         preventScrolling={false}
         nodeTypes={nodeTypes}
+        // onlyRenderVisibleElements stays off: find (Ctrl+F) searches the text of every node.
         onNodeClick={handleNodeClick}
         proOptions={{ hideAttribution: true }}
       >
