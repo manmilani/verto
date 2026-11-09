@@ -143,8 +143,8 @@ export function NcnLens({
       />
 
       <Text size="small" tone="quaternary">
-        Tip: drag empty space to pan, scroll to zoom. Hover a node for its full prerequisites/dependents; click any node
-        to focus its neighbourhood. Use the journey selector to light up everything one vertical delivery needs.
+        Tip: drag empty space to pan, Ctrl + mouse-wheel to zoom (or use the toolbar), and 1:1 to reset to 100%. Hover a
+        node for its full prerequisites/dependents; click any node to focus its neighbourhood. Use the journey selector to light up everything one vertical delivery needs.
       </Text>
 
       {focusedNode && (

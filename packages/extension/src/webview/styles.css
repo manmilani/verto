@@ -1,3 +1,29 @@
+.react-flow {
+  --xy-controls-button-background-color: var(--vscode-editorWidget-background);
+  --xy-controls-button-background-color-hover: var(--vscode-toolbar-hoverBackground);
+  --xy-controls-button-color: var(--vscode-foreground);
+  --xy-controls-button-color-hover: var(--vscode-foreground);
+  --xy-controls-button-border-color: var(--vscode-panel-border);
+  --xy-controls-box-shadow: none;
+}
+
+.react-flow__controls {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ncn-zoom-readout {
+  min-width: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editorWidget-background);
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
 .react-flow__pane {
   cursor: grab;
 }

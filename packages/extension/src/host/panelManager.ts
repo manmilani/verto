@@ -109,7 +109,7 @@ export class PanelManager {
     this.panel = vscode.window.createWebviewPanel(
       'vertoPanel',
       'Verto',
-      vscode.ViewColumn.Beside,
+      vscode.ViewColumn.Active,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
