@@ -57,7 +57,8 @@ export class PanelManager {
   private readonly drafts: DraftStore
   /** The last load; edits rebuild the view from it without reloading the tracker. */
   private current: { loaded: LoadedProject; key: string } | undefined
-  private lastView: ProjectView | undefined
+  /** The last view sent, and the load it was built from. */
+  private lastView: { view: ProjectView; of: PanelManager['current'] } | undefined
   private writing = false
   /** Edits, discards and writes run one at a time. */
   private queue: Promise<void> = Promise.resolve()
@@ -308,7 +309,7 @@ export class PanelManager {
     if (built.pruned) await this.drafts.save(cur.key, built.entries)
     if (this.current !== cur) return
     const { view, entries } = built
-    this.lastView = view
+    this.lastView = { view, of: cur }
     const { bundle } = view
     const nodes = bundle.graph.nodes.map(n => {
       if (!n.ticketFields || !('body' in n.ticketFields)) return n
@@ -363,15 +364,15 @@ export class PanelManager {
 
   /**
    * Drag-and-drop (DESIGN.md §3.5): plan the least-change priority edits and apply them as one batch.
-   * Always answers with exactly one `moveResult`.
+   * Always answers with exactly one `moveResult` (the webview shows its error; no toast).
    */
   private async move(id: string, afterId?: string) {
     const cur = this.current
     let result: MoveResult = { type: 'moveResult', id }
     try {
       if (this.writing) throw new Error(WRITING)
-      if (!cur || !this.lastView) throw new Error('Verto: nothing loaded yet.')
-      const planned = planDrop(this.lastView, canWrite(cur.loaded), id, afterId)
+      if (!cur || this.lastView?.of !== cur) throw new Error('Verto: the project is loading; try again.')
+      const planned = planDrop(this.lastView.view, canWrite(cur.loaded), id, afterId)
       if (!planned.ok) throw new Error(`Verto: move not applied: ${planned.error}`)
       let entries = this.drafts.load(cur.key)
       for (const e of planned.plan.edits) {
@@ -385,7 +386,6 @@ export class PanelManager {
       result = { type: 'moveResult', id, target: planned.target, plan: planned.plan }
     } catch (err) {
       result = { type: 'moveResult', id, error: messageOf(err) }
-      void vscode.window.showWarningMessage(result.error!)
     } finally {
       this.send(result)
     }
@@ -417,7 +417,7 @@ export class PanelManager {
   private async writeBack() {
     const cur = this.current
     if (!cur || this.writing || !canWrite(cur.loaded)) return
-    const blocked = this.lastView && invalidReason(this.lastView)
+    const blocked = this.lastView && invalidReason(this.lastView.view)
     if (blocked) {
       void vscode.window.showWarningMessage(`Verto: not written: ${blocked}`)
       return

@@ -276,9 +276,9 @@ In the implementation-order table the user drags a work-item row X into a gap; V
 - **down** (V > R₀): every chain must end ≥ V. Chains in ascending score, each still below V gets the smallest digit string ≥ ⌈V/s⌉ — first with any digits; if that fails, again with nodes shared by two or more of X's chains only rising.
 - **Digit routine** (`nearestDigits`): per position the allowed digits (plus the current one); keep the longest prefix equal to the bound's digits, then the nearest allowed digit below (≤) / above (≥) the bound's next digit, the rest max / min.
 
-*Search.* Rows that share an edited upper node move along with X, so placement isn't monotone in X's rank. (1) **Nearest first:** walk X's realisable ranks outward from R₀ (up to 100 simulations); the first exact placement is the least change. (2) **Far moves:** one binary search per significance level (chain positions 0..top may change) on `farEnough(V)` = V can't be realised, or X is past every row in the direction of travel. The result is the best **probed** placement by (misplaced, |Δrank|, edits).
+*Search.* Rows that share an edited upper node move along with X, so placement isn't monotone in X's rank. (1) **Nearest first:** walk X's realisable ranks outward from R₀, one digit set per rank (up to 100 simulations); the first exact placement found wins. (2) **Far moves:** one binary search per significance level (chain positions 0..top may change) on `farEnough(V)` = V can't be realised, or X is past every row in the direction of travel; once an exact placement is probed, later searches stay nearer R₀ than it. The result is the best **probed** placement by (misplaced, |Δrank|, edits, |V − R₀|), so "least change" is least over the probed ranks. Cost: at most ≈ 100 + 3.4·(D+1)² simulations (full ranking + order) on the host; about 1 s for a far move on a 400-node graph.
 
-A prerequisite P blocking X isn't edited (it's not in X's chains, and its digit doesn't change X's rank); P's chains run through X, so P moves up along with X.
+A prerequisite P blocking X isn't edited (it's not in X's chains, and its digit doesn't change X's rank); P's chains through X drop with X's digits, so P moves up with X when one of them becomes its best.
 
 **`MIN_DEPTH_FLOOR` option (disabled by default)**
 

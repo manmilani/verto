@@ -6,6 +6,7 @@ import { implementationOrder } from './order.js'
 import { leverageScores } from './leverage.js'
 import { closureFor } from './closure.js'
 
+/** `from` = the priority as ranked (clamped to 1–9). */
 export interface MoveEdit { nodeId: string; from: number; to: number }
 
 export interface MovePlan {
@@ -118,7 +119,6 @@ export function planMove(
       const raw = c.nodeIds.reduce((s, n, i) => s + clampPriority(nodeById.get(n)!.priority) * 10 ** i, 0)
       return { nodeIds: c.nodeIds, scale: Math.round(c.score / raw) }
     })
-  if (chains.length === 0) return { ...noMove, exact: false }
 
   const original = new Map<string, number>()
   for (const c of chains) for (const n of c.nodeIds) original.set(n, clampPriority(nodeById.get(n)!.priority))
@@ -210,10 +210,13 @@ export function planMove(
   }
 
   // 2. Far moves: one binary search per significance level (chain positions 0..top may change),
-  //    each on its own (near-)monotone predicate; the best probed placement wins.
+  //    each on its own (near-)monotone predicate; the best probed placement wins. A realised rank is
+  //    at least as far from R₀ as V, so once an exact placement with change δ is probed, later
+  //    searches stay within |V − R₀| < δ.
   const maxScale = Math.max(...chains.map(c => c.scale))
+  const exactDelta = () => Math.min(...[...probed.values()].filter(c => c.misplaced === 0).map(c => c.delta))
   for (let top = 0; top < maxLen; top++) {
-    const reach = maxScale * 10 ** (top + 1)
+    const reach = Math.min(maxScale * 10 ** (top + 1), exactDelta() - 1)
     if (up) {
       let lo = Math.max(1, start.rank - reach)
       let hi = start.rank - 1
@@ -243,12 +246,17 @@ export function planMove(
     if (!best || best.misplaced >= initial.misplaced) return { ...noMove, exact: false }
     const edits = [...best.d]
       .filter(([n, p]) => p !== original.get(n))
-      .map(([n, p]) => ({ nodeId: n, from: nodeById.get(n)!.priority, to: p }))
+      .map(([n, p]) => ({ nodeId: n, from: original.get(n)!, to: p }))
     return { edits, exact: best.misplaced === 0, index: best.index, rank: best.rank }
   }
 }
 
-/** Simulations spent on the nearest-first walk before the per-level binary searches take over. */
+/**
+ * Simulations spent on the nearest-first walk before the per-level binary searches take over. Each
+ * simulation is a full ranking + order on the extension host; a move costs at most
+ * NEAREST_PROBES + Σ over levels of log₂(range) ≈ 100 + 3.4·(D+1)² simulations (realisations that
+ * fail, and repeated digit sets, cost none).
+ */
 const NEAREST_PROBES = 100
 
 function compare(

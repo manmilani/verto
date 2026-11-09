@@ -194,4 +194,21 @@ describe('planMove', () => {
     expect(plan.edits).toEqual([{ nodeId: 'X', from: 5, to: 1 }, { nodeId: 'J1', from: 3, to: 4 }])
     expect(plan).toMatchObject({ exact: true, rank: 41 })
   })
+
+  it('down: when the free pass undoes an earlier chain, shared nodes only rise', () => {
+    // X 5 → J1 3 (350) and X → M 6 → J2 3 (365); N 7 → J1 (370). Order X, M, J2, N, J1.
+    // Passing N needs > 370. Free pass at 371: J1's chain sets X 8, then J2's chain sets X 1, M 7
+    // (371), undoing it. Rise-only keeps X ≥ 8: X 8, M 7 → min(380, 378) = 378. (Rise-only keeps the
+    // walk going through 370–377; the free pass alone also reaches 378 at V = 378.)
+    const g = graph(
+      [
+        node('J1', { isDeliverySlice: true, priority: 3 }), node('J2', { isDeliverySlice: true, priority: 3 }),
+        node('X'), node('M', { priority: 6 }), node('N', { priority: 7 }),
+      ],
+      [edge('X', 'J1'), edge('X', 'M'), edge('M', 'J2'), edge('N', 'J1')],
+    )
+    const plan = planMove(g, 'X', 4, n => (n.id.startsWith('J') ? [] : ALL)) // below N
+    expect(plan.edits).toEqual([{ nodeId: 'X', from: 5, to: 8 }, { nodeId: 'M', from: 6, to: 7 }])
+    expect(plan).toMatchObject({ exact: true, rank: 378 })
+  })
 })

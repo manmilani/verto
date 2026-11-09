@@ -101,7 +101,10 @@ function ServesPills({
   )
 }
 
-/** What the last drop did (DESIGN.md §3.5); a moved row's line hides once the row is elsewhere. */
+/**
+ * What the last drop did (DESIGN.md §3.5), shown while it still describes the table: a moved row's
+ * line until the row is elsewhere; any other line until the order changes.
+ */
 function MoveFeedback({
   result, orderIds, nodeById, mode,
 }: {
@@ -110,7 +113,12 @@ function MoveFeedback({
   nodeById: Map<string, VertoNode>
   mode: string
 }) {
+  const orderKey = orderIds.join('\n')
+  const seen = useRef<{ result?: MoveResult; orderKey: string }>({ orderKey })
+  if (seen.current.result !== result) seen.current = { result, orderKey }
   if (!result) return null
+  const moved = (result.plan?.edits.length ?? 0) > 0
+  if (!moved && seen.current.orderKey !== orderKey) return null
   const { id, plan, target, error } = result
   const title = (nid: string) => <Text as="span" weight="semibold">{nodeById.get(nid)?.title ?? nid}</Text>
   let line: React.ReactNode
@@ -244,8 +252,17 @@ export function ImplementationOrderTable({
     const r = e.currentTarget.getBoundingClientRect()
     return e.clientY > r.top + r.height / 2
   }
-  const onRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
-    if (dragId.current === undefined) return
+  /** The row index just above the gap under the pointer (−1 = top), or undefined for a no-op gap. */
+  const gapAfter = (e: React.DragEvent<HTMLTableRowElement>, i: number) => {
+    const from = dragId.current === undefined ? -1 : orderIds.indexOf(dragId.current)
+    const after = isBelow(e) ? i : i - 1
+    return from < 0 || after === from || after === from - 1 ? undefined : after
+  }
+  const onRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, id: string, i: number) => {
+    if (gapAfter(e, i) === undefined) {
+      if (drop) setDrop(undefined)
+      return
+    }
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const below = isBelow(e)
@@ -253,12 +270,10 @@ export function ImplementationOrderTable({
   }
   const onRowDrop = (e: React.DragEvent<HTMLTableRowElement>, i: number) => {
     const x = dragId.current
-    if (x === undefined) return
+    const after = gapAfter(e, i)
+    if (x === undefined || after === undefined) return
     e.preventDefault()
-    const after = isBelow(e) ? i : i - 1
-    const from = orderIds.indexOf(x)
     endDrag()
-    if (from < 0 || after === from || after === from - 1) return
     move(x, after < 0 ? undefined : orderIds[after])
   }
   const dropEdge = (id: string): React.CSSProperties | undefined =>
@@ -307,7 +322,11 @@ export function ImplementationOrderTable({
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(undefined)
+              }}
+            >
               {orderIds.map((id, i) => {
                 const node = nodeById.get(id)
                 if (!node) return null
@@ -339,7 +358,7 @@ export function ImplementationOrderTable({
                   <tr
                     key={id}
                     onClick={() => onFocusNode(id)}
-                    onDragOver={e => onRowDragOver(e, id)}
+                    onDragOver={e => onRowDragOver(e, id, i)}
                     onDrop={e => onRowDrop(e, i)}
                     style={dataTableRowStyle(isFocused, isDimmed(focusSet, id))}
                   >
