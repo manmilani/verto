@@ -190,6 +190,14 @@ export function useVertoState() {
     })
   }
 
+  const focusInNcn = (ncnFocusedNodeId: string) => {
+    setState(s => {
+      const next: VertoState = { ...s, ncnFocusedNodeId, lens: 'ncnGraph' }
+      persistState(next)
+      return next
+    })
+  }
+
   const setNcnTableView = (ncnTableView: NcnTableView) => {
     setState(s => {
       const next = { ...s, ncnTableView }
@@ -201,7 +209,7 @@ export function useVertoState() {
   return {
     ...state,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
   }
 }
 

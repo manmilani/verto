@@ -14,6 +14,7 @@ import { isLevelDisabled, pendingSet, useEditing } from '../editing.js'
 
 interface Props {
   bundle: DeliveryMapBundle
+  onFocusJourney: (id: string) => void
 }
 
 /** Journeys with a drafted priority first (by it), then by priority, then title. */
@@ -25,7 +26,7 @@ function compareSlicePriority(a: VertoNode, b: VertoNode, pending: Set<string>):
   return a.title.localeCompare(b.title)
 }
 
-export function PriorityEditor({ bundle }: Props) {
+export function PriorityEditor({ bundle, onFocusJourney }: Props) {
   const { draft, edit, discard } = useEditing()
   const pending = useMemo(
     () => new Set(draft.entries.flatMap(e => (e.change.type === 'set' && e.change.key === 'priority' ? [e.change.nodeId] : []))),
@@ -49,8 +50,9 @@ export function PriorityEditor({ bundle }: Props) {
             </Text>
             <Text size="small" tone="tertiary">
               Rank the journeys that matter most to customers (1–9, lower = more important). Each journey lifts its
-              entire dependency chain — its deliverables and everything they transitively need — and the table below
-              turns into a build execution order that delivers those journeys fastest.
+              entire dependency chain — its deliverables and everything they transitively need — and the NCN
+              implementation-order table turns into a build execution order that delivers those journeys fastest.
+              Click a journey to show it in the NCN graph.
             </Text>
             <Text size="small" tone="quaternary">
               {draft.canWrite
@@ -83,7 +85,16 @@ export function PriorityEditor({ bundle }: Props) {
                     else if (entry) discard([entry.change])
                   }}
                 />
-                <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>{s.title}</Text>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <button
+                    type="button"
+                    title="Show in NCN graph"
+                    style={journeyLinkStyle}
+                    onClick={() => onFocusJourney(s.id)}
+                  >
+                    {s.title}
+                  </button>
+                </div>
                 {entry && <Pill size="sm" tone={entry.error ? 'danger' : 'info'} title={entry.error}>pending</Pill>}
               </Row>
             )
@@ -213,6 +224,17 @@ export function PrioritySelect({
       )}
     </div>
   )
+}
+
+const journeyLinkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  fontWeight: 600,
+  textAlign: 'left',
+  color: 'var(--vscode-textLink-foreground)',
+  cursor: 'pointer',
 }
 
 const triggerStyle: React.CSSProperties = {

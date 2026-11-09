@@ -2,6 +2,7 @@ import React, { useRef } from 'react'
 import { useVertoState } from './hooks/useVertoState.js'
 import { DeliveryMap } from './lenses/DeliveryMap.js'
 import { NcnLens } from './lenses/NcnLens.js'
+import { JourneysLens } from './lenses/JourneysLens.js'
 import { vscode } from './vscodeApi.js'
 import { EditingContext } from './editing.js'
 import { DraftBar } from './components/DraftBar.js'
@@ -15,7 +16,7 @@ export default function App() {
     ncnFocusedNodeId,
     priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView, showLosingPriorityChains,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
   } = useVertoState()
   const searchRoot = useRef<HTMLDivElement>(null)
 
@@ -74,6 +75,12 @@ export default function App() {
         >
           NCN Graph
         </button>
+        <button
+          style={{ ...pillStyle, ...(lens === 'journeys' ? pillActiveStyle : {}) }}
+          onClick={() => setLens('journeys')}
+        >
+          Journeys
+        </button>
         <div style={{ flex: 1 }} />
         <DraftBar />
         {isRefreshing && (
@@ -92,18 +99,7 @@ export default function App() {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {lens === 'deliveryMap' ? (
-          <DeliveryMap
-            bundle={bundle}
-            displayStatusGroups={displayStatusGroups}
-            showOthersColumn={showOthersColumn}
-            displayStatusGroupTooltips={displayStatusGroupTooltips}
-            projectName={projectName}
-            focusedNode={focusedNode}
-            setFocusedNode={setFocusedNode}
-            onFocusNcnNode={setNcnFocusedNodeId}
-          />
-        ) : (
+        {lens === 'ncnGraph' ? (
           <NcnLens
             bundle={bundle}
             displayStatusGroups={displayStatusGroups}
@@ -115,6 +111,19 @@ export default function App() {
             showLosingPriorityChains={showLosingPriorityChains}
             focusedNcnNodeId={ncnFocusedNodeId}
             onFocusNode={setNcnFocusedNodeId}
+          />
+        ) : lens === 'journeys' ? (
+          <JourneysLens bundle={bundle} onFocusJourney={focusInNcn} />
+        ) : (
+          <DeliveryMap
+            bundle={bundle}
+            displayStatusGroups={displayStatusGroups}
+            showOthersColumn={showOthersColumn}
+            displayStatusGroupTooltips={displayStatusGroupTooltips}
+            projectName={projectName}
+            focusedNode={focusedNode}
+            setFocusedNode={setFocusedNode}
+            onFocusNcnNode={setNcnFocusedNodeId}
           />
         )}
       </div>

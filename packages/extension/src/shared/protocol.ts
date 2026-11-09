@@ -1,7 +1,7 @@
 import type { ChangeState, DeliveryMapBundle, VertoChange } from '@verto/core'
 import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 
-export type Lens = 'deliveryMap' | 'ncnGraph'
+export type Lens = 'deliveryMap' | 'ncnGraph' | 'journeys'
 
 /** NCN bottom section: implementation-order table or leverage table. */
 export type NcnTableView = 'implementationOrder' | 'leverage'
