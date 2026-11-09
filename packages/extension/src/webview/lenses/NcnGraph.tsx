@@ -15,15 +15,13 @@ import {
   type Edge,
   type NodeMouseHandler,
 } from '@xyflow/react'
-import ELK from 'elkjs/lib/elk.bundled.js'
 import { resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
 import {
-  elkLayoutOptions, dependencyDepth, packColumns, NCN_LAYOUT, type PackedLayout,
+  elkColumnOrder, dependencyDepth, packColumns, NCN_LAYOUT, type PackedLayout,
 } from './ncnLayout.js'
 
-const elk = new ELK()
 const GRAPH_HEIGHT = 720
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 }
 
@@ -76,22 +74,10 @@ function NcnGraphInner({
     let cancelled = false
     if (graph.nodes.length === 0) return
 
-    const elkGraph = {
-      id: 'root',
-      layoutOptions: elkLayoutOptions,
-      children: graph.nodes.map(n => ({ id: n.id, width: NCN_LAYOUT.nodeWidth, height: NCN_LAYOUT.nodeHeight })),
-      edges: graph.edges.map(e => ({
-        id: `${e.from}->${e.to}`,
-        sources: [e.from],
-        targets: [e.to],
-      })),
-    }
-
-    elk.layout(elkGraph).then(result => {
+    const nodeIds = graph.nodes.map(n => n.id)
+    elkColumnOrder(nodeIds, graph.edges).then(order => {
       if (cancelled) return
-      const order = new Map((result.children ?? []).map(c => [c.id, c.y ?? 0]))
-      const depth = dependencyDepth(graph.nodes.map(n => n.id), graph.edges)
-      setLayout(packColumns(depth, order, NCN_LAYOUT))
+      setLayout(packColumns(dependencyDepth(nodeIds, graph.edges), order, NCN_LAYOUT))
     })
 
     return () => { cancelled = true }
@@ -130,8 +116,9 @@ function NcnGraphInner({
     const prereqTitles = new Map<string, string[]>()
     const dependentCount = new Map<string, number>()
     for (const e of graph.edges) {
-      const prereq = titleById.get(e.from)
-      if (prereq !== undefined) prereqTitles.set(e.to, [...(prereqTitles.get(e.to) ?? []), prereq])
+      if (!titleById.has(e.from) || !titleById.has(e.to)) continue
+      if (!prereqTitles.has(e.to)) prereqTitles.set(e.to, [])
+      prereqTitles.get(e.to)!.push(titleById.get(e.from)!)
       dependentCount.set(e.from, (dependentCount.get(e.from) ?? 0) + 1)
     }
 

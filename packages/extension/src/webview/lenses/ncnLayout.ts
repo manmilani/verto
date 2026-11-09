@@ -1,4 +1,7 @@
 import type { VertoEdge } from '@verto/core'
+import ELK from 'elkjs/lib/elk.bundled.js'
+
+const elk = new ELK()
 
 /**
  * ELK only decides the order of nodes inside each column (crossing minimisation).
@@ -32,6 +35,17 @@ export interface PackedLayout {
   columns: { x: number; width: number }[]
   width: number
   height: number
+}
+
+/** ELK's crossing-minimised vertical order (`y`) per node id. */
+export async function elkColumnOrder(nodeIds: string[], edges: VertoEdge[]): Promise<Map<string, number>> {
+  const result = await elk.layout({
+    id: 'root',
+    layoutOptions: elkLayoutOptions,
+    children: nodeIds.map(id => ({ id, width: NCN_LAYOUT.nodeWidth, height: NCN_LAYOUT.nodeHeight })),
+    edges: edges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),
+  })
+  return new Map((result.children ?? []).map(c => [c.id, c.y ?? 0]))
 }
 
 /**

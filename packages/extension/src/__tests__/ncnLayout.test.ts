@@ -1,22 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import ELK from 'elkjs/lib/elk.bundled.js'
 import type { VertoEdge } from '@verto/core'
 import {
-  dependencyDepth, packColumns, elkLayoutOptions, NCN_LAYOUT, type ColumnLayoutSpec,
+  dependencyDepth, packColumns, elkColumnOrder as elkOrder, type ColumnLayoutSpec,
 } from '../webview/lenses/ncnLayout.js'
 
 const edge = (from: string, to: string): VertoEdge => ({ from, to } as VertoEdge)
 const spec: ColumnLayoutSpec = { nodeWidth: 100, nodeHeight: 20, columnGap: 10, rowGap: 5, padding: 2 }
-
-async function elkOrder(ids: string[], edges: VertoEdge[]): Promise<Map<string, number>> {
-  const layout = await new ELK().layout({
-    id: 'root',
-    layoutOptions: elkLayoutOptions,
-    children: ids.map(id => ({ id, width: NCN_LAYOUT.nodeWidth, height: NCN_LAYOUT.nodeHeight })),
-    edges: edges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),
-  })
-  return new Map((layout.children ?? []).map(c => [c.id, c.y ?? 0]))
-}
 
 describe('dependencyDepth', () => {
   it('chain → 0, 1, 2', () => {
