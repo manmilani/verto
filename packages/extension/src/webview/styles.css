@@ -1,12 +1,3 @@
-/* React Flow edge visibility in VS Code webview themes */
-.react-flow__edge-path {
-  stroke-width: 1.5;
-}
-
-.react-flow__arrowhead polyline {
-  stroke-width: 1.5;
-}
-
 .react-flow__pane {
   cursor: grab;
 }

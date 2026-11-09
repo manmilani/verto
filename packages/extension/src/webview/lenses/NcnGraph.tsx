@@ -20,6 +20,10 @@ import { formatNodeStatus } from '../nodeStatusFormat.js'
 const elk = new ELK()
 const GRAPH_HEIGHT = 720
 
+type EdgeState = 'hi' | 'on' | 'dim'
+/** Later-painted edges draw on top; edges always stay under nodes. */
+const EDGE_PAINT_ORDER: Record<EdgeState, number> = { dim: 0, on: 1, hi: 2 }
+
 interface NcnGraphProps {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
@@ -115,10 +119,10 @@ function NcnGraphInner({
       return false
     }
 
-    function isEdgeActive(e: VertoEdge): boolean {
-      if (focusSet) return e.from === focusedNcnNodeId || e.to === focusedNcnNodeId
-      if (highlightedSet) return highlightedSet.has(e.from) && highlightedSet.has(e.to)
-      return true
+    function edgeState(e: VertoEdge): EdgeState {
+      if (focusSet) return e.from === focusedNcnNodeId || e.to === focusedNcnNodeId ? 'hi' : 'dim'
+      if (highlightedSet) return highlightedSet.has(e.from) && highlightedSet.has(e.to) ? 'on' : 'dim'
+      return 'on'
     }
 
     const readySet = new Set(bundle.readyIds ?? [])
@@ -138,8 +142,7 @@ function NcnGraphInner({
       if (isReady) border = '2px solid var(--vscode-focusBorder)'
       if (isFocused) border = '2px solid var(--vscode-focusBorder)'
 
-      const baseOpacity = n.isDone ? 0.4 : 1
-      const opacity = dimmed ? baseOpacity * 0.16 : baseOpacity
+      const opacity = dimmed ? 0.16 : 1
 
       return [{
         id: n.id,
@@ -159,7 +162,7 @@ function NcnGraphInner({
           border,
           opacity,
           borderRadius: 8,
-          background: 'var(--vscode-editor-background)',
+          background: 'var(--vscode-editorWidget-background)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'row' as const,
@@ -170,29 +173,32 @@ function NcnGraphInner({
       }]
     })
 
-    const rfEdges: Edge[] = graph.edges.map(e => {
-      const active = isEdgeActive(e)
-      const stroke = active && focusSet
-        ? 'var(--vscode-focusBorder)'
-        : 'var(--vscode-foreground)'
-      return {
-        id: `${e.from}->${e.to}`,
-        source: e.from,
-        target: e.to,
-        type: 'smoothstep',
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 16,
-          height: 16,
-          color: stroke,
-        },
-        style: {
-          stroke,
-          strokeWidth: active && focusSet ? 2 : 1.5,
-          opacity: active ? 0.65 : 0.12,
-        },
-      }
-    })
+    const rfEdges: Edge[] = graph.edges
+      .map(e => ({ e, state: edgeState(e) }))
+      .sort((a, b) => EDGE_PAINT_ORDER[a.state] - EDGE_PAINT_ORDER[b.state])
+      .map(({ e, state }) => {
+        const hi = state === 'hi'
+        const stroke = hi ? 'var(--vscode-focusBorder)' : 'var(--vscode-descriptionForeground)'
+        const arrowSize = hi ? 28 : 24
+        return {
+          id: `${e.from}->${e.to}`,
+          source: e.from,
+          target: e.to,
+          type: 'simplebezier',
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            markerUnits: 'userSpaceOnUse',
+            width: arrowSize,
+            height: arrowSize,
+            color: stroke,
+          },
+          style: {
+            stroke,
+            strokeWidth: hi ? 2 : 1,
+            opacity: hi ? 0.95 : state === 'on' ? (highlightedSet ? 0.6 : 0.28) : 0.06,
+          },
+        }
+      })
 
     return { rfNodes, rfEdges }
   }, [elkPositions, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
@@ -264,20 +270,18 @@ function NcnNode({ data }: { data: any }) {
           }}>
             {title}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: 'var(--vscode-descriptionForeground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {statusLabel}
-            </span>
-            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-              {isReady && (
-                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--vscode-focusBorder)' }}>ready</span>
-              )}
-              {leverage > 0 && (
-                <span style={{ fontSize: 10, color: 'var(--vscode-charts-orange)' }}>
-                  · unlocks {leverage}
-                </span>
-              )}
-            </div>
+          <div style={{
+            fontSize: 10,
+            color: 'var(--vscode-descriptionForeground)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {statusLabel}
+            {leverage > 0 && ` · unlocks ${leverage}`}
+            {isReady && (
+              <span style={{ fontWeight: 600, color: 'var(--vscode-focusBorder)' }}> · ready</span>
+            )}
           </div>
         </div>
       </div>

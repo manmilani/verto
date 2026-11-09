@@ -7,11 +7,31 @@ const defaultGroups: DisplayStatusGroup[] = [
 ]
 
 describe('formatNodeStatus', () => {
-  it('matched group + raw status → "<group> (<raw>)"', () => {
+  it('raw status equal to the group label (case-insensitive) → "<group>"', () => {
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: false, status: 'raw' },
       defaultGroups,
-    )).toBe('Raw (raw)')
+    )).toBe('Raw')
+  })
+
+  it('raw status differing from the group label → "<group> (<raw>)"', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'Raw', sources: { ticket: { statuses: ['Todo'] } } },
+    ]
+    expect(formatNodeStatus(
+      { nodeType: 'ticket', isDone: false, status: 'Todo' },
+      groups,
+    )).toBe('Raw (Todo)')
+  })
+
+  it('raw status equal to a ticket group label → "<group>"', () => {
+    const groups: DisplayStatusGroup[] = [
+      { label: 'In Progress', sources: { ticket: { statuses: ['In Progress'] } } },
+    ]
+    expect(formatNodeStatus(
+      { nodeType: 'ticket', isDone: false, status: 'In Progress' },
+      groups,
+    )).toBe('In Progress')
   })
 
   it('done ticket → system Done label', () => {
@@ -49,14 +69,14 @@ describe('formatNodeStatus', () => {
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: true, status: 'done' },
       defaultGroups,
-    )).toBe('Done (done)')
+    )).toBe('Done')
   })
 
   it('parsed raw node matches Raw group', () => {
     expect(formatNodeStatus(
       { nodeType: 'parsed', isDone: false, status: 'raw' },
       defaultGroups,
-    )).toBe('Raw (raw)')
+    )).toBe('Raw')
   })
 
   it('empty groups → falls through to others', () => {

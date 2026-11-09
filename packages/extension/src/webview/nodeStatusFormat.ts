@@ -1,12 +1,12 @@
 import type { DisplayStatusGroup } from '@verto/config'
 import type { VertoNode } from '@verto/core'
-import { resolveDisplayStatusGroup, OTHER_DISPLAY_STATUS_GROUP } from './displayStatusGroup.js'
+import { resolveDisplayStatusGroup } from './displayStatusGroup.js'
 
 /**
  * Returns a human-readable status string for a node using the configured
- * display-status groups. Format: "<group> (<raw status>)" or "<group>" when
- * no raw status is present. Falls back to "others (<raw>)" / "others" when the
- * node doesn't match any group.
+ * display-status groups. Format: "<group> (<raw status>)", or "<group>" when
+ * there is no raw status or it equals the group label (case-insensitive).
+ * Nodes matching no group use the "others" group.
  */
 export function formatNodeStatus(
   node: Pick<VertoNode, 'nodeType' | 'isDone' | 'status'>,
@@ -14,8 +14,7 @@ export function formatNodeStatus(
 ): string {
   const label = resolveDisplayStatusGroup(node, groups)
   const raw = node.status
-  if (label === OTHER_DISPLAY_STATUS_GROUP) return raw ? `${OTHER_DISPLAY_STATUS_GROUP} (${raw})` : OTHER_DISPLAY_STATUS_GROUP
-  return raw ? `${label} (${raw})` : label
+  return raw && raw.toLowerCase() !== label.toLowerCase() ? `${label} (${raw})` : label
 }
 
 /**
