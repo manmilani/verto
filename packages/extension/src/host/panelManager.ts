@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import type { VertoChange, WriteConfirmation } from '@verto/core'
 import { discardChanges, parseChange, TEMP_ID_PREFIX } from '@verto/core'
 import { insertFieldMappings } from '@verto/config'
-import type { HostToWebviewMessage, PersistedPanelState, WebviewToHostMessage, WriteBackMode } from '../shared/protocol.js'
+import type { HostToWebviewMessage, MoveResult, PersistedPanelState, WebviewToHostMessage, WriteBackMode } from '../shared/protocol.js'
 import { getWorkspaceConfigPath, loadConfig } from './configLoader.js'
 import { isSetupRequiredConfigError, shouldAutoStartSetupForConfigError } from './configErrors.js'
 import { getGitHubToken } from './authProvider.js'
@@ -12,7 +12,7 @@ import { describeMissingField, loadProjectGraph, type LoadedProject, type Projec
 import type { AdapterEnv } from './adapterRegistry.js'
 import { getFissueApi } from './fissueApi.js'
 import { changeLabel, DraftStore, projectKey } from './draftStore.js'
-import { acceptEdit, afterWrite, canWrite, invalidReason, viewWithDraft } from './draftSession.js'
+import { acceptEdit, afterWrite, canWrite, invalidReason, planDrop, viewWithDraft } from './draftSession.js'
 import { runSetup } from './setupWizard.js'
 import { SkipPrompt } from './skipPrompt.js'
 import { ticketUri } from './ticketUri.js'
@@ -194,6 +194,9 @@ export class PanelManager {
         }
         await this.serial(() => (msg.type === 'edit' ? this.edit(msg.change) : this.discard(msg.changes)))
         break
+      case 'move':
+        await this.serial(() => this.move(msg.id, msg.afterId))
+        break
       case 'writeBack':
         if (this.writing || this.writeQueued) break
         this.writeQueued = true
@@ -354,6 +357,39 @@ export class PanelManager {
     if (this.current !== cur) return this.refuse('Verto: the project reloaded; edit not applied, try again.')
     if (!r.ok) return this.refuse(`Verto: edit not applied: ${r.error}`)
     await this.drafts.save(cur.key, r.entries)
+    await this.render()
+    if (writeBackMode() === 'immediate' && canWrite(cur.loaded)) await this.writeBack()
+  }
+
+  /**
+   * Drag-and-drop (DESIGN.md §3.5): plan the least-change priority edits and apply them as one batch.
+   * Always answers with exactly one `moveResult`.
+   */
+  private async move(id: string, afterId?: string) {
+    const cur = this.current
+    let result: MoveResult = { type: 'moveResult', id }
+    try {
+      if (this.writing) throw new Error(WRITING)
+      if (!cur || !this.lastView) throw new Error('Verto: nothing loaded yet.')
+      const planned = planDrop(this.lastView, canWrite(cur.loaded), id, afterId)
+      if (!planned.ok) throw new Error(`Verto: move not applied: ${planned.error}`)
+      let entries = this.drafts.load(cur.key)
+      for (const e of planned.plan.edits) {
+        const change: VertoChange = { type: 'set', nodeId: e.nodeId, key: 'priority', value: e.to }
+        const r = await acceptEdit(cur.loaded, entries, change, this.parsedEnabled())
+        if (!r.ok) throw new Error(`Verto: move not applied: ${r.error}`)
+        entries = r.entries
+      }
+      if (this.current !== cur) throw new Error('Verto: the project reloaded; move not applied, try again.')
+      if (planned.plan.edits.length > 0) await this.drafts.save(cur.key, entries)
+      result = { type: 'moveResult', id, target: planned.target, plan: planned.plan }
+    } catch (err) {
+      result = { type: 'moveResult', id, error: messageOf(err) }
+      void vscode.window.showWarningMessage(result.error!)
+    } finally {
+      this.send(result)
+    }
+    if (!result.plan?.edits.length || !cur) return
     await this.render()
     if (writeBackMode() === 'immediate' && canWrite(cur.loaded)) await this.writeBack()
   }

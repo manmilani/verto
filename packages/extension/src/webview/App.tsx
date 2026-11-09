@@ -16,7 +16,7 @@ export default function App() {
     ncnFocusedNodeId,
     priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView, showLosingPriorityChains,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
+    edit, discard, writeBack, move, moving, moveResult, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
   } = useVertoState()
   const searchRoot = useRef<HTMLDivElement>(null)
 
@@ -57,7 +57,7 @@ export default function App() {
   if (!bundle) return null
 
   return (
-    <EditingContext.Provider value={{ draft, statusOptions, writableLevels, priorityOptionHints, edit, discard, writeBack }}>
+    <EditingContext.Provider value={{ draft, statusOptions, writableLevels, priorityOptionHints, edit, discard, writeBack, move, moving, moveResult }}>
     <div ref={searchRoot} style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',

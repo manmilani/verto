@@ -3,7 +3,7 @@ import type { VertoConfig } from '@verto/config'
 import type { VertoAdapter, VertoChange, VertoGraph, VertoNode } from '@verto/core'
 import type { LoadedProject } from '../host/loadPipeline.js'
 import { buildView } from '../host/loadPipeline.js'
-import { acceptEdit, afterWrite, invalidReason, viewWithDraft } from '../host/draftSession.js'
+import { acceptEdit, afterWrite, invalidReason, planDrop, viewWithDraft } from '../host/draftSession.js'
 
 function node(id: string, extra: Partial<VertoNode> = {}): VertoNode {
   return {
@@ -84,6 +84,34 @@ describe('acceptEdit', () => {
     const r3 = await acceptEdit(p, r2.ok ? r2.entries : [], prio('new:1', 4), true)
     expect(r3.ok).toBe(true)
     expect(await acceptEdit(p, [], prio('A', 9), true)).toEqual({ ok: false, error: 'no 9' })
+  })
+})
+
+describe('planDrop', () => {
+  // independent journeys Y 3, X 5: order Y, X (ties break by id, so X 3 goes first)
+  const p = () => project({ nodes: [node('X'), node('Y', { priority: 3 })], edges: [] })
+
+  it('maps the drop by identity and plans the least change', () => {
+    const r = planDrop(buildView(p(), [], true), false, 'X')
+    expect(r).toEqual({ ok: true, target: 0, plan: { edits: [{ nodeId: 'X', from: 5, to: 3 }], exact: true, index: 0, rank: 3 } })
+  })
+
+  it('only uses levels the tracker can hold when the adapter writes', () => {
+    const view = { ...buildView(p(), [], true), writableLevels: [1, 5] }
+    const r = planDrop(view, true, 'X')
+    expect(r.ok && r.plan.edits).toEqual([{ nodeId: 'X', from: 5, to: 1 }])
+  })
+
+  it('refuses rows no longer in the order', () => {
+    const view = buildView(p(), [], true)
+    expect(planDrop(view, false, 'Z')).toEqual({ ok: false, error: 'Z is no longer in the implementation order' })
+    expect(planDrop(view, false, 'X', 'Z')).toEqual({ ok: false, error: 'Z is no longer in the implementation order' })
+  })
+
+  it('a move that sets a node back to its tracker value leaves a clean draft', async () => {
+    const r = await acceptEdit(project(graph()), [{ change: prio('A', 2) }], prio('A', 5), true)
+    const { entries } = viewWithDraft(project(graph()), r.ok ? r.entries : [], true)
+    expect(entries).toEqual([])
   })
 })
 

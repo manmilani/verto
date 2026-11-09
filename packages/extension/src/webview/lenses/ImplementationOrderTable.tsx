@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import type { DeliveryMapBundle, VertoNode } from '@verto/core'
 import type { DisplayStatusGroup } from '@verto/config'
-import type { NcnTableView } from '../../shared/protocol.js'
+import type { MoveResult, NcnTableView } from '../../shared/protocol.js'
+import { useEditing } from '../editing.js'
 import { formatNodeStatus, formatPriority } from '../nodeStatusFormat.js'
 import {
   resolveDisplayStatusGroupIndex,
@@ -39,14 +40,16 @@ function StatusGroupDot({
 }
 
 function RowIndex({
-  index, node, displayStatusGroups,
+  index, node, displayStatusGroups, grip,
 }: {
   index: number
   node: VertoNode
   displayStatusGroups: DisplayStatusGroup[]
+  grip?: React.ReactNode
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+      {grip}
       <StatusGroupDot node={node} displayStatusGroups={displayStatusGroups} />
       <Text weight="semibold" tone="secondary">{index + 1}</Text>
     </div>
@@ -98,11 +101,45 @@ function ServesPills({
   )
 }
 
+/** What the last drop did (DESIGN.md §3.5); a moved row's line hides once the row is elsewhere. */
+function MoveFeedback({
+  result, orderIds, nodeById, mode,
+}: {
+  result?: MoveResult
+  orderIds: string[]
+  nodeById: Map<string, VertoNode>
+  mode: string
+}) {
+  if (!result) return null
+  const { id, plan, target, error } = result
+  const title = (nid: string) => <Text as="span" weight="semibold">{nodeById.get(nid)?.title ?? nid}</Text>
+  let line: React.ReactNode
+  if (error !== undefined || !plan || target === undefined) {
+    line = <>Move not applied: {(error ?? 'no plan').replace(/^Verto: (move not applied: )?/, '')}</>
+  } else if (plan.edits.length === 0) {
+    line = plan.exact
+      ? <>{title(id)} is already as close as its prerequisites and dependents allow.</>
+      : <>{title(id)} can&apos;t move there with the priorities that can be set.</>
+  } else {
+    if (orderIds[plan.index] !== id) return null
+    const edits = plan.edits.map((e, i) => (
+      <React.Fragment key={e.nodeId}>{i > 0 && ', '}{title(e.nodeId)} {e.from}→{e.to}</React.Fragment>
+    ))
+    line = plan.exact
+      ? <>Moved {title(id)} to row {plan.index + 1}: {edits} ({mode}).</>
+      : <>Row {target + 1} isn&apos;t reachable for {title(id)}; moved it to row {plan.index + 1} instead: {edits} ({mode}).</>
+  }
+  return <Text size="small" tone="secondary">{line}</Text>
+}
+
 export function ImplementationOrderTable({
   bundle, displayStatusGroups, view, showLosingPriorityChains, focusedNodeId, focusSet, onFocusNode,
 }: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
+  const { draft, move, moving, moveResult } = useEditing()
+  const dragId = useRef<string | undefined>(undefined)
+  const [drop, setDrop] = useState<{ id: string; below: boolean }>()
 
   if (view === 'leverage') {
     const readyIds = [...(bundle.readyIds ?? [])].sort(
@@ -200,6 +237,33 @@ export function ImplementationOrderTable({
     return r !== undefined && r < Infinity
   }).length
 
+  const canDrag = !draft.writing && !moving
+  const mode = draft.canWrite && draft.mode === 'immediate' ? 'being written to the tickets' : 'pending in the draft'
+  const endDrag = () => { dragId.current = undefined; setDrop(undefined) }
+  const isBelow = (e: React.DragEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return e.clientY > r.top + r.height / 2
+  }
+  const onRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
+    if (dragId.current === undefined) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const below = isBelow(e)
+    if (drop?.id !== id || drop.below !== below) setDrop({ id, below })
+  }
+  const onRowDrop = (e: React.DragEvent<HTMLTableRowElement>, i: number) => {
+    const x = dragId.current
+    if (x === undefined) return
+    e.preventDefault()
+    const after = isBelow(e) ? i : i - 1
+    const from = orderIds.indexOf(x)
+    endDrag()
+    if (from < 0 || after === from || after === from - 1) return
+    move(x, after < 0 ? undefined : orderIds[after])
+  }
+  const dropEdge = (id: string): React.CSSProperties | undefined =>
+    drop?.id === id ? { boxShadow: `inset 0 ${drop.below ? -2 : 2}px 0 var(--vscode-focusBorder)` } : undefined
+
   return (
     <Stack gap={8}>
       <H2>Implementation order — to deliver your prioritised journeys fastest</H2>
@@ -208,8 +272,10 @@ export function ImplementationOrderTable({
         each item&apos;s prerequisites come before it. Build top-to-bottom and each journey is delivered as early as its
         priority allows. The <Text as="span" weight="semibold">Priority</Text> column shows which prioritised journey
         lifted each item. Other currently-ready items follow at the end. Journey priorities are set in the{' '}
-        <Text as="span" weight="semibold">Journeys</Text> tab.
+        <Text as="span" weight="semibold">Journeys</Text> tab. Drag a row by its grip to reorder: Verto sets the
+        smallest priority change that puts it there.
       </Text>
+      <MoveFeedback result={moveResult} orderIds={orderIds} nodeById={nodeById} mode={mode} />
       {orderIds.length === 0 ? (
         <Text size="small" tone="tertiary">Nothing left to do.</Text>
       ) : (
@@ -250,16 +316,37 @@ export function ImplementationOrderTable({
                 const isReady = bundle.readyIds?.includes(id) ?? false
                 const isFocused = id === focusedNodeId
                 const hasPriority = priority !== '—'
+                const edge = dropEdge(id)
+                const grip = (
+                  <span
+                    draggable={canDrag}
+                    title={canDrag ? 'Drag to reorder' : 'Wait for the current write or move to finish'}
+                    style={{ cursor: canDrag ? 'grab' : 'default', opacity: canDrag ? 0.7 : 0.3, userSelect: 'none' }}
+                    onClick={e => e.stopPropagation()}
+                    onDragStart={e => {
+                      dragId.current = id
+                      e.dataTransfer.setData('text/plain', id)
+                      e.dataTransfer.effectAllowed = 'move'
+                      const row = e.currentTarget.closest('tr')
+                      if (row) e.dataTransfer.setDragImage(row, 0, 0)
+                    }}
+                    onDragEnd={endDrag}
+                  >
+                    ⋮⋮
+                  </span>
+                )
                 return (
                   <tr
                     key={id}
                     onClick={() => onFocusNode(id)}
+                    onDragOver={e => onRowDragOver(e, id)}
+                    onDrop={e => onRowDrop(e, i)}
                     style={dataTableRowStyle(isFocused, isDimmed(focusSet, id))}
                   >
-                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right', ...indexColPadding }}>
-                      <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} />
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'right', ...indexColPadding, ...edge }}>
+                      <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} grip={grip} />
                     </td>
-                    <td style={dataTableTdCompactStyle}>
+                    <td style={{ ...dataTableTdCompactStyle, ...edge }}>
                       {hasPriority ? (
                         <Pill
                           size="sm"
@@ -278,7 +365,7 @@ export function ImplementationOrderTable({
                         <Text size="small" tone="quaternary">—</Text>
                       )}
                     </td>
-                    <td style={workItemTdStyle}>
+                    <td style={{ ...workItemTdStyle, ...edge }}>
                       <WorkItemPill
                         node={node}
                         displayStatusGroups={displayStatusGroups}
@@ -286,20 +373,20 @@ export function ImplementationOrderTable({
                         onFocus={() => onFocusNode(id)}
                       />
                     </td>
-                    <td style={dataTableTdCompactStyle}>
+                    <td style={{ ...dataTableTdCompactStyle, ...edge }}>
                       {isReady ? (
                         <Pill size="sm" tone="success" active>Ready</Pill>
                       ) : (
                         <Pill size="sm" tone="neutral">Blocked</Pill>
                       )}
                     </td>
-                    <td style={dataTableTdCompactStyle}>
+                    <td style={{ ...dataTableTdCompactStyle, ...edge }}>
                       <Text size="small" tone="secondary">{formatNodeStatus(node, displayStatusGroups)}</Text>
                     </td>
-                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>
+                    <td style={{ ...dataTableTdCompactStyle, textAlign: 'center', ...edge }}>
                       <Text weight="semibold">{String(unlocks)}</Text>
                     </td>
-                    <td style={servesTdStyle}>
+                    <td style={{ ...servesTdStyle, ...edge }}>
                       <ServesPills sliceIds={servedSlices(bundle, id)} nodeById={nodeById} onFocusNode={onFocusNode} />
                     </td>
                   </tr>

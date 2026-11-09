@@ -1,5 +1,5 @@
-import type { VertoChange, WriteResult } from '@verto/core'
-import { changeNodeIds, nextTempId, remapNodeIds, sameTarget } from '@verto/core'
+import type { MovePlan, VertoChange, WriteResult } from '@verto/core'
+import { changeNodeIds, nextTempId, planMove, remapNodeIds, sameTarget } from '@verto/core'
 import type { DraftEntry } from './draftStore.js'
 import { buildView, type LoadedProject, type ProjectView } from './loadPipeline.js'
 
@@ -66,6 +66,28 @@ export async function acceptEdit(
   if (!reason) return { ok: true, entries: next }
   const stale = invalidReason(previewView) ? 'the draft has invalid entries; discard them first: ' : ''
   return { ok: false, error: stale + reason }
+}
+
+/**
+ * Plan dropping work-item `id` right below `afterId` (none = top) in the view's implementation order
+ * (DESIGN.md §3.5). Only tickets are edited, to levels the tracker can hold when the adapter writes.
+ * `target` = the 0-based row X would occupy at the drop.
+ */
+export function planDrop(
+  view: ProjectView,
+  writable: boolean,
+  id: string,
+  afterId?: string,
+): { ok: true; target: number; plan: MovePlan } | { ok: false; error: string } {
+  const order = view.bundle.implementationOrder ?? []
+  const from = order.indexOf(id)
+  if (from < 0) return { ok: false, error: `${id} is no longer in the implementation order` }
+  const gap = afterId === undefined ? 0 : order.indexOf(afterId) + 1
+  if (afterId !== undefined && gap === 0) return { ok: false, error: `${afterId} is no longer in the implementation order` }
+  const levels = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    .filter(l => !writable || view.writableLevels === null || view.writableLevels.includes(l))
+  const plan = planMove(view.bundle.graph, id, gap, n => (n.nodeType === 'ticket' ? levels : []))
+  return { ok: true, target: gap > from ? gap - 1 : gap, plan }
 }
 
 /**

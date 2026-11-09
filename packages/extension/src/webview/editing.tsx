@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import type { VertoChange } from '@verto/core'
 import { changeNodeIds } from '@verto/core'
 import type { PriorityOptionHints } from '@verto/config/priority-hints'
-import type { DraftEntryView, DraftView } from '../shared/protocol.js'
+import type { DraftEntryView, DraftView, MoveResult } from '../shared/protocol.js'
 
 /** The draft and edit actions (DESIGN.md §4.6.11), shared by every lens. */
 export interface Editing {
@@ -13,6 +13,10 @@ export interface Editing {
   edit(change: VertoChange): void
   discard(changes?: VertoChange[]): void
   writeBack(): void
+  /** Drag-and-drop reorder (DESIGN.md §3.5); `moving` until the host's `moveResult` arrives. */
+  move(id: string, afterId?: string): void
+  moving: boolean
+  moveResult?: MoveResult
 }
 
 export const EditingContext = createContext<Editing>({
@@ -23,6 +27,8 @@ export const EditingContext = createContext<Editing>({
   edit: () => undefined,
   discard: () => undefined,
   writeBack: () => undefined,
+  move: () => undefined,
+  moving: false,
 })
 
 export function useEditing(): Editing {

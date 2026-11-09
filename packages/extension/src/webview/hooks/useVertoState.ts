@@ -8,6 +8,7 @@ import type {
   NcnTableView,
   PersistedPanelState,
   DraftView,
+  MoveResult,
 } from '../../shared/protocol.js'
 import { vscode } from '../vscodeApi.js'
 
@@ -40,6 +41,9 @@ interface VertoState {
   focusedNode?: string
   ncnFocusedNodeId?: string
   ncnTableView: NcnTableView
+  /** Set while a dropped row waits for the host's `moveResult`. */
+  moving: boolean
+  moveResult?: MoveResult
   errorMessage?: string
   setupRequired?: boolean
 }
@@ -60,6 +64,7 @@ export function useVertoState() {
     projectName: 'Verto',
     lens: 'deliveryMap',
     ncnTableView: 'leverage',
+    moving: false,
   })
 
   useEffect(() => {
@@ -83,6 +88,10 @@ export function useVertoState() {
           errorMessage: msg.message,
           setupRequired: msg.setupRequired === true,
         }))
+        return
+      }
+      if (msg.type === 'moveResult') {
+        setState(s => ({ ...s, moving: false, moveResult: msg }))
         return
       }
       if (msg.type === 'update') {
@@ -182,6 +191,11 @@ export function useVertoState() {
     vscode.postMessage({ type: 'writeBack' } satisfies WebviewToHostMessage)
   }
 
+  const move = (id: string, afterId?: string) => {
+    setState(s => ({ ...s, moving: true }))
+    vscode.postMessage({ type: 'move', id, afterId } satisfies WebviewToHostMessage)
+  }
+
   const setNcnFocusedNodeId = (ncnFocusedNodeId: string | undefined) => {
     setState(s => {
       const next = { ...s, ncnFocusedNodeId }
@@ -209,7 +223,7 @@ export function useVertoState() {
   return {
     ...state,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
+    edit, discard, writeBack, move, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
   }
 }
 

@@ -1,4 +1,4 @@
-import type { ChangeState, DeliveryMapBundle, VertoChange } from '@verto/core'
+import type { ChangeState, DeliveryMapBundle, MovePlan, VertoChange } from '@verto/core'
 import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 
 export type Lens = 'deliveryMap' | 'ncnGraph' | 'journeys'
@@ -32,6 +32,9 @@ export interface DraftView {
   adapter: string
 }
 
+/** The answer to every `move`: the applied plan (`target` = the dropped-at row), or why nothing was applied. */
+export interface MoveResult { type: 'moveResult'; id: string; target?: number; plan?: MovePlan; error?: string }
+
 export type HostToWebviewMessage =
   | { type: 'update'; bundle: DeliveryMapBundle; displayStatusGroups: DisplayStatusGroup[];
       showOthersColumn: boolean;
@@ -46,6 +49,7 @@ export type HostToWebviewMessage =
       restoredState?: PersistedPanelState }
   | { type: 'loading' }
   | { type: 'error'; message: string; setupRequired?: boolean }
+  | MoveResult
 
 export type WebviewToHostMessage =
   | { type: 'ready' }
@@ -55,6 +59,8 @@ export type WebviewToHostMessage =
   | { type: 'edit'; change: VertoChange }
   /** The changes to discard (matched by target); none = all. */
   | { type: 'discard'; changes?: VertoChange[] }
+  /** Drag-and-drop: move work-item `id` right below `afterId` (none = top) by priority edits. */
+  | { type: 'move'; id: string; afterId?: string }
   | { type: 'writeBack' }
   | { type: 'retry' }
   | { type: 'runSetup' }
