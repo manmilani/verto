@@ -467,7 +467,9 @@ Host- and vendor-agnostic. Responsibilities:
   leverage score, delivery completeness, **global priority ranking** (chain-traversal
   algorithm — see §3.5), and the priority-weighted topological **implementation order**.
   DAG **rendering layout** (node positions) lives in the extension webview
-  (`@xyflow/react` + ELK), not in `@verto/core`.
+  (`@xyflow/react` + ELK), not in `@verto/core`: the webview puts each node in the column of
+  its dependency depth (longest path from a source) and packs columns top-aligned; ELK
+  supplies only the order of nodes within each column (crossing minimisation).
 - **No I/O, no host APIs, no UI.** Everything network/disk/host lives behind the
   adapter interface and the extension host.
 
@@ -778,8 +780,8 @@ Palette index: **Done** = 0; user group *n* = *n*+1; **`others`** = −1
 
 `displayStatusGroup` is the display vocabulary everywhere — column headers,
 legends, node colouring, pill tones, UsageBar segments. Per-node labels:
-`"<group> (<node.status>)"` when `node.status` is present; `"<group>"` when absent.
-No user-group match: `"others (<node.status>)"` or `"others"`.
+`"<group> (<node.status>)"`, or `"<group>"` when `node.status` is absent or equals the
+group label (case-insensitive). No user-group match: the same rule with `others`.
 
 **Tooltips** (legends, portfolio column headers, UsageBar mini-legend): host builds
 `displayStatusGroupTooltips` on each refresh (`buildDisplayStatusGroupTooltips`):
@@ -1681,10 +1683,16 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
   **npm scope:** `@verto/*` — monorepo-only / private; no npm publish action
   required. **Distribution:** private `.vsix` (not Marketplace).
 - **Panel location:** **editor tab** via `WebviewPanel` (`createWebviewPanel`) —
-  not sidebar, not custom editor.
+  not sidebar, not custom editor. **Verto: Open Panel** opens it in the **active**
+  editor group (no new split); if it already exists it is revealed where it is.
 - **NCN graph UI stack:** **@xyflow/react** (React Flow) for rendering; **ELK**
-  (`elkjs`) as the background layout engine. **Phase 4:** pan/zoom enabled
-  (`panOnScroll`, `zoomOnScroll`); journey highlight + click-to-focus neighbourhood.
+  (`elkjs`) for in-column order (§4.3). Look follows the original canvas: packed
+  columns with alternating column bands; Bézier edges (`simplebezier`), muted at rest,
+  focused node's edges in `focusBorder`, everything else dimmed; small arrowheads;
+  nodes at full opacity with a status-colour bar and one meta line
+  (`status · unlocks N · ready`) plus a hover tooltip (needs / serves). Starts at 100%;
+  drag pans, Ctrl+wheel zooms (plain wheel scrolls the page); toolbar: zoom out, zoom %,
+  zoom in, fit, reset to 100%. Journey highlight + click-to-focus neighbourhood.
 - **Bundlers:** extension **host** → **esbuild**; **webview** → **Vite**. CSP-safe
   webview bundle; no inline scripts.
 - **Standard pieces only:** extension manifest + activation, a **WebviewPanel**

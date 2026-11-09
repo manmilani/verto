@@ -368,6 +368,16 @@ current design is in §4.6.4 and §4.6.7.*
 - **Extension bundlers.** Closed (Phase 3) — host: **esbuild**; webview:
   **Vite** (§4.8).
 - **NCN pan/zoom (Phase 3).** Closed (Phase 4) — enabled in `NcnGraph.tsx`.
+- **NCN graph look (retired).** Phase 3–6 used ELK's default layered placement
+  (nodes spread vertically to straighten edges, layer gaps widened for orthogonal
+  routing), React Flow `smoothstep` (orthogonal) edges in full-contrast foreground
+  colour with large arrowheads, Done nodes at 40% opacity, a `fitView` start and
+  wheel = pan/zoom (`panOnScroll`, `zoomOnScroll`). Replaced by the canvas-style look
+  (§4.3, §4.8). Considered and rejected: replacing ELK with an own layout (ELK still
+  gives good in-column ordering for free), and dropping React Flow to port the
+  canvas's hand-rolled SVG (we would own pan/zoom and events for little gain).
+- **"Open Panel" location (retired).** The panel used to open `ViewColumn.Beside`
+  (a new split); now the active editor group (§4.8).
 - **Theming.** Closed (Phase 4) — Status-based colouring uses VS Code theme
   variables throughout. Palette mapped by display-status-group **array position** in
   `theme.ts` (not user-configurable; no config changes). Display-status pills and dots

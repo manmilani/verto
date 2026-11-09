@@ -290,7 +290,7 @@ script or by hand. The first-run setup wizard is **[Phase 4.5](#phase-45--setup-
 | `packages/extension/src/webview/App.tsx` | Root component: receives `'update'` via `postMessage`; restores lens + focus from `restoredState`; lens switcher; global **Enable Parsed Requirements** toggle (checkbox in toolbar) that sends `'setParsedEnabled'` to host |
 | `packages/extension/src/webview/hooks/useVertoState.ts` | Thin `postMessage` ↔ host bridge for bundle updates and UI state persistence (selected lens, `focusedNode`); replaces canvas `useCanvasState` |
 | `packages/extension/src/webview/lenses/DeliveryMap.tsx` | Delivery Map lens: pill selector; persona/outcome header; **single pipeline**; child **note** from `node._note` and slice **outcome** from `node._outcome` (pre-computed by host pipeline, §4.6.8); portfolio table, UsageBar, gap callouts (done-bucket rules §4.6.3) |
-| `packages/extension/src/webview/lenses/NcnGraph.tsx` | NCN graph lens: `@xyflow/react` + ELK layout; ready/not-done coloring; leverage badges; **no pan/zoom** (Phase 3) |
+| `packages/extension/src/webview/lenses/NcnGraph.tsx` | NCN graph lens: `@xyflow/react` + ELK layout; ready/not-done coloring; leverage badges; **no pan/zoom** (Phase 3; superseded — see the Phase 4 "NCN graph" row) |
 | `packages/extension/src/webview/theme.ts` | Status color palette mapped to VS Code CSS variables — no hard-coded hex |
 | Vite config | Webview bundle: CSP-safe, no inline scripts, tree-shaken; bundles `@xyflow/react` + `elkjs` |
 
@@ -408,7 +408,7 @@ overlay. Pure helper: `applyPriorityOverlay(graph, overrides): VertoGraph` in
 | Protocol extensions | `setPriority`, `projectName`, `priorityOverlayActive`, `journeyPriorityOverlay`, `priorityOptionHints`, `ncnHighlightedSliceId`, `ncnFocusedNodeId`, `ncnTableView` on `PersistedPanelState` *(`setPriority` and the overlay fields removed in Phase 5)* |
 | Priority editor | `PriorityEditor.tsx` — dropdown per delivery slice (P1–P9 + tracker-mapped hints); journeys sorted by overlay priority *(overlay removed in Phase 5; edits go to the draft)* |
 | Implementation order tables | `ImplementationOrderTable.tsx` — leverage view + implementation-order view; shared `DataTableFrame` chrome; status-group dots in `#` column; click row → focus graph node |
-| NCN graph | `NcnGraph.tsx` — pan/zoom (`panOnScroll`, `zoomOnScroll`); journey highlight via `servedBySliceIds`; click-to-focus neighbourhood; status-group edge colouring; leverage badges |
+| NCN graph | `NcnGraph.tsx` — canvas-style look: columns by dependency depth packed top-aligned (`ncnLayout.ts`; ELK only orders within columns) with column bands; muted `simplebezier` edges, focus edges highlighted; 100% start, drag pan, Ctrl+wheel zoom, zoom toolbar (−, %, +, fit, 1:1); node tooltips; journey highlight via `servedBySliceIds`; click-to-focus neighbourhood; leverage in the node meta line |
 | NCN lens chrome | `NcnLens.tsx` — stats, journey selector, `FocusedNodeDetail`, table-view toggle (`Pill`), TOC callout |
 | Delivery Map polish | `DeliveryMap.tsx` — canvas-fidelity layout; completion-toned slice pills; **Primary user** portfolio column (`personas`); memoized `pipelinesBySliceId` |
 | Display status | `@verto/config/display-status-groups` — matcher, validation, universe, sufficiency, tooltips; webview `displayStatusGroup.ts` re-exports; `theme.ts` palette by group index |
