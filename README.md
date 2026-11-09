@@ -30,6 +30,8 @@ All paths below are relative to this folder (the **Verto project root**).
 | `github` | GitHub Issues and Projects | Created by the setup wizard (**Verto: Setup**) | Not yet: edits are a local preview |
 | `fissue` | Local [fissue](https://github.com/manmilani/fissue) tickets (needs the fissue extension) | `{ "adapter": "fissue" }` | Yes |
 
+**Find:** Ctrl+F (Cmd+F) in the panel finds text in either lens; Enter / Shift+Enter step through the matches, bringing each into view (graph matches are panned to).
+
 **Editing:** in the NCN lens, focus a ticket to edit its title, status, done state, priority, personas and blockers, or add a child ticket; journey priorities are edited in the implementation-order view. Edits collect in a draft (toolbar: *N pending*, **Write back**, **Discard all**). Setting `verto.writeBack.mode`: `draft` (default) or `immediate` (write after each edit). Setting `verto.showLosingPriorityChains` (default off): the implementation-order Priority tooltip lists the losing priority chains too, not just the winning one. Priority is 1–9 (lower = more important); 5 is the default, and isn't written to tickets that have no priority. A write that needs a missing tracker field (e.g. fissue `priority`) asks once to register it and add its `fieldMappings` entry.
 
 **Load script:** `node --import tsx/esm scripts/load-project.mjs [--workspace <dir>] [--fissue-core <path>] [--no-parsed]` prints the bundle for a workspace's config (`GITHUB_TOKEN` only for GitHub; run `pnpm -r build` first).

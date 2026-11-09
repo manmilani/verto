@@ -1697,6 +1697,17 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
   (`status · unlocks N · ready`) plus a hover tooltip (needs / serves). Starts at 100%;
   drag pans, Ctrl+wheel zooms (plain wheel scrolls the page); toolbar: zoom out, zoom %,
   zoom in, fit, reset to 100%. Journey highlight + click-to-focus neighbourhood.
+- **Find:** Ctrl/Cmd+F opens Verto's own find bar over the whole panel (both lenses): visible
+  text, case-insensitive, literal, within one text run (a phrase split across elements isn't
+  found); all matches highlighted in VS Code's find colours, the current one distinct; "N of M";
+  Enter / Shift+Enter, F3 / Shift+F3 and ↑ / ↓ step through matches (wrapping); Esc closes.
+  **Reveal rule:** every scroller between the match and the page — DOM scroll containers
+  (`overflow` `auto` / `scroll`, per axis) and *pan regions* (the NCN graph pans its viewport) —
+  centres the match on any axis where it isn't fully visible, inner → outer; clip boxes
+  (`overflow: hidden`) are never scrolled. So a graph match off-screen in any direction, at any
+  zoom, is panned into the graph's centre, then the panel scrolls to it. Accepted limits: text
+  clipped by its own box (a node title's 3rd+ line, ellipsized cells) is counted and highlighted
+  but stays clipped; tooltips and `<input>` / `<textarea>` values aren't searched.
 - **Bundlers:** extension **host** → **esbuild**; **webview** → **Vite**. CSP-safe
   webview bundle; no inline scripts.
 - **Standard pieces only:** extension manifest + activation, a **WebviewPanel**

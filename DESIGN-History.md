@@ -376,6 +376,13 @@ current design is in §4.6.4 and §4.6.7.*
   (§4.3, §4.8). Considered and rejected: replacing ELK with an own layout (ELK still
   gives good in-column ordering for free), and dropping React Flow to port the
   canvas's hand-rolled SVG (we would own pan/zoom and events for little gain).
+- **Find: VS Code's built-in webview find widget (rejected).** `enableFindWidget: true` was
+  considered for Ctrl+F. On desktop it drives Electron `findInFrame`: the webview never learns
+  where the current match is, and Chromium reveals matches only by scrolling scroll containers.
+  The NCN graph is a CSS-transformed React Flow viewport inside `overflow: hidden` boxes, so
+  matches left of / above the current graph view could never be revealed, and scrolled clip boxes
+  would desync React Flow's viewport. The widget also has no match count and no option toggles.
+  Replaced by Verto's own find bar (§4.8).
 - **"Open Panel" location (retired).** The panel used to open `ViewColumn.Beside`
   (a new split); now the active editor group (§4.8).
 - **Theming.** Closed (Phase 4) — Status-based colouring uses VS Code theme
