@@ -34,7 +34,9 @@ const CURRENT = 'verto-find-current'
 export function paintHighlights(ranges: Range[], current: Range | undefined): void {
   if (typeof CSS === 'undefined' || !CSS.highlights) return
   CSS.highlights.set(ALL, new Highlight(...ranges))
-  CSS.highlights.set(CURRENT, current ? new Highlight(current) : new Highlight())
+  const currentHighlight = current ? new Highlight(current) : new Highlight()
+  currentHighlight.priority = 1
+  CSS.highlights.set(CURRENT, currentHighlight)
 }
 
 export function clearHighlights(): void {
@@ -45,7 +47,9 @@ export function clearHighlights(): void {
 
 export function revealRange(range: Range): void {
   const el = range.startContainer.parentElement
-  if (el) revealRect(range.getBoundingClientRect(), scrollersFor(el))
+  // A range whose text was removed collapses and measures as an empty rect at (0, 0).
+  if (!el?.isConnected || range.collapsed) return
+  revealRect(range.getBoundingClientRect(), scrollersFor(el))
 }
 
 /** Every scroller from `el` up to the document, inner → outer; clip (`hidden`) boxes are skipped. */

@@ -44,7 +44,7 @@ export function FindBar({ root }: { root: React.RefObject<HTMLElement | null> })
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) {
         e.preventDefault()
         if (!state.current.open) {
           returnFocus.current = document.activeElement
@@ -52,7 +52,7 @@ export function FindBar({ root }: { root: React.RefObject<HTMLElement | null> })
           setOpen(true)
           search(true)
         }
-        requestAnimationFrame(() => inputRef.current?.select())
+        requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
       } else if (e.key === 'F3' && state.current.open) {
         e.preventDefault()
         step(e.shiftKey ? -1 : 1)
@@ -103,7 +103,7 @@ export function FindBar({ root }: { root: React.RefObject<HTMLElement | null> })
           }
         }}
       />
-      <span style={{ ...countStyle, ...(query && !hasMatches ? { color: 'var(--vscode-errorForeground)' } : undefined) }}>
+      <span aria-live="polite" style={{ ...countStyle, ...(query && !hasMatches ? { color: 'var(--vscode-errorForeground)' } : undefined) }}>
         {!query ? '' : hasMatches ? `${index + 1} of ${ranges.length}` : 'No results'}
       </span>
       <button type="button" style={buttonStyle} disabled={!hasMatches} title="Previous match (Shift+Enter)" onClick={() => step(-1)}>↑</button>
@@ -115,7 +115,8 @@ export function FindBar({ root }: { root: React.RefObject<HTMLElement | null> })
 
 const barStyle: React.CSSProperties = {
   position: 'fixed',
-  top: 46,
+  top: 46, // just below the panel header
+
   right: 18,
   zIndex: 1000,
   display: 'flex',
