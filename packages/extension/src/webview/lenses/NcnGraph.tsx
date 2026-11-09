@@ -5,6 +5,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  useViewport,
   Handle,
   Position,
   MarkerType,
@@ -16,6 +17,9 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import { resolveDisplayStatusGroupIndex } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { formatNodeStatus } from '../nodeStatusFormat.js'
+import {
+  elkLayoutOptions, dependencyDepth, packColumns, NCN_LAYOUT, type PackedLayout,
+} from './ncnLayout.js'
 
 const elk = new ELK()
 const GRAPH_HEIGHT = 720
@@ -64,7 +68,7 @@ function NcnGraphInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph.nodes, graph.edges])
 
-  const [elkPositions, setElkPositions] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [layout, setLayout] = useState<PackedLayout>()
 
   useEffect(() => {
     let cancelled = false
@@ -72,13 +76,8 @@ function NcnGraphInner({
 
     const elkGraph = {
       id: 'root',
-      layoutOptions: {
-        'elk.algorithm': 'layered',
-        'elk.direction': 'RIGHT',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-        'elk.spacing.nodeNode': '20',
-      },
-      children: graph.nodes.map(n => ({ id: n.id, width: 200, height: 60 })),
+      layoutOptions: elkLayoutOptions,
+      children: graph.nodes.map(n => ({ id: n.id, width: NCN_LAYOUT.nodeWidth, height: NCN_LAYOUT.nodeHeight })),
       edges: graph.edges.map(e => ({
         id: `${e.from}->${e.to}`,
         sources: [e.from],
@@ -86,11 +85,11 @@ function NcnGraphInner({
       })),
     }
 
-    elk.layout(elkGraph).then(layout => {
+    elk.layout(elkGraph).then(result => {
       if (cancelled) return
-      setElkPositions(
-        new Map((layout.children ?? []).map(c => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }])),
-      )
+      const order = new Map((result.children ?? []).map(c => [c.id, c.y ?? 0]))
+      const depth = dependencyDepth(graph.nodes.map(n => n.id), graph.edges)
+      setLayout(packColumns(depth, order, NCN_LAYOUT))
       setTimeout(() => { if (!cancelled) fitView({ padding: 0.08 }) }, 0)
     })
 
@@ -99,7 +98,7 @@ function NcnGraphInner({
   }, [topoKey, fitView])
 
   const { rfNodes, rfEdges } = useMemo(() => {
-    if (elkPositions.size === 0) return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
+    if (!layout) return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
 
     const highlightedSet: Set<string> | null = highlightedSliceId
       ? new Set(
@@ -128,7 +127,7 @@ function NcnGraphInner({
     const readySet = new Set(bundle.readyIds ?? [])
 
     const rfNodes: Node[] = graph.nodes.flatMap(n => {
-      const pos = elkPositions.get(n.id)
+      const pos = layout.positions.get(n.id)
       if (!pos) return []
 
       const isReady = readySet.has(n.id)
@@ -157,8 +156,8 @@ function NcnGraphInner({
           leverage,
         },
         style: {
-          width: 200,
-          height: 60,
+          width: NCN_LAYOUT.nodeWidth,
+          height: NCN_LAYOUT.nodeHeight,
           border,
           opacity,
           borderRadius: 8,
@@ -201,7 +200,7 @@ function NcnGraphInner({
       })
 
     return { rfNodes, rfEdges }
-  }, [elkPositions, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
+  }, [layout, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
 
   const handleNodeClick: NodeMouseHandler = (_event, node) => {
     onFocusNode(node.id === focusedNcnNodeId ? undefined : node.id)
@@ -226,6 +225,7 @@ function NcnGraphInner({
         background: 'var(--vscode-editor-background)',
       }}
     >
+      {layout && <ColumnBands layout={layout} />}
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -239,6 +239,31 @@ function NcnGraphInner({
         onNodeClick={handleNodeClick}
         proOptions={{ hideAttribution: true }}
       />
+    </div>
+  )
+}
+
+/** Alternate column shading behind the transparent React Flow pane, following pan/zoom. */
+function ColumnBands({ layout }: { layout: PackedLayout }) {
+  const { x, y, zoom } = useViewport()
+  const { columnGap } = NCN_LAYOUT
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+      <div style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+        {layout.columns.map((c, i) => i % 2 === 0 && (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: c.x - columnGap / 2,
+              top: 0,
+              width: c.width + columnGap,
+              height: layout.height,
+              background: 'color-mix(in srgb, var(--vscode-foreground) 4%, transparent)',
+            }}
+          />
+        ))}
+      </div>
     </div>
   )
 }
