@@ -255,6 +255,10 @@ For each node N, a canonical *global priority ranking value* is derived by trave
 
 **Lower canonical value = higher global priority (do first).**
 
+**Explaining a rank**
+
+The bundle carries, per node, its best `PRIORITY_CHAINS_LIMIT` (5) chains — the winning chain included — sorted by normalised score ascending (ties: node ids joined, code-unit order), plus the total number of chains found. The walk keeps only that bounded list, so memory stays O(limit × D) however many paths exist. The implementation-order **Priority** pill tooltip shows `Priority rank <rank>`, then the winning chain as `145:  V2 (P1) → B (P4) → T (P5)` (score, then nodes top → ticket with their clamped priorities). With `verto.showLosingPriorityChains` it lists all kept chains, plus `+N more` (N = total − kept) when chains were dropped.
+
 **`MIN_DEPTH_FLOOR` option (disabled by default)**
 
 A configurable constant `MIN_DEPTH_FLOOR` sets a minimum digit count for normalisation, using `D = max(actual_max_depth, MIN_DEPTH_FLOOR)`. This decouples per-node priority computation from a full graph scan, enabling live priority estimates when adding or reordering nodes without a full graph reload. Default: `undefined` (use actual graph max). Enable when incremental estimation is needed.
@@ -1707,6 +1711,8 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
   do **not** materialize parsed nodes or build bundles.
 - **Settings:** `verto.writeBack.mode` — `draft` (default: edits collect until
   **Write back**) or `immediate` (each accepted edit is written right away).
+  `verto.showLosingPriorityChains` (default `false`) — Priority tooltips also list
+  the losing priority chains (§3.5).
 - **Webview responsibilities:** a view of the `DeliveryMapBundle`, config payload,
   and host-derived metadata (`projectName`, `priorityOptionHints`, `statusOptions`,
   `writableLevels`, the draft).
