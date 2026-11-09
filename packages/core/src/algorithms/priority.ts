@@ -82,10 +82,11 @@ export function rankingFromChains(chains: Record<string, PriorityChainsEntry>): 
  * Every node's best upward chains (DESIGN.md §3.5), ascending by score (ties by
  * joined `nodeIds`, code-unit order), at most `limit` kept, plus the total count.
  * Every node has at least one chain: each path top produces a result.
+ * `ids` restricts the start nodes (D is still the whole graph's).
  */
 export function priorityChains(
   graph: VertoGraph,
-  opts?: GlobalPriorityRankingOptions & { limit?: number },
+  opts?: GlobalPriorityRankingOptions & { limit?: number; ids?: string[] },
 ): Record<string, PriorityChainsEntry> {
   if (graph.nodes.length === 0) return {}
   const limit = Math.max(1, opts?.limit ?? PRIORITY_CHAINS_LIMIT)
@@ -128,7 +129,9 @@ export function priorityChains(
   // configurable, so large values should be avoided in incremental-estimation mode.
   const result: Record<string, PriorityChainsEntry> = {}
 
+  const only = opts?.ids ? new Set(opts.ids) : undefined
   for (const startNode of graph.nodes) {
+    if (only && !only.has(startNode.id)) continue
     // Best `limit` chains, kept sorted; a chain is copied only when it is kept.
     const kept: PriorityChain[] = []
     let total = 0

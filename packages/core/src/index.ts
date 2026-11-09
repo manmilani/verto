@@ -40,6 +40,8 @@ export type {
   GlobalPriorityRankingOptions, PriorityChain, PriorityChainsEntry,
 } from './algorithms/priority.js'
 export { implementationOrder } from './algorithms/order.js'
+export { planMove, nearestDigits } from './algorithms/move.js'
+export type { MoveEdit, MovePlan } from './algorithms/move.js'
 
 // Bundle orchestrator
 export { buildDeliveryMapBundle } from './bundle.js'
