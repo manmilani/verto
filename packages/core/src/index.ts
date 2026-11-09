@@ -33,8 +33,12 @@ export { closureFor } from './algorithms/closure.js'
 export { isReady, readyNodes } from './algorithms/readiness.js'
 export { leverageScores } from './algorithms/leverage.js'
 export { deliveryCompleteness, deliveryCompletenessMap, nodeWeight } from './algorithms/completeness.js'
-export { globalPriorityRanking } from './algorithms/priority.js'
-export type { GlobalPriorityRankingOptions } from './algorithms/priority.js'
+export {
+  globalPriorityRanking, priorityChains, clampPriority, PRIORITY_CHAINS_LIMIT,
+} from './algorithms/priority.js'
+export type {
+  GlobalPriorityRankingOptions, PriorityChain, PriorityChainsEntry,
+} from './algorithms/priority.js'
 export { implementationOrder } from './algorithms/order.js'
 
 // Bundle orchestrator

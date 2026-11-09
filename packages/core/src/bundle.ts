@@ -2,7 +2,7 @@ import type { VertoGraph, DeliveryMapBundle } from './types.js'
 import type { GlobalPriorityRankingOptions } from './algorithms/priority.js'
 import { leverageScores } from './algorithms/leverage.js'
 import { readyNodes } from './algorithms/readiness.js'
-import { globalPriorityRanking } from './algorithms/priority.js'
+import { priorityChains, rankingFromChains } from './algorithms/priority.js'
 import { implementationOrder } from './algorithms/order.js'
 import { deliveryCompletenessMap } from './algorithms/completeness.js'
 import { closureFor } from './algorithms/closure.js'
@@ -40,7 +40,8 @@ export function buildDeliveryMapBundle(
   opts?: GlobalPriorityRankingOptions,
 ): DeliveryMapBundle {
   const leverage = leverageScores(graph)
-  const rankings = globalPriorityRanking(graph, opts)
+  const chains = priorityChains(graph, opts)
+  const rankings = rankingFromChains(chains)
   const order = implementationOrder(graph, rankings, leverage) // pass pre-computed leverage
   const ready = readyNodes(graph).map(n => n.id)
 
@@ -52,6 +53,7 @@ export function buildDeliveryMapBundle(
     readyIds: ready,
     leverageScore: leverage,
     globalPriorityRanking: rankings,
+    priorityChains: chains,
     deliveryCompleteness: completeness,
     servedBySliceIds: buildServedBySliceIds(graph),
   }

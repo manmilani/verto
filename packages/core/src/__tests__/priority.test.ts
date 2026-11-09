@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { globalPriorityRanking } from '../algorithms/priority.js'
+import { globalPriorityRanking, priorityChains, PRIORITY_CHAINS_LIMIT } from '../algorithms/priority.js'
 import { node, edge, graph } from './helpers.js'
 
 describe('globalPriorityRanking', () => {
@@ -176,5 +176,79 @@ describe('globalPriorityRanking', () => {
     expect(r['B']).toBe(20)
     expect(r['A']).toBe(10) // DS at start: chain=[A], norm=p×10^D=1×10=10
     expect(r['A']).toBeLessThan(r['B']) // A(p=1) outranks B(p=2)
+  })
+})
+
+describe('priorityChains', () => {
+  // T(5) blocks A(2) and B(4); A blocks slice V1(3); B blocks slice V2(1). D=2.
+  const example = () => graph(
+    [
+      node('T', { priority: 5 }),
+      node('A', { priority: 2 }),
+      node('B', { priority: 4 }),
+      node('V1', { priority: 3, isDeliverySlice: true }),
+      node('V2', { priority: 1, isDeliverySlice: true }),
+    ],
+    [edge('T', 'A'), edge('T', 'B'), edge('A', 'V1'), edge('B', 'V2')],
+  )
+
+  it('empty graph returns empty object', () => {
+    expect(priorityChains(graph([]))).toEqual({})
+  })
+
+  it('lists every chain ascending, winning chain first', () => {
+    expect(priorityChains(example())['T']).toEqual({
+      chains: [
+        { nodeIds: ['T', 'B', 'V2'], score: 145 },
+        { nodeIds: ['T', 'A', 'V1'], score: 325 },
+      ],
+      total: 2,
+    })
+  })
+
+  it('a slice mid-path yields both the slice chain and the path-top chain', () => {
+    const g = graph(
+      [node('A', { priority: 2 }), node('S', { priority: 3, isDeliverySlice: true }), node('Top', { priority: 4 })],
+      [edge('A', 'S'), edge('S', 'Top')],
+    )
+    // D=2. [A,S]: 2+30=32 → 320. [A,S,Top]: 2+30+400=432.
+    expect(priorityChains(g)['A']).toEqual({
+      chains: [
+        { nodeIds: ['A', 'S'], score: 320 },
+        { nodeIds: ['A', 'S', 'Top'], score: 432 },
+      ],
+      total: 2,
+    })
+  })
+
+  it('keeps the lowest `limit` chains and counts all of them', () => {
+    // X is a prerequisite of 8 top nodes with priorities 9..2.
+    const tops = [9, 8, 7, 6, 5, 4, 3, 2].map((p, i) => node(`U${i}`, { priority: p }))
+    const g = graph([node('X', { priority: 1 }), ...tops], tops.map(t => edge('X', t.id)))
+    const all = priorityChains(g, { limit: 100 })['X']
+    expect(all.total).toBe(8)
+    const top5 = priorityChains(g)['X']
+    expect(top5.total).toBe(8)
+    expect(top5.chains).toEqual(all.chains.slice(0, PRIORITY_CHAINS_LIMIT))
+    expect(top5.chains.map(c => c.score)).toEqual([21, 31, 41, 51, 61])
+    expect(priorityChains(g, { limit: 2 })['X'].chains).toHaveLength(2)
+    expect(priorityChains(g, { limit: 0 })['X'].chains).toHaveLength(1)
+  })
+
+  it('best chain score equals the global ranking', () => {
+    const g = example()
+    const chains = priorityChains(g)
+    const ranking = globalPriorityRanking(g)
+    for (const n of g.nodes) expect(chains[n.id].chains[0].score).toBe(ranking[n.id])
+  })
+
+  it('a prerequisite listed twice does not duplicate chains', () => {
+    const g = example()
+    const once = priorityChains(g)
+    const twice = priorityChains({
+      ...g,
+      nodes: g.nodes.map(n => (n.id === 'A' ? { ...n, prereqIds: ['T', 'T'] } : n)),
+    })
+    expect(twice).toEqual(once)
   })
 })

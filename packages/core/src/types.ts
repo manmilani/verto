@@ -1,3 +1,5 @@
+import type { PriorityChainsEntry } from './algorithms/priority.js'
+
 // ---------------------------------------------------------------------------
 // Scalar / value types
 // ---------------------------------------------------------------------------
@@ -255,6 +257,12 @@ export interface DeliveryMapBundle {
    * Computed server-side by buildDeliveryMapBundle(); not recomputed in the webview.
    */
   globalPriorityRanking?: Record<string, number>;
+  /**
+   * Per-node explanation of `globalPriorityRanking`: the best PRIORITY_CHAINS_LIMIT
+   * chains (winning chain first, ascending by score) plus the total chain count.
+   * Computed server-side by buildDeliveryMapBundle() — see DESIGN.md §3.5.
+   */
+  priorityChains?: Record<string, PriorityChainsEntry>;
   /**
    * Per-node weighted delivery completeness: maps node id → ratio of done weight
    * to total weight in its transitive prerequisite closure (0 = nothing done,
