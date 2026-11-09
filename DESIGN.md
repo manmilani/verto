@@ -1658,7 +1658,8 @@ once into the first loaded project's draft (ids in that graph only).
 invalid — and **Discard all**); a **node editor** in the NCN focused-node detail
 (title, status — a select of `statusOptions` — done, priority, personas, blockers ×/+,
 new child; an "edited" pill on nodes with pending changes); the journey priority editor
-shows each slice's priority with the draft applied and a pending marker ("—" discards).
+(**Journeys** tab) shows each slice's priority with the draft applied and a pending marker
+("—" discards).
 
 ### 4.7 State: tickets vs. workspace
 
@@ -1675,7 +1676,7 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
   *if it's "how this workspace is wired to its tracker," it's workspace config.*
 - **In workspace/global editor state (transient UI):** refresh interval, selected
   vertical, current lens, graph pan/zoom, **the write-back draft** (pending edits not yet
-  written, per project, §4.6.11), NCN highlight/focus and table-view
+  written, per project, §4.6.11), NCN focus and table-view
   preference — not committed to `verto.config.jsonc` unless we later decide otherwise.
 - **Secrets** (GitHub PAT, etc.): editor or environment settings — **never** in
   `verto.config.jsonc`.
@@ -1691,13 +1692,21 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
   editor group (no new split); if it already exists it is revealed where it is.
 - **NCN graph UI stack:** **@xyflow/react** (React Flow) for rendering; **ELK**
   (`elkjs`) for in-column order (§4.3). Look follows the original canvas: packed
-  columns with alternating column bands; Bézier edges (`simplebezier`), muted at rest,
-  focused node's edges in `focusBorder`, everything else dimmed; small arrowheads;
-  nodes at full opacity with a status-colour bar and one meta line
+  columns with alternating column bands; Bézier edges (`simplebezier`), muted at rest;
+  small arrowheads; nodes with a status-colour bar and one meta line
   (`status · unlocks N · ready`) plus a hover tooltip (needs / serves). Starts at 100%;
   drag pans, Ctrl+wheel zooms (plain wheel scrolls the page); toolbar: zoom out, zoom %,
-  zoom in, fit, reset to 100%. Journey highlight + click-to-focus neighbourhood.
-- **Find:** Ctrl/Cmd+F opens Verto's own find bar over the whole panel (both lenses): visible
+  zoom in, fit, reset to 100%.
+- **NCN focus (one rule):** focusing any node — a work-item or a journey — opens its
+  detail box and emphasises its **upstream closure** (everything it transitively needs,
+  itself included) plus its **direct dependents** (what it unblocks next); every other
+  node is dimmed, in the graph and in both tables (one set, computed once). For a journey
+  the closure is its whole tree. Edges: touching the focused node → `focusBorder`; both
+  ends emphasised → normal; otherwise dimmed. Focus comes from clicking a node or table
+  row, the "Focus journey" selector, any journey pill (Serves in the detail box and
+  both tables, Delivery Map slices) or a journey title in the Journeys tab; clicking the
+  focused node again or "Clear focus" removes it. A node's "Serves" never lists itself.
+- **Find:** Ctrl/Cmd+F opens Verto's own find bar over the whole panel (every lens): visible
   text, case-insensitive, literal, within one text run (a phrase split across elements isn't
   found); all matches highlighted in VS Code's find colours, the current one distinct; "N of M";
   Enter / Shift+Enter, F3 / Shift+F3 and ↑ / ↓ step through matches (wrapping); Esc closes.
@@ -1727,20 +1736,22 @@ shows each slice's priority with the draft applied and a pending marker ("—" d
 - **Webview responsibilities:** a view of the `DeliveryMapBundle`, config payload,
   and host-derived metadata (`projectName`, `priorityOptionHints`, `statusOptions`,
   `writableLevels`, the draft).
-  **Delivery Map** and **NCN graph** lenses with shared chrome
-  (`components/ui.tsx`: pills, stats, data tables, status dots/legend). **Phase 4:**
-  journey priority editor (dropdown), implementation-order / leverage table toggle,
-  NCN pan/zoom/focus, status-group colouring on all nodes via `displayStatusGroup.ts`
+  **Delivery Map**, **NCN graph** and **Journeys** lenses with shared chrome
+  (`components/ui.tsx`: pills, stats, data tables, status dots/legend). The Journeys
+  lens holds the journey priority editor (dropdown; a journey title focuses it in the
+  NCN graph); the NCN lens has the implementation-order / leverage table toggle,
+  NCN pan/zoom/focus; status-group colouring on all nodes via `displayStatusGroup.ts`
   + `theme.ts`. Panel state uses a thin hook over `postMessage` + host persistence.
   Theme via VS Code CSS variables.
 
 **Host↔webview message protocol.** All communication between the extension host and
 the webview uses a typed `postMessage` contract defined in
 `packages/extension/src/shared/protocol.ts`, imported by both host and webview build
-targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph'; focusedNode?;
-ncnHighlightedSliceId?; ncnFocusedNodeId?; ncnTableView?: 'implementationOrder' |
-'leverage' }` (`focusedNode` = selected delivery-slice id in the Delivery Map lens;
-NCN highlight/focus fields are separate from Delivery Map slice selection).
+targets. `PersistedPanelState` — `{ lens: 'deliveryMap' | 'ncnGraph' | 'journeys';
+focusedNode?; ncnFocusedNodeId?; ncnTableView?: 'implementationOrder' | 'leverage' }`
+(`focusedNode` = selected delivery-slice id in the Delivery Map lens; the NCN focus is
+separate, though a Delivery Map slice click sets both — staying in the Delivery Map, while a
+Journeys-tab title click switches to the NCN lens).
 
 *Host → webview:*
 
@@ -1757,7 +1768,7 @@ NCN highlight/focus fields are separate from Delivery Map slice selection).
 | `'edit'` | `change: VertoChange` (a create's `nodeId` is ignored; the host assigns the temp id) | User edits a ticket; host checks it (§4.6.11 rule 5), adds it to the draft, rebuilds; immediate mode writes |
 | `'discard'` | `changes?: VertoChange[]` (none = all) | User discards pending changes |
 | `'writeBack'` | — | User clicks **Write back** |
-| `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN highlight/focus, or table-view toggle (debounced) |
+| `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN focus, or table-view toggle (debounced) |
 | `'openTicket'` | `url: string` (a node's `ticketUrl`) | User clicks a ticket title link. The host opens `ticketUri(url)` with `vscode.open`: only `http`/`https` (browser) and `file:` (editor, fragment dropped — e.g. a parsed node's `#raw-req-n`); anything else is ignored and logged |
 
 `displayStatusGroups`, `showOthersColumn`, and `displayStatusGroupTooltips` travel

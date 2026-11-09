@@ -383,6 +383,14 @@ current design is in §4.6.4 and §4.6.7.*
   matches left of / above the current graph view could never be revealed, and scrolled clip boxes
   would desync React Flow's viewport. The widget also has no match count and no option toggles.
   Replaced by Verto's own find bar (§4.8).
+- **NCN journey highlight + one-hop focus (retired).** The NCN lens had two mechanisms: a
+  "Highlight journey" selector (persisted as `ncnHighlightedSliceId`) that lit up the journey's
+  closure in the graph only, and click-to-focus on a node that lit up its one-hop neighbourhood
+  (direct prerequisites and dependents) and overrode the highlight. Replaced by one focus rule —
+  upstream closure plus direct dependents, dimming the graph and both tables (§4.8). The journey
+  priority editor sat above the implementation-order table, and the table view defaulted to
+  implementation order when priority edits were pending; the editor moved to the Journeys tab and
+  the default became leverage.
 - **"Open Panel" location (retired).** The panel used to open `ViewColumn.Beside`
   (a new split); now the active editor group (§4.8).
 - **Theming.** Closed (Phase 4) — Status-based colouring uses VS Code theme
