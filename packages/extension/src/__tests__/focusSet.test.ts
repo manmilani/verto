@@ -47,7 +47,7 @@ describe('focusSet', () => {
     expect(focusSet(j, 'J')).toEqual(new Set([...serving, 'K']))
   })
 
-  it('isDimmed: nothing dimmed without a focus', () => {
+  it('isDimmed: ids outside the set are dimmed; nothing without a focus', () => {
     const set = focusSet(g, 'B')
     expect(isDimmed(set, 'Y')).toBe(true)
     expect(isDimmed(set, 'A')).toBe(false)

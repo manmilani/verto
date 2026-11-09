@@ -28,7 +28,7 @@ interface Props {
   projectName: string
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
-  onFocusNcnNode?: (sliceId: string | undefined) => void
+  onFocusNcnNode?: (id: string | undefined) => void
 }
 
 export function DeliveryMap({

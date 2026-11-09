@@ -38,8 +38,6 @@ export function PriorityEditor({ bundle, onFocusJourney }: Props) {
     [bundle, pending],
   )
 
-  if (slices.length === 0) return null
-
   return (
     <BorderedBox>
       <Stack gap={10}>
