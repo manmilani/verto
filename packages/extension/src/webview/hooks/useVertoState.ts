@@ -38,7 +38,6 @@ interface VertoState {
   projectName: string
   lens: Lens
   focusedNode?: string
-  ncnHighlightedSliceId?: string
   ncnFocusedNodeId?: string
   ncnTableView: NcnTableView
   errorMessage?: string
@@ -109,17 +108,9 @@ export function useVertoState() {
             s.bundle !== undefined ? s.lens : (restored?.lens ?? s.lens)
 
           // NCN state: prefer valid in-memory value; restore from workspace only on first bundle.
-          // This preserves focus/highlight across priority round-trips even when the
+          // This preserves focus across priority round-trips even when the
           // 'loading' → 'update' cycle temporarily clears s.status === 'ready'.
-          const restoredHighlight = restored?.ncnHighlightedSliceId
           const restoredFocused = restored?.ncnFocusedNodeId
-
-          const ncnHighlightedSliceId: string | undefined =
-            (s.ncnHighlightedSliceId && sliceIds.has(s.ncnHighlightedSliceId))
-              ? s.ncnHighlightedSliceId
-              : (isFirstBundle && restoredHighlight && sliceIds.has(restoredHighlight))
-                ? restoredHighlight
-                : undefined
 
           const ncnFocusedNodeId: string | undefined =
             (s.ncnFocusedNodeId && nodeIds.has(s.ncnFocusedNodeId))
@@ -129,11 +120,7 @@ export function useVertoState() {
                 : undefined
 
           const ncnTableView: NcnTableView =
-            s.bundle !== undefined
-              ? s.ncnTableView
-              : (restored?.ncnTableView
-                ?? (msg.draft.entries.some(e => e.change.type === 'set' && e.change.key === 'priority')
-                  ? 'implementationOrder' : 'leverage'))
+            s.bundle !== undefined ? s.ncnTableView : (restored?.ncnTableView ?? 'leverage')
 
           return {
             ...s,
@@ -152,7 +139,6 @@ export function useVertoState() {
             projectName: msg.projectName,
             lens,
             focusedNode,
-            ncnHighlightedSliceId,
             ncnFocusedNodeId,
             ncnTableView,
           }
@@ -196,14 +182,6 @@ export function useVertoState() {
     vscode.postMessage({ type: 'writeBack' } satisfies WebviewToHostMessage)
   }
 
-  const setNcnHighlightedSliceId = (ncnHighlightedSliceId: string | undefined) => {
-    setState(s => {
-      const next = { ...s, ncnHighlightedSliceId }
-      persistState(next)
-      return next
-    })
-  }
-
   const setNcnFocusedNodeId = (ncnFocusedNodeId: string | undefined) => {
     setState(s => {
       const next = { ...s, ncnFocusedNodeId }
@@ -223,7 +201,7 @@ export function useVertoState() {
   return {
     ...state,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnFocusedNodeId, setNcnTableView,
   }
 }
 
@@ -231,7 +209,6 @@ function persistState(s: VertoState) {
   const ps: PersistedPanelState = {
     lens: s.lens,
     focusedNode: s.focusedNode,
-    ncnHighlightedSliceId: s.ncnHighlightedSliceId,
     ncnFocusedNodeId: s.ncnFocusedNodeId,
     ncnTableView: s.ncnTableView,
   }

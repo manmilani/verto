@@ -22,6 +22,7 @@ import {
   elkColumnOrder, dependencyDepth, packColumns, NCN_LAYOUT, type PackedLayout,
 } from './ncnLayout.js'
 import { usePanRegion } from '../find/panRegions.js'
+import { isDimmed, servedSlices } from '../focusSet.js'
 
 const GRAPH_HEIGHT = 720
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 }
@@ -33,8 +34,8 @@ const EDGE_PAINT_ORDER: Record<EdgeState, number> = { dim: 0, on: 1, hi: 2 }
 interface NcnGraphProps {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
-  highlightedSliceId?: string
   focusedNcnNodeId?: string
+  focusSet?: Set<string>
   onFocusNode: (id: string | undefined) => void
 }
 
@@ -46,18 +47,9 @@ export function NcnGraph(props: NcnGraphProps) {
   )
 }
 
-function getFocusNeighbourhood(nodeId: string, edges: VertoEdge[]): Set<string> {
-  const result = new Set<string>([nodeId])
-  for (const e of edges) {
-    if (e.to === nodeId) result.add(e.from)
-    if (e.from === nodeId) result.add(e.to)
-  }
-  return result
-}
-
 function NcnGraphInner({
   bundle, displayStatusGroups,
-  highlightedSliceId, focusedNcnNodeId,
+  focusedNcnNodeId, focusSet,
   onFocusNode,
 }: NcnGraphProps) {
   const { graph } = bundle
@@ -88,28 +80,10 @@ function NcnGraphInner({
   const { rfNodes, rfEdges } = useMemo(() => {
     if (!layout) return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
 
-    const highlightedSet: Set<string> | null = highlightedSliceId
-      ? new Set(
-          graph.nodes
-            .filter(n => bundle.servedBySliceIds?.[n.id]?.includes(highlightedSliceId))
-            .map(n => n.id),
-        )
-      : null
-
-    const focusSet: Set<string> | null = focusedNcnNodeId
-      ? getFocusNeighbourhood(focusedNcnNodeId, graph.edges)
-      : null
-
-    function isDimmed(nodeId: string): boolean {
-      if (focusSet) return !focusSet.has(nodeId)
-      if (highlightedSet) return !highlightedSet.has(nodeId)
-      return false
-    }
-
     function edgeState(e: VertoEdge): EdgeState {
-      if (focusSet) return e.from === focusedNcnNodeId || e.to === focusedNcnNodeId ? 'hi' : 'dim'
-      if (highlightedSet) return highlightedSet.has(e.from) && highlightedSet.has(e.to) ? 'on' : 'dim'
-      return 'on'
+      if (!focusSet) return 'on'
+      if (e.from === focusedNcnNodeId || e.to === focusedNcnNodeId) return 'hi'
+      return focusSet.has(e.from) && focusSet.has(e.to) ? 'on' : 'dim'
     }
 
     const readySet = new Set(bundle.readyIds ?? [])
@@ -131,7 +105,7 @@ function NcnGraphInner({
       const leverage = bundle.leverageScore?.[n.id] ?? 0
       const groupIdx = resolveDisplayStatusGroupIndex(n, displayStatusGroups)
       const groupColor = statusGroupColor(groupIdx)
-      const dimmed = isDimmed(n.id)
+      const dimmed = isDimmed(focusSet, n.id)
       const isFocused = n.id === focusedNcnNodeId
 
       let border = '1px solid var(--vscode-panel-border)'
@@ -141,9 +115,7 @@ function NcnGraphInner({
       const opacity = dimmed ? 0.16 : 1
       const statusLabel = formatNodeStatus(n, displayStatusGroups)
       const prereqs = prereqTitles.get(n.id) ?? []
-      const serves = (bundle.servedBySliceIds?.[n.id] ?? [])
-        .filter(id => id !== n.id)
-        .map(id => titleById.get(id) ?? id)
+      const serves = servedSlices(bundle, n.id).map(id => titleById.get(id) ?? id)
       const tooltip = [
         n.title,
         `${statusLabel} · unlocks ${leverage} downstream · ${dependentCount.get(n.id) ?? 0} direct dependents`,
@@ -204,13 +176,13 @@ function NcnGraphInner({
           style: {
             stroke,
             strokeWidth: hi ? 2 : 1,
-            opacity: hi ? 0.95 : state === 'on' ? (highlightedSet ? 0.6 : 0.28) : 0.06,
+            opacity: hi ? 0.95 : state === 'on' ? (focusSet ? 0.6 : 0.28) : 0.06,
           },
         }
       })
 
     return { rfNodes, rfEdges }
-  }, [layout, bundle, displayStatusGroups, highlightedSliceId, focusedNcnNodeId])
+  }, [layout, bundle, displayStatusGroups, focusedNcnNodeId, focusSet])
 
   const { getViewport, setViewport } = useReactFlow()
   const panRegionRef = usePanRegion((dx, dy) => {

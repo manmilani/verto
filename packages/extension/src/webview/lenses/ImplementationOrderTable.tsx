@@ -10,8 +10,9 @@ import {
 import { statusGroupColor } from '../theme.js'
 import { countDirectDependents } from '../bundleMetrics.js'
 import { priorityTooltip } from '../priorityTooltip.js'
+import { isDimmed, servedSlices } from '../focusSet.js'
 import {
-  H2, Text, Stack, Pill,
+  H2, Text, Stack, Row, Pill,
   DataTableFrame, dataTableAutoStyle, dataTableThStyle, dataTableThCompactStyle,
   dataTableTdCompactStyle, dataTableTdWorkItemStyle, dataTableTdWrapStyle,
   dataTableRowStyle, StatusDot, dataTableShrinkColStyle, dataTableWrapMinStyle,
@@ -23,6 +24,7 @@ interface Props {
   view: NcnTableView
   showLosingPriorityChains: boolean
   focusedNodeId?: string
+  focusSet?: Set<string>
   onFocusNode: (id: string | undefined) => void
 }
 
@@ -72,15 +74,35 @@ function WorkItemPill({
   )
 }
 
+function ServesPills({
+  sliceIds, nodeById, onFocusNode,
+}: {
+  sliceIds: string[]
+  nodeById: Map<string, VertoNode>
+  onFocusNode: (id: string) => void
+}) {
+  if (sliceIds.length === 0) return <Text size="small" tone="tertiary">—</Text>
+  return (
+    <Row gap={4} wrap>
+      {sliceIds.map(sid => (
+        <Pill
+          key={sid}
+          size="sm"
+          tone="info"
+          onClick={e => { e.stopPropagation(); onFocusNode(sid) }}
+        >
+          {nodeById.get(sid)?.title ?? sid}
+        </Pill>
+      ))}
+    </Row>
+  )
+}
+
 export function ImplementationOrderTable({
-  bundle, displayStatusGroups, view, showLosingPriorityChains, focusedNodeId, onFocusNode,
+  bundle, displayStatusGroups, view, showLosingPriorityChains, focusedNodeId, focusSet, onFocusNode,
 }: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
-
-  function nodeTitle(id: string): string {
-    return nodeById.get(id)?.title ?? id
-  }
 
   if (view === 'leverage') {
     const readyIds = [...(bundle.readyIds ?? [])].sort(
@@ -93,8 +115,8 @@ export function ImplementationOrderTable({
         <Text size="small" tone="tertiary">
           Work-items whose every necessary condition is already <Text as="span" weight="semibold">Implemented</Text>,
           so work can begin immediately. Ranked by how many other work-items they ultimately unlock (transitive
-          downstream count). Add a journey priority above to turn this into a delivery execution order. Click a row
-          to focus it in the graph.
+          downstream count). Set journey priorities in the <Text as="span" weight="semibold">Journeys</Text> tab to
+          turn this into a delivery execution order. Click a row to focus it in the graph.
         </Text>
         {readyIds.length === 0 ? (
           <Text size="small" tone="tertiary">No ready items.</Text>
@@ -130,15 +152,12 @@ export function ImplementationOrderTable({
                   if (!node) return null
                   const unlocks = bundle.leverageScore?.[id] ?? 0
                   const deps = countDirectDependents(bundle, id)
-                  const serves = (bundle.servedBySliceIds?.[id] ?? [])
-                    .map(sid => nodeTitle(sid))
-                    .join(', ')
                   const isFocused = id === focusedNodeId
                   return (
                     <tr
                       key={id}
                       onClick={() => onFocusNode(id)}
-                      style={dataTableRowStyle(isFocused)}
+                      style={dataTableRowStyle(isFocused, isDimmed(focusSet, id))}
                     >
                       <td style={workItemTdStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -159,7 +178,7 @@ export function ImplementationOrderTable({
                       </td>
                       <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>{String(deps)}</td>
                       <td style={servesTdStyle}>
-                        <Text size="small" tone="tertiary">{serves || '—'}</Text>
+                        <ServesPills sliceIds={servedSlices(bundle, id)} nodeById={nodeById} onFocusNode={onFocusNode} />
                       </td>
                     </tr>
                   )
@@ -188,7 +207,8 @@ export function ImplementationOrderTable({
         Every not-yet-built work-item your prioritised journeys depend on ({liftedCount} in total), in an order where
         each item&apos;s prerequisites come before it. Build top-to-bottom and each journey is delivered as early as its
         priority allows. The <Text as="span" weight="semibold">Priority</Text> column shows which prioritised journey
-        lifted each item. Other currently-ready items follow at the end.
+        lifted each item. Other currently-ready items follow at the end. Journey priorities are set in the{' '}
+        <Text as="span" weight="semibold">Journeys</Text> tab.
       </Text>
       {orderIds.length === 0 ? (
         <Text size="small" tone="tertiary">Nothing left to do.</Text>
@@ -227,9 +247,6 @@ export function ImplementationOrderTable({
                 if (!node) return null
                 const priority = formatPriority(bundle.globalPriorityRanking?.[id])
                 const unlocks = bundle.leverageScore?.[id] ?? 0
-                const serves = (bundle.servedBySliceIds?.[id] ?? [])
-                  .map(sid => nodeTitle(sid))
-                  .join(', ')
                 const isReady = bundle.readyIds?.includes(id) ?? false
                 const isFocused = id === focusedNodeId
                 const hasPriority = priority !== '—'
@@ -237,7 +254,7 @@ export function ImplementationOrderTable({
                   <tr
                     key={id}
                     onClick={() => onFocusNode(id)}
-                    style={dataTableRowStyle(isFocused)}
+                    style={dataTableRowStyle(isFocused, isDimmed(focusSet, id))}
                   >
                     <td style={{ ...dataTableTdCompactStyle, textAlign: 'right', ...indexColPadding }}>
                       <RowIndex index={i} node={node} displayStatusGroups={displayStatusGroups} />
@@ -283,7 +300,7 @@ export function ImplementationOrderTable({
                       <Text weight="semibold">{String(unlocks)}</Text>
                     </td>
                     <td style={servesTdStyle}>
-                      <Text size="small" tone="tertiary">{serves || '—'}</Text>
+                      <ServesPills sliceIds={servedSlices(bundle, id)} nodeById={nodeById} onFocusNode={onFocusNode} />
                     </td>
                   </tr>
                 )

@@ -28,11 +28,11 @@ interface Props {
   projectName: string
   focusedNode: string | undefined
   setFocusedNode: (id: string | undefined) => void
-  onHighlightSlice?: (sliceId: string | undefined) => void
+  onFocusNcnNode?: (sliceId: string | undefined) => void
 }
 
 export function DeliveryMap({
-  bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, focusedNode, setFocusedNode, onHighlightSlice,
+  bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName, focusedNode, setFocusedNode, onFocusNcnNode,
 }: Props) {
   const { graph } = bundle
   const implOrder = bundle.implementationOrder ?? []
@@ -149,7 +149,7 @@ export function DeliveryMap({
                 key={s.id}
                 active={s.id === slice.id}
                 tone={buildTone(c)}
-                onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
+                onClick={() => { setFocusedNode(s.id); onFocusNcnNode?.(s.id) }}
                 title={`${pct(c)} built`}
               >
                 {s.title}
@@ -270,7 +270,7 @@ export function DeliveryMap({
                 return (
                   <tr
                     key={s.id}
-                    onClick={() => { setFocusedNode(s.id); onHighlightSlice?.(s.id) }}
+                    onClick={() => { setFocusedNode(s.id); onFocusNcnNode?.(s.id) }}
                     style={dataTableRowStyle(isSelected)}
                   >
                     <td style={dataTableTdWorkItemStyle}>
@@ -282,7 +282,7 @@ export function DeliveryMap({
                           onClick={e => {
                             e.stopPropagation()
                             setFocusedNode(s.id)
-                            onHighlightSlice?.(s.id)
+                            onFocusNcnNode?.(s.id)
                           }}
                         >
                           {s.title}

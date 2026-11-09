@@ -474,13 +474,14 @@ export const dataTableTdWorkItemStyle: React.CSSProperties = {
   verticalAlign: 'top',
 }
 
-export function dataTableRowStyle(isSelected: boolean): React.CSSProperties {
+export function dataTableRowStyle(isSelected: boolean, isDimmed = false): React.CSSProperties {
   return {
     cursor: 'pointer',
     background: isSelected
       ? 'color-mix(in srgb, var(--vscode-list-activeSelectionBackground) 28%, var(--vscode-editor-background))'
       : undefined,
     color: isSelected ? 'var(--vscode-foreground)' : undefined,
+    opacity: isDimmed ? 0.35 : undefined,
   }
 }
 

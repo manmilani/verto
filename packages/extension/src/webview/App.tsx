@@ -12,10 +12,10 @@ export default function App() {
     status, isRefreshing, bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, parsedEnabled,
     projectName,
     lens, focusedNode, errorMessage, setupRequired,
-    ncnHighlightedSliceId, ncnFocusedNodeId,
+    ncnFocusedNodeId,
     priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView, showLosingPriorityChains,
     setLens, setFocusedNode, setParsedEnabled,
-    edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
+    edit, discard, writeBack, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
   const searchRoot = useRef<HTMLDivElement>(null)
 
@@ -101,7 +101,7 @@ export default function App() {
             projectName={projectName}
             focusedNode={focusedNode}
             setFocusedNode={setFocusedNode}
-            onHighlightSlice={setNcnHighlightedSliceId}
+            onFocusNcnNode={setNcnFocusedNodeId}
           />
         ) : (
           <NcnLens
@@ -113,10 +113,8 @@ export default function App() {
             tableView={ncnTableView}
             onTableViewChange={setNcnTableView}
             showLosingPriorityChains={showLosingPriorityChains}
-            highlightedSliceId={ncnHighlightedSliceId}
             focusedNcnNodeId={ncnFocusedNodeId}
             onFocusNode={setNcnFocusedNodeId}
-            onHighlightSlice={setNcnHighlightedSliceId}
           />
         )}
       </div>

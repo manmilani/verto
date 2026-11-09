@@ -3,13 +3,12 @@ import type { DisplayStatusGroup, PriorityOptionHints } from '@verto/config'
 
 export type Lens = 'deliveryMap' | 'ncnGraph'
 
-/** NCN bottom section: implementation-order table + priorities, or leverage-only table. */
+/** NCN bottom section: implementation-order table or leverage table. */
 export type NcnTableView = 'implementationOrder' | 'leverage'
 
 export interface PersistedPanelState {
   lens: Lens
   focusedNode?: string
-  ncnHighlightedSliceId?: string
   ncnFocusedNodeId?: string
   ncnTableView?: NcnTableView
 }

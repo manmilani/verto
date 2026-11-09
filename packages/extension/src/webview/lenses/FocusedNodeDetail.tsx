@@ -9,6 +9,7 @@ import {
   Stack, Row, Text, Pill, BorderedBox,
 } from '../components/ui.js'
 import { entriesFor, useEditing } from '../editing.js'
+import { servedSlices } from '../focusSet.js'
 import { NodeEditor } from './NodeEditor.js'
 
 interface Props {
@@ -37,7 +38,7 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
     .map(e => nodeById.get(e.to))
     .filter((n): n is VertoNode => Boolean(n))
 
-  const servedSlices = (bundle.servedBySliceIds?.[node.id] ?? [])
+  const serves = servedSlices(bundle, node.id)
     .map(sid => nodeById.get(sid))
     .filter((n): n is VertoNode => Boolean(n))
 
@@ -137,11 +138,11 @@ export function FocusedNodeDetail({ node, bundle, displayStatusGroups, onFocusNo
           </Stack>
         </Row>
 
-        {servedSlices.length > 0 && (
+        {serves.length > 0 && (
           <Row gap={6} wrap align="center">
             <Text size="small" tone="tertiary" weight="semibold">Serves:</Text>
-            {servedSlices.map(s => (
-              <Pill key={s.id} size="sm" tone="info">{s.title}</Pill>
+            {serves.map(s => (
+              <Pill key={s.id} size="sm" tone="info" onClick={() => onFocusNode(s.id)}>{s.title}</Pill>
             ))}
           </Row>
         )}
