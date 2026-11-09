@@ -411,6 +411,18 @@ export const dataTableStyle: React.CSSProperties = {
   fontSize: 12,
 }
 
+/** Content-sized table: short columns use `dataTableShrinkColStyle`, the rest share what remains. */
+export const dataTableAutoStyle: React.CSSProperties = {
+  ...dataTableStyle,
+  tableLayout: 'auto',
+}
+
+/** Auto-layout <col> that shrinks to its widest (nowrap) cell or header. */
+export const dataTableShrinkColStyle: React.CSSProperties = { width: '1%' }
+
+/** Wrapping cells in auto-layout tables: below this the table scrolls instead of collapsing the column. */
+export const dataTableWrapMinStyle: React.CSSProperties = { minWidth: '10rem' }
+
 /**
  * Minimum <col> width for fixed-layout tables. Body cells are often narrower than
  * headers (e.g. "0" vs "In Progress"), so width must be derived from header text.

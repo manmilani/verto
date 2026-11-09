@@ -12,9 +12,9 @@ import { countDirectDependents } from '../bundleMetrics.js'
 import { priorityTooltip } from '../priorityTooltip.js'
 import {
   H2, Text, Stack, Pill,
-  DataTableFrame, dataTableStyle, dataTableThStyle, dataTableThCompactStyle,
-  dataTableTdStyle, dataTableTdCompactStyle, dataTableTdWorkItemStyle, dataTableTdWrapStyle,
-  dataTableRowStyle, StatusDot, dataTableColWidthForHeader,
+  DataTableFrame, dataTableAutoStyle, dataTableThStyle, dataTableThCompactStyle,
+  dataTableTdCompactStyle, dataTableTdWorkItemStyle, dataTableTdWrapStyle,
+  dataTableRowStyle, StatusDot, dataTableShrinkColStyle, dataTableWrapMinStyle,
 } from '../components/ui.js'
 
 interface Props {
@@ -100,13 +100,13 @@ export function ImplementationOrderTable({
           <Text size="small" tone="tertiary">No ready items.</Text>
         ) : (
           <DataTableFrame>
-            <table style={dataTableStyle}>
+            <table style={dataTableAutoStyle}>
               <colgroup>
+                <col style={workItemColWidth} />
+                <col style={dataTableShrinkColStyle} />
+                <col style={dataTableShrinkColStyle} />
+                <col style={dataTableShrinkColStyle} />
                 <col />
-                <col style={dataTableColWidthForHeader('Current status')} />
-                <col style={dataTableColWidthForHeader('Unlocks (downstream)')} />
-                <col style={dataTableColWidthForHeader('Direct dependents')} />
-                <col style={{ width: '26%' }} />
               </colgroup>
               <thead>
                 <tr>
@@ -140,7 +140,7 @@ export function ImplementationOrderTable({
                       onClick={() => onFocusNode(id)}
                       style={dataTableRowStyle(isFocused)}
                     >
-                      <td style={dataTableTdWorkItemStyle}>
+                      <td style={workItemTdStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <StatusGroupDot node={node} displayStatusGroups={displayStatusGroups} />
                           <WorkItemPill
@@ -151,14 +151,14 @@ export function ImplementationOrderTable({
                           />
                         </div>
                       </td>
-                      <td style={dataTableTdStyle}>
+                      <td style={dataTableTdCompactStyle}>
                         <Text size="small" tone="secondary">{formatNodeStatus(node, displayStatusGroups)}</Text>
                       </td>
                       <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>
                         <Text weight="semibold">{String(unlocks)}</Text>
                       </td>
                       <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>{String(deps)}</td>
-                      <td style={dataTableTdWrapStyle}>
+                      <td style={servesTdStyle}>
                         <Text size="small" tone="tertiary">{serves || '—'}</Text>
                       </td>
                     </tr>
@@ -194,15 +194,15 @@ export function ImplementationOrderTable({
         <Text size="small" tone="tertiary">Nothing left to do.</Text>
       ) : (
         <DataTableFrame>
-          <table style={dataTableStyle}>
+          <table style={dataTableAutoStyle}>
             <colgroup>
-              <col style={indexColWidth} />
-              <col style={dataTableColWidthForHeader('Priority')} />
+              <col style={dataTableShrinkColStyle} />
+              <col style={dataTableShrinkColStyle} />
+              <col style={workItemColWidth} />
+              <col style={dataTableShrinkColStyle} />
+              <col style={dataTableShrinkColStyle} />
+              <col style={dataTableShrinkColStyle} />
               <col />
-              <col style={dataTableColWidthForHeader('Ready now')} />
-              <col style={dataTableColWidthForHeader('Status', 11)} />
-              <col style={dataTableColWidthForHeader('Unlocks')} />
-              <col style={{ width: '24%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -261,7 +261,7 @@ export function ImplementationOrderTable({
                         <Text size="small" tone="quaternary">—</Text>
                       )}
                     </td>
-                    <td style={dataTableTdWorkItemStyle}>
+                    <td style={workItemTdStyle}>
                       <WorkItemPill
                         node={node}
                         displayStatusGroups={displayStatusGroups}
@@ -282,7 +282,7 @@ export function ImplementationOrderTable({
                     <td style={{ ...dataTableTdCompactStyle, textAlign: 'center' }}>
                       <Text weight="semibold">{String(unlocks)}</Text>
                     </td>
-                    <td style={{ ...dataTableTdWrapStyle, verticalAlign: 'middle' }}>
+                    <td style={servesTdStyle}>
                       <Text size="small" tone="tertiary">{serves || '—'}</Text>
                     </td>
                   </tr>
@@ -296,6 +296,10 @@ export function ImplementationOrderTable({
   )
 }
 
-/** Dot + up to three-digit index; extra left padding keeps content off the table edge. */
-const indexColWidth: React.CSSProperties = { width: '3.5rem' }
+const workItemColWidth: React.CSSProperties = { width: '30%' }
+const workItemTdStyle: React.CSSProperties = {
+  ...dataTableTdWorkItemStyle, ...dataTableWrapMinStyle, verticalAlign: 'middle',
+}
+const servesTdStyle: React.CSSProperties = { ...dataTableTdWrapStyle, ...dataTableWrapMinStyle }
+/** Extra left padding keeps the index off the table edge. */
 const indexColPadding: React.CSSProperties = { paddingLeft: 8 }
