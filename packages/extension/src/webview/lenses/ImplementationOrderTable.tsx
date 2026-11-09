@@ -9,6 +9,7 @@ import {
 } from '../displayStatusGroup.js'
 import { statusGroupColor } from '../theme.js'
 import { countDirectDependents } from '../bundleMetrics.js'
+import { priorityTooltip } from '../priorityTooltip.js'
 import {
   H2, Text, Stack, Pill,
   DataTableFrame, dataTableStyle, dataTableThStyle, dataTableThCompactStyle,
@@ -20,6 +21,7 @@ interface Props {
   bundle: DeliveryMapBundle
   displayStatusGroups: DisplayStatusGroup[]
   view: NcnTableView
+  showLosingPriorityChains: boolean
   focusedNodeId?: string
   onFocusNode: (id: string | undefined) => void
 }
@@ -71,7 +73,7 @@ function WorkItemPill({
 }
 
 export function ImplementationOrderTable({
-  bundle, displayStatusGroups, view, focusedNodeId, onFocusNode,
+  bundle, displayStatusGroups, view, showLosingPriorityChains, focusedNodeId, onFocusNode,
 }: Props) {
   const { graph } = bundle
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
@@ -242,7 +244,17 @@ export function ImplementationOrderTable({
                     </td>
                     <td style={dataTableTdCompactStyle}>
                       {hasPriority ? (
-                        <Pill size="sm" tone="warning" active title={`Priority rank ${priority}`}>
+                        <Pill
+                          size="sm"
+                          tone="warning"
+                          active
+                          title={priorityTooltip(
+                            bundle.globalPriorityRanking?.[id],
+                            bundle.priorityChains?.[id],
+                            nodeById,
+                            showLosingPriorityChains,
+                          )}
+                        >
                           P{priority}
                         </Pill>
                       ) : (

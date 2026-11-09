@@ -20,6 +20,7 @@ interface Props {
   projectName: string
   tableView: NcnTableView
   onTableViewChange: (view: NcnTableView) => void
+  showLosingPriorityChains: boolean
   highlightedSliceId?: string
   focusedNcnNodeId?: string
   onFocusNode: (id: string | undefined) => void
@@ -28,7 +29,7 @@ interface Props {
 
 export function NcnLens({
   bundle, displayStatusGroups, showOthersColumn, displayStatusGroupTooltips, projectName,
-  tableView, onTableViewChange,
+  tableView, onTableViewChange, showLosingPriorityChains,
   highlightedSliceId, focusedNcnNodeId,
   onFocusNode, onHighlightSlice,
 }: Props) {
@@ -183,6 +184,7 @@ export function NcnLens({
               bundle={bundle}
               displayStatusGroups={displayStatusGroups}
               view="implementationOrder"
+              showLosingPriorityChains={showLosingPriorityChains}
               focusedNodeId={focusedNcnNodeId}
               onFocusNode={onFocusNode}
             />
@@ -194,6 +196,7 @@ export function NcnLens({
             bundle={bundle}
             displayStatusGroups={displayStatusGroups}
             view="leverage"
+            showLosingPriorityChains={showLosingPriorityChains}
             focusedNodeId={focusedNcnNodeId}
             onFocusNode={onFocusNode}
           />

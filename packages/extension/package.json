@@ -29,6 +29,11 @@
           ],
           "default": "draft",
           "description": "When edits made in the Verto panel are written to the tracker."
+        },
+        "verto.showLosingPriorityChains": {
+          "type": "boolean",
+          "default": false,
+          "description": "Priority tooltips in the implementation order also list the losing priority chains (up to 5, best first)."
         }
       }
     },

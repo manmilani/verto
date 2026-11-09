@@ -12,7 +12,7 @@ export default function App() {
     projectName,
     lens, focusedNode, errorMessage, setupRequired,
     ncnHighlightedSliceId, ncnFocusedNodeId,
-    priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView,
+    priorityOptionHints, statusOptions, writableLevels, draft, ncnTableView, showLosingPriorityChains,
     setLens, setFocusedNode, setParsedEnabled,
     edit, discard, writeBack, setNcnHighlightedSliceId, setNcnFocusedNodeId, setNcnTableView,
   } = useVertoState()
@@ -110,6 +110,7 @@ export default function App() {
             projectName={projectName}
             tableView={ncnTableView}
             onTableViewChange={setNcnTableView}
+            showLosingPriorityChains={showLosingPriorityChains}
             highlightedSliceId={ncnHighlightedSliceId}
             focusedNcnNodeId={ncnFocusedNodeId}
             onFocusNode={setNcnFocusedNodeId}

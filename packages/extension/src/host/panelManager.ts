@@ -42,6 +42,10 @@ function writeBackMode(): WriteBackMode {
   return vscode.workspace.getConfiguration('verto').get<string>('writeBack.mode') === 'immediate' ? 'immediate' : 'draft'
 }
 
+function showLosingPriorityChains(): boolean {
+  return vscode.workspace.getConfiguration('verto').get<boolean>('showLosingPriorityChains') === true
+}
+
 const STATE_KEY_PARSED = 'verto.parsedEnabled'
 const STATE_KEY_PANEL  = 'verto.panelState'
 const WATCHER_DEBOUNCE_MS = 750
@@ -82,7 +86,9 @@ export class PanelManager {
   constructor(private readonly context: vscode.ExtensionContext) {
     this.drafts = new DraftStore(context.workspaceState)
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('verto.writeBack.mode')) void this.render()
+      if (e.affectsConfiguration('verto.writeBack.mode') || e.affectsConfiguration('verto.showLosingPriorityChains')) {
+        void this.render()
+      }
     }))
 
     const watcher = vscode.workspace.createFileSystemWatcher('**/.vscode/verto.config.jsonc')
@@ -317,6 +323,7 @@ export class PanelManager {
       priorityOptionHints: view.priorityOptionHints,
       statusOptions: view.statusOptions,
       writableLevels: view.writableLevels,
+      showLosingPriorityChains: showLosingPriorityChains(),
       draft: {
         entries: entries.map((e, i) => {
           const s = view.changeStates[i]!

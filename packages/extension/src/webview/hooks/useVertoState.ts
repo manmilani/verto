@@ -33,6 +33,7 @@ interface VertoState {
   priorityOptionHints: PriorityOptionHints
   statusOptions: string[]
   writableLevels: number[] | null
+  showLosingPriorityChains: boolean
   draft: DraftView
   projectName: string
   lens: Lens
@@ -55,6 +56,7 @@ export function useVertoState() {
     priorityOptionHints: {},
     statusOptions: [],
     writableLevels: null,
+    showLosingPriorityChains: false,
     draft: { entries: [], canWrite: false, mode: 'draft', writing: false, adapter: '' },
     projectName: 'Verto',
     lens: 'deliveryMap',
@@ -145,6 +147,7 @@ export function useVertoState() {
             priorityOptionHints: msg.priorityOptionHints,
             statusOptions: msg.statusOptions,
             writableLevels: msg.writableLevels,
+            showLosingPriorityChains: msg.showLosingPriorityChains,
             draft: msg.draft,
             projectName: msg.projectName,
             lens,

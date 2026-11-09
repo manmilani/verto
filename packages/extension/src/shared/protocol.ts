@@ -41,6 +41,8 @@ export type HostToWebviewMessage =
       priorityOptionHints: PriorityOptionHints;
       statusOptions: string[];
       writableLevels: number[] | null;
+      /** Setting `verto.showLosingPriorityChains`. */
+      showLosingPriorityChains: boolean;
       draft: DraftView;
       restoredState?: PersistedPanelState }
   | { type: 'loading' }
