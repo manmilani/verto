@@ -123,7 +123,7 @@ function MoveFeedback({
   } else {
     if (orderIds[plan.index] !== id) return null
     const edits = plan.edits.map((e, i) => (
-      <React.Fragment key={e.nodeId}>{i > 0 && ', '}{title(e.nodeId)} {e.from}→{e.to}</React.Fragment>
+      <React.Fragment key={e.nodeId}>{i > 0 && ', '}{title(e.nodeId)} P{e.from} → P{e.to}</React.Fragment>
     ))
     line = plan.exact
       ? <>Moved {title(id)} to row {plan.index + 1}: {edits} ({mode}).</>

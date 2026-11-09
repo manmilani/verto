@@ -259,6 +259,27 @@ For each node N, a canonical *global priority ranking value* is derived by trave
 
 The bundle carries, per node, its best `PRIORITY_CHAINS_LIMIT` (5) chains — the winning chain included — sorted by normalised score ascending (ties: node ids joined, code-unit order), plus the total number of chains found. The implementation-order **Priority** pill tooltip shows `Priority rank <rank>`, then the winning chain as `145:  V2 (P1) → B (P4) → T (P5)` (score, then nodes top → ticket with their clamped priorities). With `verto.showLosingPriorityChains` it lists all kept chains, plus `+N more` (N = total − kept) when chains were dropped.
 
+**Reordering by drag-and-drop (least change)**
+
+In the implementation-order table the user drags a work-item row X into a gap; Verto turns the drop into priority edits ([`move.ts`](./packages/core/src/algorithms/move.ts) `planMove`, run on the host over the graph with the draft applied):
+
+| Rule | Meaning |
+|---|---|
+| Least change | Among edits that put X at the drop, the one whose resulting rank of X is numerically nearest its current rank R₀ (a digit may go either way: 345 → 339 sets tens 4→3, units 5→9). Ties: fewer edits. |
+| What may change | Only nodes in X's chains (X up to its journeys / tops); only tickets (never parsed nodes); levels 1–9 that the tracker can hold (§4.6.11). |
+| Placement judgement | Only by recomputing ranking + order. `fixed` = X's transitive prerequisites and dependents, which must stay on their side and are ignored. `misplaced` = rows (not fixed) from below the gap now above X, plus rows from above the gap now below X; **exact** ⇔ 0. Initial 0 → no edits. |
+| Nearest achievable | If the drop can't be reached exactly, the edits giving the fewest misplaced rows are applied and the UI says so; no improvement → no edits. |
+| Draft | The edits go into the draft as one batch of ordinary priority edits (immediate mode writes them once). |
+
+*Realising a target rank V* on X's chains `c = [c₀ = X, …, cₖ]`, each with score `s · Σ dᵢ·10ⁱ` (`s = 10^(D−k)`); X's **true rank** = the minimum over its chains:
+- **up** (V < R₀): lowering one chain suffices. Per chain, the largest digit string ≤ ⌊V/s⌋; the chain giving the largest true rank (nearest R₀) wins, then fewer edits.
+- **down** (V > R₀): every chain must end ≥ V. Chains in ascending score, each still below V gets the smallest digit string ≥ ⌈V/s⌉ — first with any digits; if that fails, again with nodes shared by two or more of X's chains only rising.
+- **Digit routine** (`nearestDigits`): per position the allowed digits (plus the current one); keep the longest prefix equal to the bound's digits, then the nearest allowed digit below (≤) / above (≥) the bound's next digit, the rest max / min.
+
+*Search.* Rows that share an edited upper node move along with X, so placement isn't monotone in X's rank. (1) **Nearest first:** walk X's realisable ranks outward from R₀ (up to 100 simulations); the first exact placement is the least change. (2) **Far moves:** one binary search per significance level (chain positions 0..top may change) on `farEnough(V)` = V can't be realised, or X is past every row in the direction of travel. The result is the best **probed** placement by (misplaced, |Δrank|, edits).
+
+A prerequisite P blocking X isn't edited (it's not in X's chains, and its digit doesn't change X's rank); P's chains run through X, so P moves up along with X.
+
 **`MIN_DEPTH_FLOOR` option (disabled by default)**
 
 A configurable constant `MIN_DEPTH_FLOOR` sets a minimum digit count for normalisation, using `D = max(actual_max_depth, MIN_DEPTH_FLOOR)`. This decouples per-node priority computation from a full graph scan, enabling live priority estimates when adding or reordering nodes without a full graph reload. Default: `undefined` (use actual graph max). Enable when incremental estimation is needed.
@@ -1740,7 +1761,9 @@ new child; an "edited" pill on nodes with pending changes); the journey priority
   (`components/ui.tsx`: pills, stats, data tables, status dots/legend). The Journeys
   lens holds the journey priority editor (dropdown; a journey title focuses it in the
   NCN graph); the NCN lens has the implementation-order / leverage table toggle,
-  NCN pan/zoom/focus; status-group colouring on all nodes via `displayStatusGroup.ts`
+  NCN pan/zoom/focus, and drag-and-drop reordering in the implementation-order table
+  (a row's grip; a line marks the gap; the host plans the edits — §3.5 — and a line
+  above the table reports them; disabled while writing or moving); status-group colouring on all nodes via `displayStatusGroup.ts`
   + `theme.ts`. Panel state uses a thin hook over `postMessage` + host persistence.
   Theme via VS Code CSS variables.
 
@@ -1758,6 +1781,7 @@ Journeys-tab title click switches to the NCN lens).
 | Message `type` | Extra payload fields | Sent when |
 |---|---|---|
 | `'update'` | `bundle: DeliveryMapBundle`; `displayStatusGroups: DisplayStatusGroup[]`; `showOthersColumn: boolean`; `displayStatusGroupTooltips: Record<string, string>`; `parsedEnabled: boolean`; `projectName: string`; `priorityOptionHints: PriorityOptionHints`; `statusOptions: string[]`; `writableLevels: number[] \| null`; `draft: { entries: { change, state, error?, label }[]; canWrite; mode; writing; adapter }`; `restoredState?: PersistedPanelState` | Initial load, refresh, parsed toggle, draft change, write, or mode change |
+| `'moveResult'` | `id: string`; `target?: number` (0-based row X would occupy at the gap); `plan?: { edits: { nodeId, from, to }[]; exact; index; rank }`; `error?: string` | Exactly once per `'move'`: the applied plan, or why nothing was applied |
 
 *Webview → host:*
 
@@ -1767,6 +1791,7 @@ Journeys-tab title click switches to the NCN lens).
 | `'setParsedEnabled'` | `enabled: boolean` | User clicks the **Enable Parsed Requirements** toggle in the webview toolbar |
 | `'edit'` | `change: VertoChange` (a create's `nodeId` is ignored; the host assigns the temp id) | User edits a ticket; host checks it (§4.6.11 rule 5), adds it to the draft, rebuilds; immediate mode writes |
 | `'discard'` | `changes?: VertoChange[]` (none = all) | User discards pending changes |
+| `'move'` | `id: string`; `afterId?: string` (the row just above the gap; none = top — by identity, since the host's view may be newer) | User drops a row in the implementation-order table; host plans the least change (§3.5), adds the edits to the draft as one batch, rebuilds once; immediate mode writes |
 | `'writeBack'` | — | User clicks **Write back** |
 | `'persistState'` | `state: PersistedPanelState` | Lens switch, focused-node change, NCN focus, or table-view toggle (debounced) |
 | `'openTicket'` | `url: string` (a node's `ticketUrl`) | User clicks a ticket title link. The host opens `ticketUri(url)` with `vscode.open`: only `http`/`https` (browser) and `file:` (editor, fragment dropped — e.g. a parsed node's `#raw-req-n`); anything else is ignored and logged |
