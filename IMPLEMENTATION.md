@@ -73,7 +73,7 @@ Phase 0 wires it into a proper package (build, exports) rather than starting fro
 | `packages/core/src/algorithms/readiness.ts` | `isReady(graph, node): boolean`; `readyNodes(graph): VertoNode[]` |
 | `packages/core/src/algorithms/leverage.ts` | `leverageScores(graph): Record<string, number>` — upward transitive dependent count |
 | `packages/core/src/algorithms/completeness.ts` | `deliveryCompleteness(graph, nodeId): number` — weighted ratio of done weight to total weight in closure (`nodeWeight(node)`); returns NaN for unknown `nodeId`; `deliveryCompletenessMap(graph)` for bundle builds |
-| `packages/core/src/algorithms/priority.ts` | `globalPriorityRanking(graph, opts?): Record<string, number>` — chain-traversal algorithm (DESIGN.md §3.5) |
+| `packages/core/src/algorithms/priority.ts` | `globalPriorityRanking(graph, opts?): Record<string, number>` — chain-traversal algorithm (DESIGN.md §3.5); `priorityChains(graph, opts?)` — each node's best `PRIORITY_CHAINS_LIMIT` chains + total (bundle field `priorityChains`); `clampPriority` |
 | `packages/core/src/algorithms/order.ts` | `implementationOrder(graph, rankings): string[]` — dependency-respecting, priority-weighted topological sort |
 | `packages/core/src/types.ts` | Extended with two new `DeliveryMapBundle` fields: `globalPriorityRanking?: Record<string, number>` and `deliveryCompleteness?: Record<string, number>` |
 | `packages/core/src/adapter.ts` | `VertoAdapter<TConfig = unknown>`: `loadProject(config): Promise<VertoGraph>` (**return type updated in Phase 2.5** — was `DeliveryMapBundle` in Phase 1–2); optional `writeBack` |

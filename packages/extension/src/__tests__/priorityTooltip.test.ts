@@ -44,5 +44,6 @@ describe('priorityTooltip', () => {
 
   it('no chains → header only', () => {
     expect(priorityTooltip(undefined, undefined, nodes, true)).toBe('Priority rank —')
+    expect(priorityTooltip(145, undefined, nodes, true)).toBe('Priority rank 145')
   })
 })

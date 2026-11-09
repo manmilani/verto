@@ -257,7 +257,7 @@ For each node N, a canonical *global priority ranking value* is derived by trave
 
 **Explaining a rank**
 
-The bundle carries, per node, its best `PRIORITY_CHAINS_LIMIT` (5) chains — the winning chain included — sorted by normalised score ascending (ties: node ids joined, code-unit order), plus the total number of chains found. The walk keeps only that bounded list, so memory stays O(limit × D) however many paths exist. The implementation-order **Priority** pill tooltip shows `Priority rank <rank>`, then the winning chain as `145:  V2 (P1) → B (P4) → T (P5)` (score, then nodes top → ticket with their clamped priorities). With `verto.showLosingPriorityChains` it lists all kept chains, plus `+N more` (N = total − kept) when chains were dropped.
+The bundle carries, per node, its best `PRIORITY_CHAINS_LIMIT` (5) chains — the winning chain included — sorted by normalised score ascending (ties: node ids joined, code-unit order), plus the total number of chains found. The implementation-order **Priority** pill tooltip shows `Priority rank <rank>`, then the winning chain as `145:  V2 (P1) → B (P4) → T (P5)` (score, then nodes top → ticket with their clamped priorities). With `verto.showLosingPriorityChains` it lists all kept chains, plus `+N more` (N = total − kept) when chains were dropped.
 
 **`MIN_DEPTH_FLOOR` option (disabled by default)**
 
