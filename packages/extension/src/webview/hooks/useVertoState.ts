@@ -44,6 +44,8 @@ interface VertoState {
   /** Set while a dropped row waits for the host's `moveResult`. */
   moving: boolean
   moveResult?: MoveResult
+  /** The order when `moveResult` arrived: a result without edits is dropped once the order changes. */
+  moveOrder?: string
   errorMessage?: string
   setupRequired?: boolean
 }
@@ -91,7 +93,7 @@ export function useVertoState() {
         return
       }
       if (msg.type === 'moveResult') {
-        setState(s => ({ ...s, moving: false, moveResult: msg }))
+        setState(s => ({ ...s, moving: false, moveResult: msg, moveOrder: orderKey(s.bundle) }))
         return
       }
       if (msg.type === 'update') {
@@ -131,6 +133,8 @@ export function useVertoState() {
           const ncnTableView: NcnTableView =
             s.bundle !== undefined ? s.ncnTableView : (restored?.ncnTableView ?? 'leverage')
 
+          const staleMove = !s.moveResult?.plan?.edits.length && orderKey(msg.bundle) !== s.moveOrder
+
           return {
             ...s,
             status: 'ready',
@@ -150,6 +154,7 @@ export function useVertoState() {
             focusedNode,
             ncnFocusedNodeId,
             ncnTableView,
+            ...(staleMove ? { moveResult: undefined } : undefined),
           }
         })
       }
@@ -225,6 +230,10 @@ export function useVertoState() {
     setLens, setFocusedNode, setParsedEnabled,
     edit, discard, writeBack, move, setNcnFocusedNodeId, focusInNcn, setNcnTableView,
   }
+}
+
+function orderKey(bundle: DeliveryMapBundle | undefined): string {
+  return (bundle?.implementationOrder ?? []).join('\n')
 }
 
 function persistState(s: VertoState) {

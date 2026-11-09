@@ -196,8 +196,8 @@ export function planMove(
     return !d || probe(d, v).reached
   }
 
-  // 1. Nearest first: walk X's realisable ranks outward from R₀, so the first exact placement is the
-  //    least change. Rows sharing an edited upper node move along with X, which makes placement
+  // 1. Nearest first: walk X's realisable ranks outward from R₀ (one digit set per rank); the first
+  //    exact placement found wins. Rows sharing an edited upper node move along with X, which makes placement
   //    non-monotone in the rank; the walk doesn't rely on monotonicity.
   const maxLen = Math.max(...chains.map(c => c.nodeIds.length))
   let v = up ? start.rank - 1 : start.rank + 1
@@ -254,7 +254,7 @@ export function planMove(
 /**
  * Simulations spent on the nearest-first walk before the per-level binary searches take over. Each
  * simulation is a full ranking + order on the extension host; a move costs at most
- * NEAREST_PROBES + Σ over levels of log₂(range) ≈ 100 + 3.4·(D+1)² simulations (realisations that
+ * NEAREST_PROBES + Σ over levels of log₂(range) ≈ 100 + 5·(D+1)² simulations (realisations that
  * fail, and repeated digit sets, cost none).
  */
 const NEAREST_PROBES = 100

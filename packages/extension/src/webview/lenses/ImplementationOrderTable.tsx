@@ -103,7 +103,7 @@ function ServesPills({
 
 /**
  * What the last drop did (DESIGN.md §3.5), shown while it still describes the table: a moved row's
- * line until the row is elsewhere; any other line until the order changes.
+ * line until the row is elsewhere; any other line until the order changes (`useVertoState`).
  */
 function MoveFeedback({
   result, orderIds, nodeById, mode,
@@ -113,12 +113,7 @@ function MoveFeedback({
   nodeById: Map<string, VertoNode>
   mode: string
 }) {
-  const orderKey = orderIds.join('\n')
-  const seen = useRef<{ result?: MoveResult; orderKey: string }>({ orderKey })
-  if (seen.current.result !== result) seen.current = { result, orderKey }
   if (!result) return null
-  const moved = (result.plan?.edits.length ?? 0) > 0
-  if (!moved && seen.current.orderKey !== orderKey) return null
   const { id, plan, target, error } = result
   const title = (nid: string) => <Text as="span" weight="semibold">{nodeById.get(nid)?.title ?? nid}</Text>
   let line: React.ReactNode

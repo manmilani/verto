@@ -198,8 +198,9 @@ describe('planMove', () => {
   it('down: when the free pass undoes an earlier chain, shared nodes only rise', () => {
     // X 5 → J1 3 (350) and X → M 6 → J2 3 (365); N 7 → J1 (370). Order X, M, J2, N, J1.
     // Passing N needs > 370. Free pass at 371: J1's chain sets X 8, then J2's chain sets X 1, M 7
-    // (371), undoing it. Rise-only keeps X ≥ 8: X 8, M 7 → min(380, 378) = 378. (Rise-only keeps the
-    // walk going through 370–377; the free pass alone also reaches 378 at V = 378.)
+    // (371), undoing it. Rise-only keeps X ≥ 8: X 8, M 7 → min(380, 378) = 378. Rise-only keeps the
+    // walk going through 370–377; the result is the same without it (the per-level search finds 378,
+    // where the free pass succeeds).
     const g = graph(
       [
         node('J1', { isDeliverySlice: true, priority: 3 }), node('J2', { isDeliverySlice: true, priority: 3 }),

@@ -107,7 +107,9 @@ describe('planDrop', () => {
     expect(planDrop(view, false, 'Z')).toEqual({ ok: false, error: 'Z is no longer in the implementation order' })
     expect(planDrop(view, false, 'X', 'Z')).toEqual({ ok: false, error: 'Z is no longer in the implementation order' })
   })
+})
 
+describe('acceptEdit + viewWithDraft', () => {
   it('a move that sets a node back to its tracker value leaves a clean draft', async () => {
     const r = await acceptEdit(project(graph()), [{ change: prio('A', 2) }], prio('A', 5), true)
     const { entries } = viewWithDraft(project(graph()), r.ok ? r.entries : [], true)
